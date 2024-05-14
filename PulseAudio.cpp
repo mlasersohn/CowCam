@@ -17,7 +17,7 @@
 
 #include <FL/filename.H>
 
-int		CreateTask(int (*funct)(int *), void *flag);
+int		create_task(int (*funct)(int *), void *flag);
 int		pulse_record_all(int *flag);
 int		pulse_play_all(int *flag);
 long int	precise_time(void);
@@ -381,11 +381,11 @@ void	PulseAudio::Run()
 {
 	if(mode == MODE_RECORD)
 	{
-		pthread_t signal_thread = CreateTask((int (*)(int *))pulse_record_all, (void *)this);
+		pthread_t signal_thread = create_task((int (*)(int *))pulse_record_all, (void *)this);
 	}
 	else
 	{
-		pthread_t signal_thread = CreateTask((int (*)(int *))pulse_play_all, (void *)this);
+		pthread_t signal_thread = create_task((int (*)(int *))pulse_play_all, (void *)this);
 	}
 }
 

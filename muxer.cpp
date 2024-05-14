@@ -78,6 +78,7 @@ extern "C"
 #include	<FL/Fl_Float_Input.H>
 #include	<FL/Fl_Scroll.H>
 #include	<FL/Fl_Pack.H>
+#include	<FL/Fl_Flex.H>
 #include	<FL/Fl_Menu_Button.H>
 #include	<FL/Fl_Light_Button.H>
 #include	<FL/Fl_Toggle_Button.H>
@@ -122,7 +123,8 @@ using namespace std;
 #include "cowcam.h"
 #include "muxer.h"
 
-extern long int precise_time();
+extern long int	precise_time();
+int				my_find_codec_by_id(int type, int in_id, char *result);
 
 void	crash_webcam()
 {
@@ -131,7 +133,7 @@ void	crash_webcam()
 	int nn = xx / (xx - yy);
 }
 
-int		CreateTask(int (*funct)(int *), void *flag);
+int		create_task(int (*funct)(int *), void *flag);
 
 MyFormat	*global_my_format[1024];
 int			global_my_format_cnt = 0;
@@ -446,6 +448,11 @@ AVDictionary *opt = NULL;
 		nb_samples = c->frame_size;
 	}
 	number_of_audio_samples = nb_samples;
+
+	// COW - NOTE FORCING NUMBER OF AUDIO SAMPLES TO WHAT MY MICS WANT
+	nb_samples = 1024;
+	c->frame_size = 1024;
+	number_of_audio_samples = 1024;
 
 	ost->frame = alloc_audio_frame(c->sample_fmt, c->channel_layout, c->sample_rate, nb_samples);
 	ost->tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, c->channel_layout, c->sample_rate, nb_samples);
@@ -851,18 +858,22 @@ char	filename[4096];
 			{
 				int audio_id = mf->audio_id[audio];
 				Muxer *mux = new Muxer(NULL, NULL, 0);
+				char out_buf[32768];
+				char video_result[4096];
+				char audio_result[4096];
+				int	nn1 = my_find_codec_by_id(0, video_id, video_result);
+				int	nn2 = my_find_codec_by_id(1, audio_id, audio_result);
 				int err = mux->TestMux((AVCodecID)video_id, (AVCodecID)audio_id, filename, test_w, test_h, test_fps, test_hz);
 				delete mux;
 				if(err != 0)
 				{
 					if(output_cb != NULL)
 					{
-						char out_buf[4096];
-						sprintf(out_buf, "FAILED %d", err);
+						sprintf(out_buf, "FAILED: [%s][%s]\n", video_result, audio_result);
 						output_cb(out_buf);
 						for(inner = 0;inner < global_log_cnt;inner++)
 						{
-							sprintf(out_buf, "%s", global_log[inner]);
+							sprintf(out_buf, "\t%s", global_log[inner]);
 							output_cb(out_buf);
 						}
 					}
@@ -873,6 +884,14 @@ char	filename[4096];
 					if((err & 2) == 2)
 					{
 						mf->audio_id[audio] = 0;
+					}
+				}
+				else
+				{
+					if(output_cb != NULL)
+					{
+						sprintf(out_buf, "SUCCESS: [%s][%s]\n", video_result, audio_result);
+						output_cb(out_buf);
 					}
 				}
 				global_log_cnt = 0;
@@ -1278,7 +1297,6 @@ int	loop;
 
 void	Muxer::Record(double rate)
 {
-
 	if(raw == 0)
 	{
 		paused = 0;
@@ -1286,7 +1304,7 @@ void	Muxer::Record(double rate)
 		if(no_audio == 1)
 		{
 			recording = 1;
-			pthread_t signal_thread = CreateTask((int (*)(int *))mux_record, (void *)this);
+			pthread_t signal_thread = create_task((int (*)(int *))mux_record, (void *)this);
 		}
 		else
 		{
@@ -1341,7 +1359,7 @@ void	Muxer::Resume()
 		recording = 1;
 		if(no_audio == 1)
 		{
-			pthread_t signal_thread = CreateTask((int (*)(int *))mux_record, (void *)this);
+			pthread_t signal_thread = create_task((int (*)(int *))mux_record, (void *)this);
 		}
 	}
 }
@@ -1619,6 +1637,50 @@ AVCodecID codec_by_name(char *name);
 			}
 		}
 	}
+}
+
+int	my_find_codec_by_id(int type, int in_id, char *result)
+{
+int	loop;
+int	video;
+int	audio;
+
+	int done = 0;
+	for(loop = 0;((loop < global_my_format_cnt) && (done == 0));loop++)
+	{
+		MyFormat *mf = global_my_format[loop];
+		if(type == 0)
+		{
+			for(video = 0;((video < mf->video_codec_cnt) && (done == 0));video++)
+			{
+				if(mf->video_codec[video] != NULL)
+				{
+					int id = mf->video_id[video];
+					if(id == in_id)
+					{
+						strcpy(result, mf->video_codec[video]);
+						done = 1;
+					}
+				}
+			}
+		}
+		else if(type == 1)
+		{
+			for(audio = 0;((audio < mf->audio_codec_cnt) && (done == 0));audio++)
+			{
+				if(mf->audio_codec[audio] != NULL)
+				{
+					int id = mf->audio_id[audio];
+					if(id == in_id)
+					{
+						strcpy(result, mf->audio_codec[audio]);
+						done = 1;
+					}
+				}
+			}
+		}
+	}
+	return(done);
 }
 
 int	my_find_codec_by_name(int type, char *format_name, char *in_name)

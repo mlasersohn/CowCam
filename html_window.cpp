@@ -28,10 +28,9 @@
 
 #include	"html_window.h"
 
-std::string GetDataURI(const std::string& data, const std::string& mime_type) {
-  return "data:" + mime_type + ";base64," +
-         CefURIEncode(CefBase64Encode(data.data(), data.size()), false)
-             .ToString();
+std::string GetDataURI(const std::string& data, const std::string& mime_type) 
+{
+  return "data:" + mime_type + ";base64," + CefURIEncode(CefBase64Encode(data.data(), data.size()), false).ToString();
 }
 
 void	html_win_shutdown(Fl_Widget *w, void *v)
@@ -116,6 +115,7 @@ void    my_html_window_cb(void *v)
 	Fl::repeat_timeout(0.03, my_html_window_cb, win);
 }
 
+extern "C" {
 int initialize_cef(int html, int argc, char *argv[])
 {
 	CefMainArgs args(argc, argv);
@@ -135,6 +135,7 @@ int initialize_cef(int html, int argc, char *argv[])
 		}
     }
 	return(0);
+}
 }
 
 int HTML_Win::load(char *url, char *html_source)
@@ -184,7 +185,24 @@ int HTML_Win::shutdown()
 	return(0);
 }
 
+extern "C" {
 void	shutdown_cef()
 {
 	CefShutdown();
+}
+}
+
+extern "C" {
+void	delete_html(HTML_Win *html)
+{
+	delete html;
+}
+}
+
+extern "C" {
+HTML_Win	*MakeHTMLWindow(char *in_url, char *in_html, int ww, int hh)
+{
+	HTML_Win *win = new HTML_Win(in_url, in_html, ww, hh);
+	return(win);
+}
 }

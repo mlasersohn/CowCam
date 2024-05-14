@@ -14,6 +14,7 @@
 #include <FL/fl_draw.H>
 #include <FL/fl_draw.H>
 #include <FL/gl.h>
+#include <FL/filename.H>
 
 #include "osg.h"
 
@@ -53,6 +54,7 @@ struct MyCameraPostDrawCallback : public osg::Camera::DrawCallback
 	osg::Image *image;
 };
 
+/* COW COW
 int	walk_tree(osg::Group *start, int limit, int total, osg::Node **list)
 {
 int	loop;
@@ -78,6 +80,7 @@ int	loop;
 	}
 	return(total);
 }
+*/
 
 osg::Group	*instrument(char *name, osg::Node *item)
 {
@@ -123,8 +126,10 @@ char	buf[4096];
 	return(grp);
 }
 
+extern "C"
+{
 
-MyViewer *open_osg(int num_files, char **model_file, int ww, int hh)
+MyViewer *OSG_open_osg(int num_files, char **model_file, int ww, int hh)
 {
 int	loop;
 
@@ -162,8 +167,12 @@ int	loop;
     	osg::ref_ptr<osg::Node> loadedModel = osgDB::readNodeFile(str);
 		if(loadedModel != NULL)
 		{
-			osg::Group *item_group = instrument(model_file[loop], loadedModel);
-			item_scale->addChild(item_group);
+			char *name = (char *)fl_filename_name(model_file[loop]);
+			if(name != NULL)
+			{
+				osg::Group *item_group = instrument(name, loadedModel);
+				item_scale->addChild(item_group);
+			}
 		}
 	}
 	MyViewer *my_viewer = NULL;
@@ -217,4 +226,29 @@ int	loop;
 		my_viewer->realize();
     }
     return(my_viewer);
+}
+
+osg::Group *OSG_get_scene_data(MyViewer *viewer)
+{
+	osg::Group *root = (osg::Group *)viewer->getSceneData();
+	return(root);
+}
+
+void	OSG_Translate(osg::MatrixTransform *matrix, double cx, double cy, double cz)
+{
+	matrix->setMatrix(osg::Matrix::translate(osg::Vec3(cx, cy, cz)));
+}
+
+void	OSG_Rotate(osg::MatrixTransform *matrix, double cx, double cy, double cz)
+{
+	osg::Matrix m;
+	osg::Quat(cz, osg::Vec3d(0, 0, 1), cy, osg::Vec3d(0, 1, 0), cx, osg::Vec3d(1, 0, 0)).get(m);
+	matrix->setMatrix(m);
+}
+
+void	OSG_Scale(osg::MatrixTransform *matrix, double cx, double cy, double cz)
+{
+	matrix->setMatrix(osg::Matrix::scale(osg::Vec3(cx, cy, cz)));
+}
+
 }

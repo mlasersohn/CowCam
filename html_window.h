@@ -1,6 +1,8 @@
 
+extern "C" {
 int initialize_cef(int html, int argc, char **argv);
 void shutdown_cef();
+}
 
 class RenderHandler: public CefRenderHandler
 {

@@ -28,7 +28,7 @@ using namespace std;
 
 #include	"vlc_window.h"
 
-int	CreateTask(int (*funct)(int *), void *flag);
+int	create_task(int (*funct)(int *), void *flag);
 
 VLC_Window::VLC_Window(char *in_path, int ww, int hh)
 {
@@ -153,7 +153,7 @@ void	play_cb(void *v);
 
 	current_frame = 0;
 	Fl::add_timeout(0.03, play_cb, this);
-	CreateTask((int (*)(int *))play_audio, (void *)this);
+	create_task((int (*)(int *))play_audio, (void *)this);
 	libvlc_media_player_play(media_player);
 }
 
@@ -494,7 +494,7 @@ static long int start = 0;
 		{
 			usleep(10000);
 		}
-		CreateTask((int (*)(int *))play_audio, (void *)dw);
+		create_task((int (*)(int *))play_audio, (void *)dw);
 		Fl::repeat_timeout(0.03, play_cb, dw);
 	}
 }

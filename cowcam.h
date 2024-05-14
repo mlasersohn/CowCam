@@ -1,6 +1,6 @@
 #define	NUMBER_OF_INTERFACES		9
-#define	NUMBER_OF_CAMERAS		7
-#define	NUMBER_OF_PRESETS		21
+#define	NUMBER_OF_CAMERAS			7
+#define	NUMBER_OF_PRESETS			21
 
 #define	RECORD_MODE			1
 #define	FOLLOW_MODE			(1 << 1)
@@ -117,22 +117,23 @@
 #define	TRANSITION_FADE_FROM_BLACK	6
 #define	TRANSITION_FADE_TO_BLACK	7
 
-#define	DRAWING_MODE_GENERAL				0
-#define	DRAWING_MODE_TEXT					1
-#define	DRAWING_MODE_LINE					2
-#define	DRAWING_MODE_RECTANGLE				3
-#define	DRAWING_MODE_POLYGON				4
-#define	DRAWING_MODE_FREEHAND				5
-#define	DRAWING_MODE_DELETE					6
-#define	DRAWING_MODE_HIDE					7
-#define	DRAWING_MODE_SHOW_ALL				8
-#define	DRAWING_MODE_HIDE_ALL				9
-#define	DRAWING_MODE_LOOP					10
-#define	DRAWING_MODE_ELLIPSE				11
-#define	DRAWING_MODE_IMAGE					12
-#define	DRAWING_MODE_PIXELATE				13
-#define	DRAWING_MODE_RECTANGLE_SELECT		14
-#define	DRAWING_MODE_POLYGON_SELECT			15
+#define	DRAWING_MODE_NONE					0
+#define	DRAWING_MODE_GENERAL				1
+#define	DRAWING_MODE_TEXT					2
+#define	DRAWING_MODE_LINE					3
+#define	DRAWING_MODE_RECTANGLE				4
+#define	DRAWING_MODE_POLYGON				5
+#define	DRAWING_MODE_FREEHAND				6
+#define	DRAWING_MODE_DELETE					7
+#define	DRAWING_MODE_HIDE					8
+#define	DRAWING_MODE_SHOW_ALL				9
+#define	DRAWING_MODE_HIDE_ALL				10
+#define	DRAWING_MODE_LOOP					11
+#define	DRAWING_MODE_ELLIPSE				12
+#define	DRAWING_MODE_IMAGE					13
+#define	DRAWING_MODE_PIXELATE				14
+#define	DRAWING_MODE_RECTANGLE_SELECT		15
+#define	DRAWING_MODE_POLYGON_SELECT			16
 
 #define	FREEHAND_SHAPE_SQUARE			0
 #define	FREEHAND_SHAPE_CIRCLE			1
@@ -278,6 +279,26 @@
 #define	SNAPSHOT_TRIGGER_RECORD			2
 #define	SNAPSHOT_TRIGGER_CONTINUOUS		3
 
+#define	CLOCK_TYPE_NONE					0
+#define	CLOCK_TYPE_TOD					1
+#define	CLOCK_TYPE_ELAPSED				2
+
+#define	ON_RECORD_BUTTON				0
+#define	ON_SCHEDULE						1
+#define	ON_DETECT_LIGHT					2
+#define	ON_DETECT_DARK					4
+#define	ON_DETECT_MOTION				8
+#define	ON_DETECT_OBJECT				16
+#define	ON_TRIGGER_CAMERA				32
+
+#define	BUTTON_ON_RECORD_BUTTON			0
+#define	BUTTON_ON_SCHEDULE				1
+#define	BUTTON_ON_DETECT_LIGHT			2
+#define	BUTTON_ON_DETECT_DARK			3
+#define	BUTTON_ON_DETECT_MOTION			4
+#define	BUTTON_ON_DETECT_OBJECT			5
+#define	BUTTON_ON_TRIGGER_CAMERA		6
+
 struct	NamedKeys
 {
 	char	*name;
@@ -305,6 +326,38 @@ class	EmbedAppSettings;
 class	FltkPluginWindow;
 class	QuickText;
 class	PopupMenu;
+class	DragWindow;
+class	MyGroup;
+
+class	MyGroup : public Fl_Group
+{
+public:
+			MyGroup(int xx, int yy, int ww, int hh);
+			MyGroup(int xx, int yy, int ww, int hh, char *lbl);
+};
+
+class	ResizeGroup : public MyGroup
+{
+public:
+			ResizeGroup(MyWin *in_win, int xx, int yy, int ww, int hh);
+	int		handle(int event);
+
+	MyWin	*my_window;
+};
+
+class	DragWindow : public Fl_Window
+{
+public:
+			DragWindow(int ww, int hh);
+			DragWindow(int ww, int hh, char *lbl);
+			DragWindow(int xx, int yy, int ww, int hh);
+			DragWindow(int xx, int yy, int ww, int hh, char *lbl);
+			~DragWindow();
+	int		handle(int event);
+
+	int		last_x;
+	int		last_y;
+};
 
 class	Shape : public Fl_Box
 {
@@ -441,21 +494,24 @@ public:
 		osg::Node	*node;
 };
 
-class	InstrumentWindow : public Fl_Window
+class	InstrumentWindow : public DragWindow
 {
 public:
 				InstrumentWindow(MyWin *in_win, Camera *in_cam, int ww, int hh);
 				~InstrumentWindow();
+	int			handle(int event);
 	void		Populate();
 	void		PopulateFromCamera();
 
 	MyWin				*my_window;
 	Camera				*my_camera;
+
 	osg::Node			*node[128];
 	int					node_cnt;
 	int					widget_cnt;
 
 	Fl_Button			*go_button;
+	Fl_Button			*close_button;
 
 	Fl_Input			*frames[128];
 	Fl_Float_Input		*start_x_in[128];
@@ -479,6 +535,47 @@ public:
 	void			Fit();
 
 	Fl_Hold_Browser	*browser;
+};
+
+class	DragBox : public Fl_Box
+{
+public:
+			DragBox(MyGroup **parent_list, int parent_cnt, int xx, int yy, int ww, int hh, char *lbl);
+			~DragBox();
+	int		handle(int event);
+
+	MyGroup	**parent_list;
+	int			parent_cnt;
+	int			last_x;
+	int			last_y;
+	MyGroup	*old_parent;
+	int			index;
+};
+
+class	ArrangeGroup : public MyGroup
+{
+public:
+				ArrangeGroup(Fl_Scroll *in_scroll, int in_item_h, int xx, int yy, int ww, int hh, char *lbl = NULL);
+	void		add(Fl_Widget *wid);
+	Fl_Scroll	*scroll;
+	int			item_h;
+	int			limit;
+};
+
+class	PTZ_LockWindow : public DragWindow
+{
+public:
+				PTZ_LockWindow(MyWin *in_win);
+				~PTZ_LockWindow();
+	void		draw();
+	void		Populate();
+
+	MyWin		*my_window;
+
+	Fl_Scroll		*scroll;
+	MyGroup		*ptz_list;
+	ArrangeGroup	*assigned_camera_list;
+	ArrangeGroup	*unassigned_camera_list;
 };
 
 class	FilterDialog : public Fl_Double_Window
@@ -644,14 +741,29 @@ public:
 class	MenuButton : public Fl_Button
 {
 public:
-			MenuButton(int xx, int yy, int ww, int hh, char *lbl) : Fl_Button(xx, yy, ww, hh, lbl) { hover = 0; };
-			~MenuButton() {};
+			MenuButton(int font_sz, int xx, int yy, int ww, int hh, char *lbl);
+			~MenuButton();
 	int		handle(int event);
 	void	draw();
 	void	show();
 	void	hide();
 
 	int		hover;
+};
+
+class	ObjectMenu : public DragWindow
+{
+public:
+				ObjectMenu(MyWin *in_win);
+
+	MyWin		*my_window;
+	int			object_page;
+	Fl_Button	*object_name_button[1024];
+	Fl_Button	*object_clear_button;
+	Fl_Button	*object_all_button;
+	Fl_Button	*object_done_button;
+	Fl_Button	*object_next_button;
+	Fl_Button	*object_prev_button;
 };
 
 class	ListMenu : public Fl_Window
@@ -671,11 +783,13 @@ public:
 	Fl_Widget	*item[4096];
 };
 
-class	CodecSelectionWindow : public Fl_Double_Window
+class	CodecSelectionWindow : public DragWindow
 {
 public:
-		CodecSelectionWindow();
+		CodecSelectionWindow(MyWin *in_win);
 		~CodecSelectionWindow();
+
+	MyWin	*my_window;
 	
 	char	container_selected[256];
 	char	extension_selected[256];
@@ -701,15 +815,18 @@ public:
 		~ColorSlider();
 };
 
-class	ColorItWindow : public Fl_Double_Window
+class	ColorItWindow : public DragWindow
 {
 public:
-			ColorItWindow(MyWin *in_win);
-			~ColorItWindow();
-	void	hide();
-	void	show();
+				ColorItWindow(MyWin *in_win);
+				~ColorItWindow();
+	void		hide();
+	void		show();
+	int			handle(int event);
 
-	MyWin			*my_window;
+	MyWin		*my_window;
+	int			last_x;
+	int			last_y;
 
 	ColorSlider	*red_tolerance;
 	ColorSlider	*green_tolerance;
@@ -721,7 +838,7 @@ public:
 	ColorSlider	*alpha_replace;
 };
 
-class	ColorDialog : public Fl_Window
+class	ColorDialog : public DragWindow
 {
 public:
 			ColorDialog(MyWin *in_win, int ww, int hh, char *title = NULL, int *in_red = NULL, int *in_green = NULL, int *in_blue = NULL, int *in_alpha = NULL);
@@ -792,7 +909,7 @@ public:
 	Mat	freehand_mat;
 };
 
-class	TextEditWindow : public Fl_Window
+class	TextEditWindow : public DragWindow
 {
 public:
 					TextEditWindow(MyWin *in_win, Camera *in_cam, MiscCopy *in_misc);
@@ -823,7 +940,7 @@ public:
 	Fl_Multiline_Input	*text_initial_text;
 };
 
-class	ImmediateDrawingWindow : public Fl_Window
+class	ImmediateDrawingWindow : public DragWindow
 {
 public:
 			ImmediateDrawingWindow(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
@@ -838,6 +955,7 @@ public:
 	void	ImageSetup();
 	void	FreehandSetup();
 	void	Color(int in_color);
+	void	CloseAll();
 
 	Fl_Button	*general;
 	Fl_Button	*text;
@@ -858,7 +976,7 @@ public:
 	Fl_Boxtype	text_box_type;
 	Immediate	*selected_widget;
 
-	Fl_Group	*general_group;
+	MyGroup	*general_group;
 		Fl_Hor_Slider		*grid_size_slider;
 		Fl_Output			*grid_size_output;
 		LayerLabelButton	*layer_select_button[8];
@@ -870,7 +988,7 @@ public:
 		Fl_Button			*save_button;
 		Fl_Button			*load_button;
 
-	Fl_Group	*text_group;
+	MyGroup	*text_group;
 		Fl_Box				*font_output;
 		FontSample			*font_sample;
 		Fl_Hold_Browser		*font_browser;
@@ -893,7 +1011,7 @@ public:
 		Fl_Light_Button		*text_outline_button;
 		Fl_Multiline_Input	*text_initial_text;
 
-	Fl_Group	*line_group;
+	MyGroup	*line_group;
 		LineSample		*line_sample;
 		Fl_Hor_Slider	*line_red_slider;
 		Fl_Output		*line_red_output;
@@ -919,7 +1037,7 @@ public:
 		Fl_Toggle_Button	*line_type_segments_button;
 		Fl_Toggle_Button	*line_type_curves_button;
 
-	Fl_Group	*rectangle_group;
+	MyGroup	*rectangle_group;
 		RectangleSample	*rectangle_sample;
 		Fl_Hor_Slider	*rectangle_red_slider;
 		Fl_Output		*rectangle_red_output;
@@ -940,7 +1058,7 @@ public:
 		Fl_Toggle_Button	*rectangle_filled_button;
 		Fl_Toggle_Button	*rectangle_erase_button;
 
-	Fl_Group	*freehand_group;
+	MyGroup	*freehand_group;
 		FreehandSample	*freehand_sample;
 		Fl_Hor_Slider	*freehand_red_slider;
 		Fl_Output		*freehand_red_output;
@@ -959,11 +1077,11 @@ public:
 		Fl_Toggle_Button	*freehand_shape_stamp_button;
 		Fl_Button			*freehand_shape_stamp_file_button;
 		Fl_Toggle_Button	*freehand_shape_key_button;
-	Fl_Group	*image_group;
+	MyGroup	*image_group;
 		RectangleSample		*image_sample;
 		Fl_Toggle_Button	*image_file_button;
 		Fl_Input			*image_file_path;
-	Fl_Group	*pixelate_group;
+	MyGroup	*pixelate_group;
 		Fl_Hor_Slider		*pixelate_size_slider;
 		Fl_Output			*pixelate_size_output;
 		Fl_Toggle_Button	*pixelate_pixelate_button;
@@ -973,6 +1091,8 @@ public:
 	int			mode;
 	int			last_x;
 	int			last_y;
+	int			orig_w;
+	int			orig_h;
 
 	int			grid_size;
 	double		gsf;
@@ -1162,7 +1282,7 @@ public:
 	int		focused;
 };
 
-class	ImRectangle : public ImDefault, public Fl_Group
+class	ImRectangle : public ImDefault, public MyGroup
 {
 public:
 			ImRectangle(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
@@ -1170,7 +1290,7 @@ public:
 	void	draw();
 };
 
-class	ImPixelate : public ImDefault, public Fl_Group
+class	ImPixelate : public ImDefault, public MyGroup
 {
 public:
 			ImPixelate(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
@@ -1178,7 +1298,7 @@ public:
 	void	draw();
 };
 
-class	ImRectangleSelect : public ImDefault, public Fl_Group
+class	ImRectangleSelect : public ImDefault, public MyGroup
 {
 public:
 			ImRectangleSelect(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
@@ -1186,7 +1306,7 @@ public:
 	void	draw();
 };
 
-class	ImImage : public ImDefault, public Fl_Group
+class	ImImage : public ImDefault, public MyGroup
 {
 public:
 			ImImage(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
@@ -1194,7 +1314,7 @@ public:
 	void	draw();
 };
 
-class	ImEllipse : public ImDefault, public Fl_Group
+class	ImEllipse : public ImDefault, public MyGroup
 {
 public:
 		ImEllipse(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
@@ -1202,7 +1322,7 @@ public:
 	void	draw();
 };
 
-class	ImFreehand : public ImDefault, public Fl_Group
+class	ImFreehand : public ImDefault, public MyGroup
 {
 public:
 		ImFreehand(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
@@ -1210,7 +1330,7 @@ public:
 	void	draw();
 };
 
-class	ImLine : public ImDefault, public Fl_Group
+class	ImLine : public ImDefault, public MyGroup
 {
 public:
 		ImLine(MyWin *in_win, Immediate *in_im, int in_type, int xx, int yy, int ww, int hh);
@@ -1224,7 +1344,7 @@ public:
 	void	ImageLine(cairo_t *cr, int x0, int y0, int x1, int y1, int in_sz);
 };
 
-class	Immediate : public Fl_Group
+class	Immediate : public MyGroup
 {
 public:
 			Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh);
@@ -1304,7 +1424,7 @@ public:
 	int		mw_mode;
 };
 
-class	SelectOutputWindow : public Fl_Window
+class	SelectOutputWindow : public DragWindow
 {
 public:
 		SelectOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh);
@@ -1321,11 +1441,11 @@ public:
 	int					last_y;
 };
 
-class	SetOutputWindow : public Fl_Window
+class	EditOutputWindow : public DragWindow
 {
 public:
-		SetOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh);
-		~SetOutputWindow();
+		EditOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh);
+		~EditOutputWindow();
 	int	handle(int event);
 
 	void	Populate();
@@ -1342,7 +1462,7 @@ public:
 	int					last_y;
 };
 
-class	CommandKeyGroup : public Fl_Group
+class	CommandKeyGroup : public MyGroup
 {
 public:
 		CommandKeyGroup(CommandKeySettingsWindow *in_win, int xx, int yy, int ww, int hh, char *lbl, char *val = "");
@@ -1359,7 +1479,7 @@ public:
 	Fl_Choice	*value_menu;
 };
 
-class	CommandKeySettingsWindow : public Fl_Window
+class	CommandKeySettingsWindow : public DragWindow
 {
 public:
 		CommandKeySettingsWindow(MyWin *in_win, int ww, int hh);
@@ -1447,7 +1567,7 @@ public:
 	ProgressScrubber	*progress_scrubber;
 };
 
-class	ProgressScrubber : public Fl_Group
+class	ProgressScrubber : public MyGroup
 {
 public:
 		ProgressScrubber(MyWin *in_win, MuxPreviewWindow *, int x, int y, int w, int h);
@@ -1518,14 +1638,30 @@ public:
 	Fl_Button	*reset;
 };
 
-class	TriggerWindow : public Fl_Window
+class	TriggerWindow : public DragWindow
 {
 public:
-		TriggerWindow(MyWin *);
-		~TriggerWindow();
+			TriggerWindow(MyWin *);
+			~TriggerWindow();
+	int		handle(int event);
+	void	show();
 
-	MyWin		*main_win;
-	ThumbButton	*thumbnail[128];
+	void				Update();
+
+	MyWin				*main_win;
+	int					last_x;
+	int					last_y;
+
+	Fl_Button			*done;
+	Fl_Button			*clear;
+
+	Fl_Toggle_Button	*day[7];
+	Fl_Input			*start_time;
+	Fl_Input			*stop_time;
+	Fl_Light_Button		*trigger[7];
+	MySlider			*darkness_slider;
+
+	ThumbButton			*thumbnail[128];
 };
 
 class	FakeWindow : public Fl_Double_Window
@@ -1558,7 +1694,7 @@ public:
 	Fl_Window	*primary;
 };
 
-class	GUI_SettingsWindow : public Fl_Window
+class	GUI_SettingsWindow : public DragWindow
 {
 public:
 		GUI_SettingsWindow(MyWin *);
@@ -1635,7 +1771,7 @@ public:
 	unsigned char	dark_blue_color_b;
 };
 
-class	TransitionWindow : public TransparentWindow
+class	TransitionWindow : public DragWindow
 {
 public:
 		TransitionWindow(MyWin *);
@@ -1654,7 +1790,7 @@ public:
 	Fl_Box		*selection;
 };
 
-class	SelectAudioWindow : public TransparentWindow
+class	SelectAudioWindow : public DragWindow
 {
 public:
 			SelectAudioWindow(MyWin *);
@@ -1664,7 +1800,7 @@ public:
 	MyWin	*my_window;
 };
 
-class	SelectCameraWindow : public TransparentWindow
+class	SelectCameraWindow : public DragWindow
 {
 public:
 			SelectCameraWindow(MyWin *);
@@ -1674,7 +1810,7 @@ public:
 	MyWin	*my_window;
 };
 
-class	PseudoCameraWindow : public TransparentWindow
+class	PseudoCameraWindow : public DragWindow
 {
 public:
 		PseudoCameraWindow(MyWin *);
@@ -1686,14 +1822,16 @@ public:
 	MyWin		*my_window;
 };
 
-class	FilterPluginsWindow : public TransparentWindow
+class	FilterPluginsWindow : public DragWindow
 {
 public:
-			FilterPluginsWindow(MyWin *win, int in_filter_type);
-			~FilterPluginsWindow();
-	void	draw();
-	void	Arrange(int col_flag = 0, int py = -1);
+				FilterPluginsWindow(MyWin *win, int in_filter_type);
+				~FilterPluginsWindow();
+	int			handle(int event);
+	void		Arrange(int col_flag = 0, int py = -1);
 
+	int			last_x;
+	int			last_y;
 	int			filter_type;
 	Fl_Pack		*available;
 	Fl_Pack		*use;
@@ -1730,23 +1868,18 @@ public:
 	double	ratio_h;
 };
 
-class	SettingWindow : public Fl_Window
+class	VideoSettingsWindow : public DragWindow
 {
 public:
-			SettingWindow(MyWin *);
-			~SettingWindow();
+			VideoSettingsWindow(MyWin *);
+			~VideoSettingsWindow();
 	void	Update();
 	int		handle(int event);
 	void	draw();
 
-	int		last_x;
-	int		last_y;
-
 	MyWin	*main_win;
 	Fl_Int_Input *output_w;
 	Fl_Int_Input *output_h;
-	Fl_Int_Input *display_w;
-	Fl_Int_Input *display_h;
 
 	Fl_Toggle_Button 		*timestamp_default;
 	Fl_Input 				*timestamp_format;
@@ -1755,6 +1888,38 @@ public:
 	Fl_Int_Input			*timestamp_font_size;
 	Fl_Int_Input			*timestamp_position_x;
 	Fl_Int_Input			*timestamp_position_y;
+
+	MySlider *fps_slider;
+	MySlider *encode_fps_slider;
+	MySlider *minimum_fps_slider;
+	MySlider *capture_interval_slider;
+
+	Fl_Light_Button	*realtime_encoding_button;
+	Fl_Light_Button	*embed_pip_button;
+	Fl_Button	*gather_codecs_button;
+	Fl_Light_Button	*record_all_button;
+	Fl_Light_Button	*frame_scaling_button;
+	Fl_Light_Button	*crop_scaling_button;
+	Fl_Light_Button	*crop_output_button;
+	Fl_Light_Button	*single_stream_button;
+	Fl_Light_Button	*create_tag_file_button;
+};
+
+class	CameraSettingsWindow : public DragWindow
+{
+public:
+			CameraSettingsWindow(MyWin *);
+			~CameraSettingsWindow();
+	void	Update();
+	int		handle(int event);
+	void	draw();
+
+	int		last_x;
+	int		last_y;
+
+	MyWin	*main_win;
+	Fl_Int_Input *display_w;
+	Fl_Int_Input *display_h;
 
 	MySlider *contrast_slider;
 	MySlider *brightness_slider;
@@ -1767,25 +1932,13 @@ public:
 	MySlider *alpha_intensity_slider;
 	MySlider *aspect_x_slider;
 	MySlider *aspect_y_slider;
-	MySlider *fps_slider;
 	MySlider *motion_threshold_slider;
 	MySlider *recognition_threshold_slider;
 	MySlider *recognition_interval_slider;
-	MySlider *encode_fps_slider;
-	MySlider *minimum_fps_slider;
 	MySlider *capture_interval_slider;
-
-	Fl_Light_Button	*realtime_encoding_button;
-	Fl_Light_Button	*embed_pip_button;
-	Fl_Button	*gather_codecs_button;
-	Fl_Light_Button	*record_all_button;
-	Fl_Light_Button	*frame_scaling_button;
-	Fl_Light_Button	*crop_scaling_button;
-	Fl_Light_Button	*single_stream_button;
-	Fl_Light_Button	*create_tag_file_button;
 };
 
-class	SnapshotSettingWindow : public Fl_Window
+class	SnapshotSettingWindow : public DragWindow
 {
 public:
 			SnapshotSettingWindow(MyWin *);
@@ -1882,7 +2035,7 @@ public:
 	void			SnapshotFrame();
 	int				DetectObjects(int *, int *, int *, int *);
 	int				PostProcessRecognition(Mat &frame, const vector<Mat> &outs, int *out_x, int *out_y, int *width, int *height);
-	int				Record(int s);
+	int				Record();
 	int				SetBackendFlag(char *);
 	void			V4L_Command(int command);
 	int				V4L_Test();
@@ -1945,6 +2098,12 @@ public:
 	void			GrabThisWindow();
 	void			RecordOn();
 	void			RecordOff();
+	int				Triggers();
+	int				ScheduleTrigger();
+	int				DarknessTrigger();
+	int				MotionTrigger();
+	int				ObjectTrigger();
+	void			PaintRecognizedObjects();
 
 	int					type;
 	char				path[4096];
@@ -1954,10 +2113,18 @@ public:
 	int					power;
 	int					record;
 	int					recording;
+	int					triggers_requested;
+	int					trigger_override;
+	time_t				detect_time;
 	int					requested_x;
 	int					requested_w;
 	int					requested_h;
 	int					requested_y;
+	int					record_trigger;
+	int					schedule_start;
+	int					schedule_stop;
+	int					schedule_day;
+	double				darkness_trigger;
 	int					object_detect;
 	int					follow_objects;
 	int					motion_detect;
@@ -1999,11 +2166,11 @@ public:
 	unsigned long int	grab_window_id;
 	int					once;
 	SaveFIFO			*save_fifo;
-	int					fd[2];
-	int					total_frames[2];
-	int					true_total_frames[2];
-	int					since_frames[2];
-	int					frame_cnt[2];
+	int					fd;
+	int					total_frames;
+	int					true_total_frames;
+	int					since_frames;
+	int					frame_cnt;
 	time_t				last_time;
 	double				fps;
 	double				current_fps;
@@ -2161,6 +2328,9 @@ public:
 	int					snapshot_trigger_condition;
 	double				snapshot_scale;
 	int					snapshot;
+
+	int					ptz_lock_interface;
+	int					ptz_lock_camera;
 };
 
 class	StoredImageWindow
@@ -2197,6 +2367,11 @@ public:
 	int			requested_y;
 	int			requested_w;
 	int			requested_h;
+	int			record_trigger;
+	int			schedule_start;
+	int			schedule_stop;
+	int			schedule_day;
+	double		darkness_trigger;
 	int			object_detect;
 	int			follow_objects;
 	int			motion_detect;
@@ -2324,7 +2499,7 @@ public:
 	int		filter_plugin_cnt;
 };
 
-class	PulseAudioButton : public Fl_Group
+class	PulseAudioButton : public MyGroup
 {
 public:
 		PulseAudioButton(MyWin *, char *, int, int, int, int, char *);
@@ -2356,18 +2531,19 @@ public:
 	int	focus;
 };
 
-class	AliasWindow : public Fl_Window
+class	AliasWindow : public DragWindow
 {
 public:		
-		AliasWindow(MyWin *in_win, int xx, int yy);
-		~AliasWindow();
-	int	handle(int event);
+				AliasWindow(MyWin *in_win, int xx, int yy);
+				~AliasWindow();
+	int			handle(int event);
+	void		show();
 
 	Fl_Input	*alias;
 	MyWin		*my_window;
 };
 
-class	NewSourceWindow : public Fl_Window
+class	NewSourceWindow : public DragWindow
 {
 public:		
 			NewSourceWindow(MyWin *in_win, int xx, int yy);
@@ -2419,7 +2595,7 @@ public:
 	int				edit_mode;
 };
 
-class	EncodeSpeedWindow : public Fl_Group
+class	EncodeSpeedWindow : public MyGroup
 {
 public:
 		EncodeSpeedWindow(MyWin *in, int xx, int yy, int ww, int hh);
@@ -2439,7 +2615,6 @@ public:
 		~PTZ_Window();
 
 	MyWin	*my_window;
-	Camera	*locked_camera;
 };
 
 class	CameraCaps
@@ -2457,13 +2632,15 @@ public:
 class	StartWindow : public Fl_Double_Window
 {
 public:
-			StartWindow(int xx, int yy, int ww, int hh, int in_argc, char *lbl);
+			StartWindow(int in_message_delay, int xx, int yy, int ww, int hh, int in_argc, char *lbl);
 	void	draw();
 
 	void	Update(char *str);
 
 	int		argc;
 	Fl_Box	*text;
+	int		message_delay;
+	time_t	last_time;
 	int		image_mat_cnt;
 	Mat		image_mat[128];
 };
@@ -2488,7 +2665,6 @@ public:
 			, int in_fps
 			, double in_interval
 			, int in_split
-			, int in_main
 			, int in_muxing
 			, int in_flip
 			, int use_audio
@@ -2507,7 +2683,7 @@ public:
 			, int in_transition
 			, int in_ptz_path_cnt
 			, char *in_ptz_path[NUMBER_OF_INTERFACES]
-			, char *in_ptz_lock_alias[NUMBER_OF_INTERFACES]
+			, char *in_ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS]
 			, char *in_ptz_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_home_on_launch
 			, int in_use_yolo_model
@@ -2541,6 +2717,7 @@ public:
 			, int use_hide_status
 			, int use_auto_scale
 			, int crop_output
+			, int crop_display
 			, int use_disregard_settings
 			, char *lbl);
 		~MyWin();
@@ -2549,175 +2726,174 @@ public:
 	void    draw();
 	int	handle(int);
 
-	int	MatchArea(int, int, int);
-	Camera	*CurrentCamera();
-	Camera	*DisplayedCamera();
-	void	ShowButtons();
-	void	HideButtons();
-	void	SaveInterest();
-	void	LoadInterest();
-	int		FindMovement(int, int *, int *, int *, int *, int, int, int, int);
-	void    copy_interest(unsigned char *dest, unsigned char *src, int sz, int sx, int sy, int ex, int ey);
-	void	MakeNewSourceWindow();
-	void	MakeAliasWindow();
-	int		SetupCamera(char *source, char *alias, int req_w, int req_h, int font_sz, char *font_name = NULL, int rr = 0, int gg = 0, int bb = 0, int aa = 0, int t_rr = 255, int t_gg = 255, int t_bb = 255, int t_aa = 255, int chroma_color = CHROMA_ON_GREEN);
-	void	ResizeCapture(int source_n, int ww, int hh);
-	void	RemoveSource(int src);
-	void	Encode();
-	void	ReallyEncode(int);
-	void	DrawDetailFrame(Fl_Color colr);
-	void	CropFrame(Mat in, Mat *out, int xx, int yy, int ww, int hh);
-	void	MarkInterestGrid();
-	void	SplitScreen();
-	void	Detect();
-	void	MarkInterest();
-	void	CurrentFPS();
-	void	CalcInitialFPS();
-	void	ResizeDetail();
-	void	DrawThumbnails();
-	void	DrawPIP();
-	void	DrawEmbeddedPIP();
-	void	DrawEncodingMessage();
-	void	DrawExtractingMessage();
-	void	DrawDumpingMessage();
-	void	DumpDirectRecording(char *, char *);
-	void	EncodeAVIWithOgg();
-	void	HideAudio();
-	void	ShowAudio();
-	void	HideObjects();
-	void	ShowObjects();
-	void	ScanForCameras();
-	void	ScanAudio(int use_audio);
-	void	ScanPulse(int use_sources);
-	void	OpenNamedPulse();
-	void	ReadClasses();
-	int		DrawPred(Camera *cam, int classId, float conf, int left, int top, int right, int bottom, Mat &frame);
-	void	AllCameraMotion();
-	void	RecordOn();
-	void	RecordOff();
-	void	SetupObjectDetection();
-	void	RecordAll();
-	void	SelectRecordingCamera();
-	void	SetAllCamerasToStream(Camera *in_cam);
-	void	SetAllCamerasToStop();
-	void	SetAllCamerasToGo();
-	void	ResetCameras(int reset_cameras, char **source, int source_cnt);
-	void	TriggerCamera(Camera *cam);
-	void	PTZ_DoCommand(int button, int arg_cnt = 0, int arg0 = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
-	void	ViscaSpecs(VISCAInterface_t *interface, MyVISCACamera *camera);
-	void	AutoFocus(int on);
-	void	DigitalZoom(int on);
-	void	AutoExposure(int on);
-	void	BacklightCompensation(int on);
-	void	StartVisca();
-	void	ViscaCommand(int command, int arg_cnt = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0, int arg5 = 0);
-	void	ViscaButtonCommands(Fl_Button *b, int state);
-	void	SetupPTZWindow(int home_on_launch);
-	void	PTZ_MoveTo(int spd_x, int spd_y, int xx, int yy);
-	void	PTZ_GoToAbs(int dx, int dy);
-	void	SavePTZPositions();
-	void	LoadPTZPositions();
-	void	PTZ_RememberPosition(int num);
-	void	PTZ_UnRememberPosition(int num);
-	int		PTZ_RecallPosition(int speed, int num);
-	void	GoToPTZPosition(int speed, int in_pan, int in_tilt, int in_zoom, int in_focus);
-	void	UpdatePresets();
-	void	TourPresets();
-	void	MoveALittle(int key);
-	void	ZoomALittle(int key);
-	void	FocusALittle(int key);
-	void	ZoomAndFocusALittle(int key);
-	void	CenterMessage(char *msg, int timer);
-	int		ptz_joystick_handler();
-	void	SendToNetwork();
-	void	DrawAudioGraph(Camera *cam);
-	void	GrabDesktop(int retain_size = 0);
-	void	GrabCameraArea();
-	void	Done();
-	void	RunPulse(int mode);
-	void	RemoveCamera(Camera *cam);
-	void	ShowButtonPanel(int xx);
-	void	RecordingFullStop();
-	void	ShowLog();
-	void	LoadCamera(char *filename);
-	void	LoadCamera(int fd);
-	Camera	*FindCameraByPath(char *path);
-	void	RestoreFromStored(StoredMyWin *in_win);
-	void	Cleanup();
-	void	Save(char *filename);
-	void	Load(char *filename);
-	int		ImageWindowButtonHit(int xx, int yy);
-	void	AddLastMuxed(char *filename);
-	void	FrameForMuxer(Camera *cam, Mat in_mat);
-	void	DeleteImmediate();
-	int		HandleKeyboard(int event, Camera *cam);
-	void	ToggleRecord(Camera *cam);
-	void	ToggleRecord(int camera_index);
-	int		DoDeleteImmediate();
-	int		TogglePTZJoystick();
-	int		IncreasePTZLittleSpeed();
-	int		DecreasePTZLittleSpeed();
-	int		CyclePTZLittleMode();
-	int		PTZHome();
-	void	CycleDownThumbgroup();
-	void	CycleUpThumbgroup();
-	int		DisplayThumbgroup(int nn);
-	int		LittleMotion(int key);
-	void	Review();
-	void	LocalZoomIn(Camera *cam);
-	void	LocalZoomOut(Camera *cam);
-	void	ToggleFrozen();
-	void	DoSnapshot();
-	void	ScaleVideoUp();
-	void	ScaleVideoDown();
-	void	ScaleVideoReset();
-	int		DisplaySplitSelection(int nn);
-	int		HandlePushForSplit();
-	int		HandlePushToSelectImmediate(Camera *cam);
-	int		HandlePushToEditImmediate(Camera *cam);
-	void	ImmediateNewlySelectedHighlight();
-	int		DoMarkInterest();
-	int		HandlePushForPTZ(Camera *cam);
-	int		HandleReleaseForImmediate(Camera *cam);
-	int		HandleRelease(Camera *cam);
-	int		HandleReleaseForPTZ(Camera *cam);
-	int		HandleMove(Camera *cam);
-	int		HandleImmediateDrag(Camera *cam);
-	int		HandlePTZDrag();
-	int		HandleDrag(Camera *cam);
-	int		HandleMousewheelPTZ(Camera *cam);
-	int		HandleMousewheel(Camera *cam);
-	int		HandleMousewheelResizeCapture(Camera *cam);
-	void	ResetCommandKeys();
-	void	ReadCommandKeyDefinitions(char *filename);
-	int		CheckCommandTitle(char *str);
-	void	SaveCommandKeyDefinitions(char *filename);
-	char	*CommandKeyName(int nn);
-	void	FrameImage(Camera *cam, Mat& in_mat, Mat& out_mat, double force_aspect_x, double force_aspect_y);
-	double	CalcButtonSize(int y_pos, int& y_inc, int req_w, int req_h);
-	void	AddEmbeddedWindow(EmbedAppWindow *embed);
-	void	CalcEmbeddedWindowPosition(int use_w, int use_h, int& x_pos, int& y_pos);
-	void	ReadInExternalPrograms();
-	void	DisplayOutput(Camera *cam, Mat in_mat, Camera *alt_cam);
-	void	DrawEmbeddedApps();
-	void	DrawPIPsAfter();
-	void	DrawPTZZoomer(int use_image_sx, int use_image_sy);
-	int		ScanForDuplicateCameras(char *in_path);
-	int		PopulateCameraCaps();
-	void	ClearCameraCaps();
-	void	ShowPTZ(Camera *cam, int xx, int yy);
-	void	ShowAudio(int xx, int yy);
-	void	ShowVideoThumbs(int xx, int yy);
-	void	CompressAudioThumbnailList();
-	int		CountActiveMics();
-	void	BuildMainMenu();
-	void	SetupObjectMenu();
-	void	BuildSetOutputWindow();
-	void	BuildSelectOutputWindow();
-	void	LoadOutputPathList(char *filename);
-	void	SaveOutputPathList(char *filename);
-	void	SetUseOutputPath(int index, char *buf);
-	int		PushToSelectColors(Camera *cam);
+	int			MatchArea(int, int, int);
+	Camera		*CurrentCamera();
+	Camera		*DisplayedCamera();
+	void		ShowButtons();
+	void		HideButtons();
+	void		SaveInterest();
+	void		LoadInterest();
+	int			FindMovement(Camera *in_cam, int, int *, int *, int *, int *, int, int, int, int);
+	void		copy_interest(unsigned char *dest, unsigned char *src, int sz, int sx, int sy, int ex, int ey);
+	void		MakeNewSourceWindow();
+	void		MakeAliasWindow();
+	int			SetupCamera(char *source, char *alias, int req_w, int req_h, int font_sz, char *font_name = NULL, int rr = 0, int gg = 0, int bb = 0, int aa = 0, int t_rr = 255, int t_gg = 255, int t_bb = 255, int t_aa = 255, int chroma_color = CHROMA_ON_GREEN);
+	void		ResizeCapture(int source_n, int ww, int hh);
+	void		RemoveSource(int src);
+	void		Encode();
+	void		ReallyEncode(int);
+	void		DrawDetailFrame(Fl_Color colr);
+	void		CropFrame(Mat in, Mat *out, int xx, int yy, int ww, int hh);
+	void		MarkInterestGrid();
+	void		SplitScreen();
+	void		Detect();
+	void		MarkInterest();
+	void		CurrentFPS();
+	void		CalcInitialFPS();
+	void		ResizeDetail();
+	void		DrawThumbnails();
+	void		DrawPIP();
+	void		DrawEmbeddedPIP();
+	void		DrawEncodingMessage();
+	void		DrawExtractingMessage();
+	void		DrawDumpingMessage();
+	void		DumpDirectRecording(char *, char *);
+	void		EncodeAVIWithOgg();
+	void		HideAudio();
+	void		ShowAudio();
+	void		HideObjects();
+	void		ShowObjects();
+	void		ScanForCameras();
+	void		ScanAudio(int use_audio);
+	void		ScanPulse(int use_sources);
+	void		OpenNamedPulse();
+	void		ReadClasses();
+	int			DrawPred(Camera *cam, int classId, float conf, int left, int top, int right, int bottom, Mat &frame);
+	void		AllCameraMotion();
+	void		RecordOn();
+	void		RecordOff();
+	void		SetupObjectDetection();
+	void		RecordAll();
+	void		SelectRecordingCamera();
+	void		SetAllCamerasToStream(Camera *in_cam);
+	void		SetAllCamerasToStop();
+	void		SetAllCamerasToGo();
+	void		ResetCameras(int reset_cameras, char **source, int source_cnt);
+	void		TriggerCamera(Camera *cam);
+	void		PTZ_DoCommand(int button, int arg_cnt = 0, int arg0 = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
+	void		ViscaSpecs(VISCAInterface_t *interface, MyVISCACamera *camera);
+	void		AutoFocus(int on);
+	void		DigitalZoom(int on);
+	void		AutoExposure(int on);
+	void		BacklightCompensation(int on);
+	void		StartVisca();
+	void		ViscaCommand(int command, int arg_cnt = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0, int arg5 = 0);
+	void		ViscaButtonCommands(Fl_Button *b, int state);
+	void		SetupPTZWindow(int home_on_launch);
+	void		PTZ_MoveTo(int spd_x, int spd_y, int xx, int yy);
+	void		PTZ_GoToAbs(int dx, int dy);
+	void		SavePTZPositions();
+	void		LoadPTZPositions();
+	void		PTZ_RememberPosition(int num);
+	void		PTZ_UnRememberPosition(int num);
+	int			PTZ_RecallPosition(int speed, int num);
+	void		GoToPTZPosition(int speed, int in_pan, int in_tilt, int in_zoom, int in_focus);
+	void		UpdatePresets();
+	void		TourPresets();
+	void		MoveALittle(int key);
+	void		ZoomALittle(int key);
+	void		FocusALittle(int key);
+	void		ZoomAndFocusALittle(int key);
+	void		CenterMessage(char *msg, int timer);
+	int			ptz_joystick_handler();
+	void		SendToNetwork();
+	void		DrawAudioGraph(Camera *cam);
+	void		GrabDesktop(int retain_size = 0);
+	void		GrabCameraArea();
+	void		Done();
+	void		RunPulse(int mode);
+	void		RemoveCamera(Camera *cam);
+	void		ShowButtonPanel(int xx);
+	void		RecordingFullStop();
+	void		ShowLog();
+	void		LoadCamera(char *filename);
+	void		LoadCamera(int fd);
+	Camera		*FindCameraByPath(char *path);
+	void		RestoreFromStored(StoredMyWin *in_win);
+	void		Cleanup();
+	void		Save(char *filename);
+	void		Load(char *filename);
+	int			ImageWindowButtonHit(int xx, int yy);
+	void		AddLastMuxed(char *filename);
+	void		FrameForMuxer(Camera *cam, Mat in_mat);
+	void		DeleteImmediate();
+	int			HandleKeyboard(int event, Camera *cam);
+	void		ToggleRecord(Camera *cam);
+	void		ToggleRecord(int camera_index);
+	int			DoDeleteImmediate();
+	int			TogglePTZJoystick();
+	int			IncreasePTZLittleSpeed();
+	int			DecreasePTZLittleSpeed();
+	int			CyclePTZLittleMode();
+	int			PTZHome();
+	void		CycleDownThumbgroup();
+	void		CycleUpThumbgroup();
+	int			DisplayThumbgroup(int nn);
+	int			LittleMotion(int key);
+	void		Review();
+	void		LocalZoomIn(Camera *cam);
+	void		LocalZoomOut(Camera *cam);
+	void		ToggleFrozen();
+	void		DoSnapshot();
+	void		ScaleVideoUp();
+	void		ScaleVideoDown();
+	void		ScaleVideoReset();
+	int			DisplaySplitSelection(int nn);
+	int			HandlePushForSplit();
+	int			HandlePushToSelectImmediate(Camera *cam);
+	int			HandlePushToEditImmediate(Camera *cam);
+	void		ImmediateNewlySelectedHighlight();
+	int			DoMarkInterest();
+	int			HandlePushForPTZ(Camera *cam);
+	int			HandleReleaseForImmediate(Camera *cam);
+	int			HandleRelease(Camera *cam);
+	int			HandleReleaseForPTZ(Camera *cam);
+	int			HandleMove(Camera *cam);
+	int			HandleImmediateDrag(Camera *cam);
+	int			HandlePTZDrag();
+	int			HandleDrag(Camera *cam);
+	int			HandleMousewheelPTZ(Camera *cam);
+	int			HandleMousewheel(Camera *cam);
+	int			HandleMousewheelResizeCapture(Camera *cam);
+	void		ResetCommandKeys();
+	void		ReadCommandKeyDefinitions(char *filename);
+	int			CheckCommandTitle(char *str);
+	void		SaveCommandKeyDefinitions(char *filename);
+	char		*CommandKeyName(int nn);
+	void		FrameImage(Camera *cam, Mat& in_mat, Mat& out_mat, double force_aspect_x, double force_aspect_y);
+	double		CalcButtonSize(int y_pos, int& y_inc, int req_w, int req_h);
+	void		AddEmbeddedWindow(EmbedAppWindow *embed);
+	void		CalcEmbeddedWindowPosition(int use_w, int use_h, int& x_pos, int& y_pos);
+	void		ReadInExternalPrograms();
+	void		DisplayOutput(Camera *cam, Mat in_mat, Camera *alt_cam);
+	void		DrawEmbeddedApps();
+	void		DrawPIPsAfter();
+	void		DrawPTZZoomer(int use_image_sx, int use_image_sy);
+	int			ScanForDuplicateCameras(char *in_path);
+	int			PopulateCameraCaps();
+	void		ClearCameraCaps();
+	void		ShowPTZ(Camera *cam, int xx, int yy);
+	void		ShowAudio(int xx, int yy);
+	void		ShowVideoThumbs(int xx, int yy);
+	void		CompressAudioThumbnailList();
+	int			CountActiveMics();
+	void		BuildMainMenu();
+	void		BuildEditOutputWindow();
+	void		BuildSelectOutputWindow();
+	void		LoadOutputPathList(char *filename);
+	void		SaveOutputPathList(char *filename);
+	void		SetUseOutputPath(int index, char *buf);
+	int			PushToSelectColors(Camera *cam);
 	FilterDialog	*MakeFilterDialog(char *name);
 	void			UpdateThumbButtons();
 	void			Display(int cam_index);
@@ -2741,8 +2917,16 @@ public:
 	void			TagRecognized(Camera *cam, char *label, double confidence);
 	void			ClearMuxerArray();
 	int				CountRecordingCameras();
+	void			Scheduled();
+	void			UpdatePTZButtons();
+	int				AutoFocusStatus();
+	int				AutoExposureStatus();
+	int				DigitalZoomStatus();
+	int				BacklightStatus();
+	int				LockedCameraStatus();
+	int				CalcMenuHeight(MyGroup *in_grp);
 
-	Fl_Group	*resize_grp;
+	MyGroup	*resize_grp;
 	int			current_source;
 	int			displayed_source;
 	int			alt_displayed_source;
@@ -2780,6 +2964,13 @@ public:
 	int			use_mousewheel;
 	int			resize_capture;
 	int			direct_recording;
+	int			hour;
+	int			minute;
+	int			second;
+	int			year;
+	int			month;
+	int			day;
+	int			weekday;
 	int			muxing;
 	int			no_scan;
 	int			no_audio_scan;
@@ -2885,13 +3076,6 @@ public:
 	Shape			**shape;
 	int				shape_cnt;
 
-	Fl_Button	*object_name_button[1024];
-	Fl_Button	*object_clear_button;
-	Fl_Button	*object_all_button;
-	Fl_Button	*object_done_button;
-	Fl_Button	*object_next_button;
-	Fl_Button	*object_prev_button;
-	Fl_Box		*object_box;
 	int			object_page;
 	long int	dumped_frames;
 	long int	dumped_limit;
@@ -2908,6 +3092,7 @@ public:
 	MenuButton	*hide_video_button;
 	MenuButton	*load_setup_button;
 	MenuButton	*save_setup_button;
+	MenuButton	*override_button;
 	MenuButton	*motion_button;
 	MenuButton	*object_button;
 	MenuButton	*follow_button;
@@ -2917,7 +3102,6 @@ public:
 	MenuButton	*dump_button;
 	MenuButton	*encode_button;
 	MenuButton	*jpeg_streaming_button;
-	MenuButton	*main_detail_button;
 	MenuButton	*show_debug_button;
 	MenuButton	*show_motion_debug_button;
 	MenuButton	*review_button;
@@ -2936,12 +3120,14 @@ public:
 	MenuButton	*open_standalone_button;
 	MenuButton	*new_source_button;
 	MenuButton	*edit_source_button;
-	MenuButton	*set_output_button;
+	MenuButton	*edit_output_button;
 	MenuButton	*select_output_button;
 	MenuButton	*alias_button;
 	MenuButton	*flip_horizontal_button;
 	MenuButton	*flip_vertical_button;
-	MenuButton	*settings_button;
+	MenuButton	*ptz_lock_window_button;
+	MenuButton	*video_settings_button;
+	MenuButton	*camera_settings_button;
 	MenuButton	*snapshot_settings_button;
 	MenuButton	*keyboard_settings_button;
 	MenuButton	*gui_settings_button;
@@ -2993,7 +3179,7 @@ public:
 	Fl_Button		*ptz_camera_preset_page_forward_button;
 	int			ptz_preset_page;
 	Fl_Pack		*audio_thumbnail_pack[3];
-	Fl_Group	*audio_thumbnail_group;
+	MyGroup	*audio_thumbnail_group;
 
 	Fl_Hor_Fill_Slider	*ptz_speed_slider;
 	Fl_Light_Button		*ptz_lock_to_camera_button;
@@ -3011,11 +3197,12 @@ public:
 	PTZ_Window			*ptz_window;
 
 	int							start_thumbgroup;
-	Fl_Group					*video_thumbnail_group;
+	MyGroup					*video_thumbnail_group;
 	ThumbGroup					*thumbnail[128];
 	PulseAudioButton			*audio_thumbnail[128];
 	int							audio_thumbnail_cnt;
-	SettingWindow				*settings_window;
+	VideoSettingsWindow			*video_settings_window;
+	CameraSettingsWindow		*camera_settings_window;
 	SnapshotSettingWindow		*snapshot_settings_window;
 	GUI_SettingsWindow			*gui_settings_window;
 	EmbedAppSettings			*embed_app_settings;
@@ -3025,7 +3212,7 @@ public:
 	FilterPluginsWindow			*filter_plugins_window;
 	FilterPluginsWindow			*audio_filter_plugins_window;
 	ImmediateDrawingWindow		*immediate_drawing_window;
-	SetOutputWindow				*set_output_window;
+	EditOutputWindow			*edit_output_window;
 	SelectOutputWindow			*select_output_window;
 	TriggerWindow				*trigger_window;
 	NewSourceWindow				*new_source_window;
@@ -3035,10 +3222,10 @@ public:
 	time_t						start_time;
 	int							encoding;
 	int							extracting;
-	int							stream;
-	DetailWin					*detail;
 	ReviewWin					*review;
 	MuxPreviewWindow			*review_muxed;
+	PTZ_LockWindow				*ptz_lock_window;
+	ObjectMenu					*object_menu;
 
 	int		force_center_x;
 	int		force_center_y;
@@ -3054,7 +3241,6 @@ public:
 	int		ready_to_average;
 	int		all_frames;
 	int		zoom_boxing;
-	time_t	detect_time;
 	int		timestamp;
 	char	timestamp_format[4096];
 	int		timestamp_rr;
@@ -3070,6 +3256,9 @@ public:
 	int		timestamp_position_y;
 	int		frame_scaling;
 	int		crop_scaling;
+	int		crop_output;
+	int		crop_output_x;
+	int		crop_output_y;
 	int		scale_gui;
 	int		resizing_detail;
 	int		grid_sz;
@@ -3088,7 +3277,6 @@ public:
 	int		dragging;
 	int		motion_debug;
 	int		split;
-	int		showing_new_source_window;
 	int		showing_alias_window;
 	int		encoding_frame_cnt;
 	int		frozen;
@@ -3118,7 +3306,7 @@ public:
 	int					ptz_remember_camera[NUMBER_OF_CAMERAS];
 	int					ptz_mode;
 	char				*ptz_device_path[NUMBER_OF_INTERFACES];
-	char				*ptz_lock_alias[NUMBER_OF_INTERFACES];
+	char				*ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS];
 	char				*ptz_alias[NUMBER_OF_INTERFACES];
 	int					ptz_device_cnt;
 	char				*ptz_current_device_path;
@@ -3143,6 +3331,7 @@ public:
 	int					visca_command;
 	int					visca_arg[10];
 	int					visca_arg_cnt;
+	pthread_mutex_t		muxer_mutex;
 	pthread_mutex_t		visca_mutex;
 	pthread_cond_t		visca_cond;
 	double				ptz_travel_x;
@@ -3180,6 +3369,9 @@ public:
 	AVCodecID		use_video_codec;
 	AVCodecID		use_audio_codec;
 	char			use_extension[256];
+	char			use_container[4096];
+	char			video_codec_name[4096];
+	char			audio_codec_name[4096];
 
 	int			render_mouse;
 	int			tutorial_mode;
@@ -3213,6 +3405,11 @@ public:
 	int			output_height;
 	double		display_width;
 	double		display_height;
+	int			frame_scaling;
+	int			crop_scaling;
+	int			crop_output;
+	int			crop_output_x;
+	int			crop_output_y;
 	int			image_sx;
 	int			image_sy;
 	int			use_mousewheel;
@@ -3250,7 +3447,6 @@ public:
 	char		mux_format[128];
 
 	int		encoding;
-	int		stream;
 	int		visible_debug;
 	int		interest_x[100];
 	int		interest_y[100];
@@ -3278,7 +3474,7 @@ public:
 	int		transition;
 	
 	char			ptz_device_path[NUMBER_OF_INTERFACES][4096];
-	char			ptz_lock_alias[NUMBER_OF_INTERFACES][4096];
+	char			ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS][4096];
 	char			ptz_alias[NUMBER_OF_INTERFACES][4096];
 	int				ptz_device_cnt;
 	int				ptz_zoom;
@@ -3306,6 +3502,9 @@ public:
 	AVCodecID		use_video_codec;
 	AVCodecID		use_audio_codec;
 	char			use_extension[256];
+	char			use_container[4096];
+	char			video_codec_name[4096];
+	char			audio_codec_name[4096];
 };
 
 class	TitleBox : public Fl_Window
@@ -3391,7 +3590,7 @@ public:
 	int					add_text;
 };
 
-class	ImageWindow : public Fl_Group
+class	ImageWindow : public MyGroup
 {
 public:
 		ImageWindow(int in_index, MyWin *win, Camera *cam, Camera *dest_camera, int xx, int yy, int ww, int hh);
@@ -3454,7 +3653,7 @@ public:
 	int			flip_vertical;
 };
 
-class	EmbedAppSettings : public Fl_Window
+class	EmbedAppSettings : public DragWindow
 {
 public:
 	EmbedAppSettings(MyWin *in_win);
@@ -3469,15 +3668,18 @@ public:
 	Fl_Button	*cancel;
 };
 
-class	FltkPluginWindow : public Fl_Window
+class	FltkPluginWindow : public DragWindow
 {
 public:
-		FltkPluginWindow(MyWin *in_win);
-		~FltkPluginWindow();
+			FltkPluginWindow(MyWin *in_win);
+			~FltkPluginWindow();
+	int		handle(int event);
 	void	Populate();
 	void	Reset();
 
 	MyWin		*my_window;
+	int			last_x;
+	int			last_y;
 
 	Fl_Light_Button	*plug_in[1024];
 
