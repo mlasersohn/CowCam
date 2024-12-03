@@ -16,7 +16,9 @@ public:
 	RenderHandler(int w, int h)
 	{
 		redraw_flag = 0;
-		raw = (unsigned char *)malloc(1920 * 1080  * 4);
+		raw = (unsigned char *)malloc(w * h  * 4);
+		use_w = w;
+		use_h = h;
 		resize(w, h);
 	}
 	~RenderHandler()
@@ -41,6 +43,11 @@ public:
 		}
 		if(raw != NULL)
 		{
+			if((w != use_w) || (h != use_h))
+			{
+				free(raw);
+				raw = (unsigned char *)malloc(w * h * 4);
+			}
 			memcpy(raw, buffer, static_cast<size_t>(w * h * 4));
 			use_w = w;
 			use_h = h;
@@ -53,6 +60,13 @@ public:
 		if((w == m_width) && (h == m_height)) 
 		{
 			return;
+		}
+		if((w != use_w) || (h != use_h))
+		{
+			free(raw);
+			raw = (unsigned char *)malloc(w * h  * 4);
+			use_w = w;
+			use_h = h;
 		}
 		m_width = w;
 		m_height = h;
@@ -113,18 +127,30 @@ public:
 	}
 	virtual void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) override
 	{
-		browser->GetMainFrame()->ExecuteJavaScript("document.body.style.overflow = 'hidden';", "", 0);
+		if(extra_css != NULL)
+		{
+			char cow[32768];
+			if(strlen(extra_css) < 32000)
+			{
+				sprintf(cow, "const styleSheetContent = ' %s '; var style = document.createElement(\"style\"); style.type = \"text/css\"; style.id = \"cowcow\"; style.appendChild(document.createTextNode(styleSheetContent)); document.head.appendChild(style)", extra_css);
+				browser->GetMainFrame()->ExecuteJavaScript(cow, "", 0);
+			}
+		}
 		m_loaded = true;
 	}
 	virtual void OnLoadingStateChange(CefRefPtr<CefBrowser> browser, bool isLoading, bool canGoBack, bool canGoForward) override
 	{
+		if(transparent_background == 0)
+		{
+			browser->GetMainFrame()->ExecuteJavaScript("document.body.style.backgroundColor='rgba(0, 0, 0, 0)';", "", 0);
+		}
 	}
 	bool OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefLoadHandler::ErrorCode errorCode, const CefString& failedUrl, CefString & errorText)
 	{
 		std::string str = errorText.ToString();
 		if(str.c_str() != NULL)
 		{
-printf("BROWSER ERROR: [%s]\n", str.c_str());
+			printf("BROWSER ERROR: [%s]\n", str.c_str());
 		}
 		m_loaded = true;
 		return true;
@@ -140,6 +166,8 @@ printf("BROWSER ERROR: [%s]\n", str.c_str());
 	{
 		return m_loaded;
 	}
+	int transparent_background = 0;
+	char	*extra_css = NULL;
 private:
 	int m_browser_id = -1;
 	std::atomic<bool> m_closing{false};
@@ -152,12 +180,12 @@ private:
 class   HTML_Win
 {
 public:
-		HTML_Win(char *in_url, char *in_html, int ww, int hh);
+		HTML_Win(char *in_url, char *in_html, int transparent_background, char *in_extra_css, int ww, int hh);
 		~HTML_Win();
 
 	void    Draw();
 	int	initialize(int argc, char **argv);
-	int	load(char *address, char *html_contents);
+	int	load(char *address, char *html_contents, int transparent_background, char *extra_css);
 	int	shutdown();
 	void	resize(int ww, int hh);
 

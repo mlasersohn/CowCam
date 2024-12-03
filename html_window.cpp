@@ -39,7 +39,7 @@ void	html_win_shutdown(Fl_Widget *w, void *v)
 	delete html;
 }
 
-HTML_Win::HTML_Win(char *in_url, char *in_html, int ww, int hh)
+HTML_Win::HTML_Win(char *in_url, char *in_html, int transparent_background, char *in_extra_css, int ww, int hh)
 {
 	width = ww;
 	height = hh;
@@ -49,7 +49,7 @@ HTML_Win::HTML_Win(char *in_url, char *in_html, int ww, int hh)
 	browser = nullptr;
 
 	raw = NULL;
-	load(in_url, in_html);
+	load(in_url, in_html, transparent_background, in_extra_css);
 }
 
 HTML_Win::~HTML_Win()
@@ -138,13 +138,15 @@ int initialize_cef(int html, int argc, char *argv[])
 }
 }
 
-int HTML_Win::load(char *url, char *html_source)
+int HTML_Win::load(char *url, char *html_source, int transparent_background, char *in_extra_css)
 {
 	renderHandler = new RenderHandler(width, height);
 	assert(renderHandler != nullptr);
 
 	browserClient = new BrowserClient(renderHandler);
 	assert(browserClient != nullptr);
+	browserClient->transparent_background = transparent_background;
+	browserClient->extra_css = in_extra_css;
 
 	CefBrowserSettings browserSettings;
 	browserSettings.windowless_frame_rate = 60;
@@ -200,9 +202,21 @@ void	delete_html(HTML_Win *html)
 }
 
 extern "C" {
-HTML_Win	*MakeHTMLWindow(char *in_url, char *in_html, int ww, int hh)
+HTML_Win	*MakeHTMLWindow(char *in_url, char *in_html, int transparent_background, char *in_extra_css, int ww, int hh)
 {
-	HTML_Win *win = new HTML_Win(in_url, in_html, ww, hh);
+	HTML_Win *win = new HTML_Win(in_url, in_html, transparent_background, in_extra_css, ww, hh);
 	return(win);
+}
+}
+
+extern "C" {
+void	get_image_cef(HTML_Win *win)
+{
+	CefDoMessageLoopWork();
+	if(win->renderHandler->redraw_flag == 1)
+	{
+		win->Draw();
+		win->renderHandler->redraw_flag = 0;
+	}
 }
 }

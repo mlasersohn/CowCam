@@ -162,6 +162,14 @@ void	VLC_Window::ResetFrames()
 int	loop;
 
 	current_frame = 0;
+	video_cnt = 0;
+	video_play_cnt = 0;
+	last_video_pts = 0;
+	audio_cnt = 0;
+	audio_play_cnt = 0;
+	audio_complete = 0;
+	last_audio_pts = 0;
+	old_pts = 0;
 	for(loop = 0;loop < BUFFER_LIMIT;loop++)
 	{
 		if(video_frame[loop] != NULL)
@@ -175,14 +183,6 @@ int	loop;
 			audio_frame[loop] = NULL;
 		}
 	}
-	video_cnt = 0;
-	video_play_cnt = 0;
-	last_video_pts = 0;
-	audio_cnt = 0;
-	audio_play_cnt = 0;
-	audio_complete = 0;
-	last_audio_pts = 0;
-	old_pts = 0;
 }
 
 void	VLC_Window::Draw()
@@ -218,7 +218,7 @@ unsigned int local_w, local_h;
 				if(video_frame[video_play_cnt] != NULL)
 				{
 					Mat src = Mat(local_h, local_w, CV_8UC3, video_frame[video_play_cnt]);
-					cvtColor(src, mat, COLOR_RGB2BGR);
+					cvtColor(src, mat, COLOR_RGB2RGBA);
 					cv::resize(mat, mat, Size(use_w, use_h));
 					free(video_frame[video_play_cnt]);
 					video_frame[video_play_cnt] = NULL;
@@ -240,7 +240,7 @@ unsigned int local_w, local_h;
 			if(video_frame[video_play_cnt] != NULL)
 			{
 				Mat src = Mat(local_h, local_w, CV_8UC3, video_frame[video_play_cnt]);
-				cvtColor(src, mat, COLOR_RGB2BGR);
+				cvtColor(src, mat, COLOR_RGB2RGBA);
 				cv::resize(mat, mat, Size(use_w, use_h));
 				free(video_frame[video_play_cnt]);
 				video_frame[video_play_cnt] = NULL;
@@ -280,6 +280,7 @@ int	loop;
 
 	while((done == 0) && (audio_tracks != 0))
 	{
+		audio_complete = 0;
 		if(simple != NULL)
 		{
 			if(audio_frame[audio_play_cnt] != NULL)
@@ -482,7 +483,7 @@ static long int start = 0;
 		Fl::remove_timeout(play_cb);
 		while(dw->audio_complete == 0)
 		{
-			usleep(10000);
+			usleep(100000);
 		}
 		dw->ResetFrames();
 		dw->done = 0;

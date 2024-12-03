@@ -69,7 +69,6 @@ void	update_extracting_message(int type);
 	av_opt_set_int(swr, "in_sample_rate", codec->sample_rate, 0);
 	av_opt_set_int(swr, "out_sample_rate", sample_rate, 0);
 	av_opt_set_sample_fmt(swr, "in_sample_fmt",  codec->sample_fmt, 0);
-	// COW COW av_opt_set_sample_fmt(swr, "out_sample_fmt", AV_SAMPLE_FMT_DBL,  0);
 	av_opt_set_sample_fmt(swr, "out_sample_fmt", AV_SAMPLE_FMT_S16,  0);
 	swr_init(swr);
 	if(!swr_is_initialized(swr)) 

@@ -30,9 +30,10 @@
 
 extern char **environ;
 
-EmbedAppWindow::EmbedAppWindow(int xx, int yy, int ww, int hh) : Fl_Window(xx, yy, ww, hh)
+EmbedAppWindow::EmbedAppWindow(Fl_Window *in_win, int xx, int yy, int ww, int hh) : Fl_Window(xx, yy, ww, hh)
 {
 	end();
+	my_window = in_win;
 	my_hwnd = None;
 	old_parent = None;
 	my_x = xx;
@@ -40,21 +41,30 @@ EmbedAppWindow::EmbedAppWindow(int xx, int yy, int ww, int hh) : Fl_Window(xx, y
 	my_w = ww;
 	my_h = hh;
 	viz = 1;
+	pid = 0;
+	child_win = None;
 }
 
-EmbedAppWindow::EmbedAppWindow(int ww, int hh) : Fl_Window(ww, hh)
+EmbedAppWindow::EmbedAppWindow(Fl_Window *in_win, int ww, int hh) : Fl_Window(ww, hh)
 {
 	end();
+	my_window = in_win;
 	my_hwnd = None;
 	old_parent = None;
 	my_x = x();
 	my_y = y();
 	my_w = ww;
 	my_h = hh;
+	pid = 0;
+	child_win = None;
 }
 
 EmbedAppWindow::~EmbedAppWindow()
 {
+	if(pid != 0)
+	{
+		kill(pid, SIGTERM);
+	}
 }
 
 void	EmbedAppWindow::draw()
@@ -74,6 +84,16 @@ void	EmbedAppWindow::my_show()
 	resize(x(), y(), my_w, my_h);
 }
 
+void	EmbedAppWindow::AdjustSize(int in_w, int in_h)
+{
+	my_w = in_w;
+	my_h = in_h;
+	int yy = (my_window->h() - my_h) - 25;
+	resize(x(), yy, my_w, my_h);
+	my_y = yy;
+	color(fl_lighter(FL_BLACK));
+}
+
 intptr_t	FindProcessWindow(intptr_t process_id)
 {
 	intptr_t r = 0;
@@ -90,7 +110,85 @@ intptr_t	FindProcessWindow(intptr_t process_id)
 	return(r);
 }
 
-void    EmbedAppWindow::EmbedApp(char *path, char **argv)
+int	EmbedAppWindow::TestWindow()
+{
+Window get_pid_window(pid_t);
+
+	int alive = 0;
+	int nn = kill(pid, 0);
+	if(nn == 0)
+	{
+		int status;
+		pid_t w = waitpid(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
+		if((w != -1) && (w != 0))
+		{
+			if(WIFEXITED(status))
+			{
+				printf("exited, status=%d\n", WEXITSTATUS(status));
+				alive = -1;
+			} 
+			else if(WIFSIGNALED(status)) 
+			{
+				printf("killed by signal %d\n", WTERMSIG(status));
+				int nn = WTERMSIG(status);
+				if((nn == SIGHUP)
+				|| (nn == SIGINT)
+				|| (nn == SIGQUIT)
+				|| (nn == SIGILL)
+				|| (nn == SIGTRAP)
+				|| (nn == SIGABRT)
+				|| (nn == SIGIOT)
+				|| (nn == SIGBUS)
+				|| (nn == SIGFPE)
+				|| (nn == SIGKILL)
+				|| (nn == SIGUSR1)
+				|| (nn == SIGSEGV)
+				|| (nn == SIGUSR2)
+				|| (nn == SIGPIPE)
+				|| (nn == SIGALRM)
+				|| (nn == SIGTERM)
+				|| (nn == SIGSTKFLT)
+				|| (nn == SIGXCPU)
+				|| (nn == SIGXFSZ)
+				|| (nn == SIGVTALRM)
+				|| (nn == SIGPROF)
+				|| (nn == SIGIO)
+				|| (nn == SIGPOLL)
+				|| (nn == SIGPWR)
+				|| (nn == SIGSYS))
+				{
+					alive = -2;
+				}
+			}
+		}
+		if(alive == 0)
+		{
+			Window win = child_win;
+			if(win != None)
+			{
+				Window root = None;
+				int dx = 0;
+				int dy = 0;
+				unsigned int dw = 0;
+				unsigned int dh = 0;
+				unsigned int border = 0;
+				unsigned int depth = 0;
+				XGetGeometry(fl_display, win, &root, &dx, &dy, &dw, &dh, &border, &depth);
+				if((dw > 0) && (dh > 0))
+				{
+					alive = 1;
+				}
+			}
+		}
+		else
+		{
+			alive = 0;
+		}
+	}
+	return(alive);
+}
+
+int	EmbedAppWindow::EmbedApp(char *path, char **argv, int& fw, int &fh)
 {
 XKeyEvent createKeyEvent(Window &, bool, int, int);
 void SendKey (Display *, KeySym, KeySym);  
@@ -100,8 +198,9 @@ Window	get_parent(Window win);
 Window	get_root(Window win);
 int loop;
 
-	pid_t pid;
-	int status = posix_spawn(&pid, path, NULL, NULL, argv, environ);
+	int succeed = 0;
+	strcpy(title, "Title");
+	int status = posix_spawnp(&pid, path, NULL, NULL, argv, environ);
 	if(pid != 0)
 	{
 		if(argv[0] != NULL)
@@ -136,17 +235,15 @@ int loop;
 				XGetGeometry(fl_display, win, &root, &dx, &dy, &dw, &dh, &border, &depth);
 				old_w = dw;
 				old_h = dh;
-				XWithdrawWindow(fl_display, win, 0);
-				XFlush(fl_display);
-				XSync(fl_display, False);
-				XResizeWindow(fl_display, win, w() * scale, h() * scale);
-				XFlush(fl_display);
-				XSync(fl_display, False);
+
+				fw = dw;
+				fh = dh;
 
 				XSetWindowAttributes attributes;
 				attributes.override_redirect = True;
 				XChangeWindowAttributes(fl_display, win, CWOverrideRedirect, &attributes);
 
+				AdjustSize(dw / scale, dh / scale);
 				XFlush(fl_display);
 				XSync(fl_display, False);
 
@@ -160,7 +257,10 @@ int loop;
 					usleep(50000);
 					if(get_parent(win) == fl_xid(this))
 					{
+						if(scale == 0.0) scale = 1.0;
 						done = 1;
+						succeed = 1;
+						child_win = win;
 					}
 					cnt++;
 				}
@@ -176,6 +276,7 @@ int loop;
 			}
 		}
 	}
+	return(succeed);
 }
 
 void    EmbedAppWindow::RestoreOldParent()
@@ -509,37 +610,37 @@ void MouseButton(int button)
     }
     else if(button == 1)
     {
-	b = 1;
+		b = 1;
     	XTestFakeButtonEvent(fl_display, b, True,  CurrentTime);  
     }
     else if(button == 2)
     {
-	b = 2;
+		b = 2;
     	XTestFakeButtonEvent(fl_display, b, True,  CurrentTime);  
     }
     else if(button == 3)
     {
-	b = 3;
+		b = 3;
     	XTestFakeButtonEvent(fl_display, b, True,  CurrentTime);  
     }
     if(button == -1)
     {
-	b = 1;
+		b = 1;
         XTestFakeButtonEvent(fl_display, b, False, CurrentTime);  
     }
     else if(button == -2)
     {
-	b = 2;
+		b = 2;
         XTestFakeButtonEvent(fl_display, b, False, CurrentTime);  
     }
     else if(button == -3)
     {
-	b = 3;
+		b = 3;
         XTestFakeButtonEvent(fl_display, b, False, CurrentTime);  
     }
 }
 
-/* COW COW
+/* COW REMOVED
 void	tick_cb(void *v)
 {
 char	*arg[3];

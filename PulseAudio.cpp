@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <math.h>
 
 #define DR_MP3_IMPLEMENTATION
 #include "dr_mp3.h"
@@ -24,6 +25,241 @@ long int	precise_time(void);
 
 extern "C" {
 int cow_simple_read(pa_simple *p, void *data, size_t length, int *rerror);
+}
+
+SAMPLE	*extract_audio_file_samples(char *filename, int& number_of_samples, int &channels, int& sample_rate)
+{
+void	*p_mp3 = NULL;
+void	*p_wav = NULL;
+void	*p_flac = NULL;
+int		loop;
+
+	SAMPLE *total_buf = NULL;
+	int sample_cnt = 0;
+	int failure = 1;
+	static drmp3 mp3;
+	static drwav wav;
+	const char *extension = fl_filename_ext((const char *)filename);
+	if(extension != NULL)
+	{
+		if(strcmp(extension, ".mp3") == 0)
+		{
+			if(drmp3_init_file(&mp3, filename, NULL))
+			{
+				p_mp3 = &mp3;
+				failure = 0;
+			}
+		}
+		else if(strcmp(extension, ".wav") == 0)
+		{
+			if(drwav_init_file(&wav, filename, NULL))
+			{
+				p_wav = &wav;
+				failure = 0;
+			}
+		}
+		else if(strcmp(extension, ".flac") == 0)
+		{
+			p_flac = drflac_open_file(filename, NULL);
+			if(p_flac != NULL)
+			{
+				failure = 0;
+			}
+		}
+	}
+	if(failure == 0)
+	{
+		channels = 0;
+		sample_rate = 0;
+		if(p_mp3 != NULL)
+		{
+			drmp3_seek_to_pcm_frame((drmp3 *)p_mp3, 0);
+			drmp3 *mp3 = (drmp3 *)p_mp3;
+			channels = mp3->channels;
+			sample_rate = mp3->sampleRate;
+		}
+		else if(p_wav != NULL)
+		{
+			drwav_seek_to_pcm_frame((drwav *)p_wav, 0);
+			drwav *wav = (drwav *)p_wav;
+			channels = wav->channels;
+			sample_rate = wav->sampleRate;
+		}
+		else if(p_flac != NULL)
+		{
+			drflac_seek_to_pcm_frame((drflac *)p_flac, 0);
+			drflac *flac = (drflac *)p_flac;
+			channels = flac->channels;
+			sample_rate = flac->sampleRate;
+		}
+		if(channels != 0)
+		{
+			SAMPLE buf[number_of_samples * channels * sizeof(SAMPLE)];
+			int total_sz = 0;
+			int done = 0;
+			while(done == 0)
+			{
+				int n = 0;
+				if(p_mp3 != NULL)
+				{
+					drmp3_uint64 framesRead = drmp3_read_pcm_frames_s16((drmp3 *)p_mp3, number_of_samples, buf);
+					n = (int)framesRead;
+				}
+				else if(p_wav != NULL)
+				{
+					drwav_uint64 framesRead = drwav_read_pcm_frames_s16((drwav *)p_wav, number_of_samples, buf);
+					n = (int)framesRead;
+				}
+				else if(p_flac != NULL)
+				{
+					drflac_uint64 framesRead = drflac_read_pcm_frames_s16((drflac *)p_flac, number_of_samples, buf);
+					n = (int)framesRead;
+				}
+				if(n > 0)
+				{
+					int sz_in_bytes = n * channels * sizeof(SAMPLE);
+					total_sz += sz_in_bytes;
+					total_buf = (SAMPLE *)realloc(total_buf, total_sz);
+					if(total_buf != NULL)
+					{
+						memcpy(&total_buf[sample_cnt * channels], buf, sz_in_bytes);
+						sample_cnt += n;
+					}
+				}
+				else
+				{
+					done = 1;
+				}
+			}
+			if(p_mp3 != NULL)
+			{
+    			drmp3_uninit((drmp3 *)p_mp3);
+			}
+			else if(p_wav != NULL)
+			{
+    			drwav_uninit((drwav *)p_wav);
+			}
+		}
+	}
+	number_of_samples = sample_cnt;
+	return(total_buf);
+}
+
+/* COW REMOVED
+float	PulseAudo::LowPassFilter(float frequency, float input)
+{
+static float	prevOutput = 0.0;
+static float	prevInput = 0.0;
+
+	float x = tanf(M_PI * frequency / (double)sample_rate);
+	float output = x * input + x * prevInput - (x - 1) * prevOutput;
+
+	output /= (x + 1);
+	prevOutput = output;
+	prevInput = input;
+	
+	return output;
+}
+*/
+
+void	PulseAudio::Compress(double in_low_cutoff, double in_high_cutoff, double percent)
+{
+int	loop;
+static int max = -1000000;
+
+	int high_cutoff = (int)(32768.0 * in_high_cutoff);
+	int low_cutoff = (int)(32768.0 * in_low_cutoff);
+	int cnt = buffer_size / sizeof(SAMPLE);
+	for(loop = 0;loop < cnt;loop++)
+	{
+		int nn = buffer[loop];
+		int sign = 1;
+		if(nn < 0) sign = -1;
+		int ann = abs(nn);
+		if(ann > high_cutoff)
+		{
+			int p = (ann / 100) * percent;
+			ann -= p;
+		}
+		else if(ann < low_cutoff)
+		{
+			int p = (ann / 100) * percent;
+			ann += p;
+		}
+		if(sign == -1)
+		{
+			ann *= -1;
+		}
+		buffer[loop] = ann;
+	}
+}
+
+void	PulseAudio::Reverb(double delay, double decay)
+{
+static SAMPLE	reverb[88200];
+static int		record_cnt = 0;
+static int		play_cnt = 0;
+static int		init = 0;
+int				loop;
+
+	int cnt = buffer_size / sizeof(SAMPLE);
+	int delay_cnt = (int)((double)sample_rate * delay);
+	for(loop = 0;loop < cnt;loop++)
+	{
+		if((record_cnt > delay_cnt) || (init == 1))
+		{
+			if(init == 1)
+			{
+				int nn = buffer[loop];
+				nn += (int)((double)reverb[play_cnt] * (1.0 - decay));
+				nn /= (2.0 - decay);
+				buffer[loop] = nn;
+				
+				play_cnt++;
+				if(play_cnt >= 88200)
+				{
+					play_cnt = 0;
+				}
+			}
+			else
+			{
+				init = 1;
+			}
+		}
+		reverb[record_cnt] = buffer[loop];
+		record_cnt++;
+		if(record_cnt >= 88200)
+		{
+			record_cnt = 0;
+		}
+	}
+}
+
+void	PulseAudio::Filter(int band, float frequency)
+{
+float Kf = frequency;
+float FilterAcc = 0.0;  // Filter Accumulator
+float LowPassOut = 0.0;  // LowPass Output
+float HighPassOut = 0.0;  // HighPass Output
+int	loop;
+
+	SAMPLE *in = buffer;
+	int cnt = buffer_size / sizeof(SAMPLE);
+	for(loop = 0;loop < cnt;loop++)
+	{
+		float FilterIn = (float)in[loop];
+		FilterAcc = FilterAcc + (Kf * (FilterIn - FilterAcc));
+		LowPassOut = FilterAcc;
+		HighPassOut = FilterIn - FilterAcc;
+		if(band == LOW_PASS_BAND)
+		{
+			in[loop] = (SAMPLE)LowPassOut;
+		}
+		else if(band == HIGH_PASS_BAND)
+		{
+			in[loop] = (SAMPLE)HighPassOut;
+		}
+	}
 }
 
 int	pulse_record(int *flag)
@@ -79,13 +315,9 @@ int	loop;
 	if(n > 0)
 	{
 		SAMPLE *cp = (SAMPLE *)buffer;
-		for(loop = 0;loop < number_of_samples * channels;loop += channels)
+		for(loop = 0;loop < number_of_samples * channels;loop++)
 		{
 			int nn = (int)buf[loop];
-			if(channels == 2)
-			{
-				nn = ((int)buf[loop] + (int)buf[loop + 1]) / 2;
-			}
 			*cp = (SAMPLE)nn;
 			cp++;
 		}
@@ -130,6 +362,27 @@ int	loop;
 					if(pa->is_microphone)
 					{
 						n = cow_simple_read(pa->stream, pa->buffer, pa->buffer_size, &error);
+						int nn = pa->buffer_size / sizeof(SAMPLE);
+						if(pa->low_pass == 1)
+						{
+							pa->Filter(LOW_PASS_BAND, pa->low_pass_frequency);
+						}
+						if(pa->high_pass == 1)
+						{
+							pa->Filter(HIGH_PASS_BAND, pa->high_pass_frequency);
+						}
+						if(pa->reverb == 1)
+						{
+							pa->Reverb(pa->reverb_delay, pa->reverb_decay);
+						}
+						if(pa->compress == 1)
+						{
+							pa->Compress(pa->compress_low, pa->compress_high, pa->compress_percent);
+						}
+					}
+					else if(pa->ndi_capture == 1)
+					{
+						n = pa->buffer_size;
 					}
 					else
 					{
@@ -165,7 +418,7 @@ int	loop;
 					}
 					if(pa->sample_ready_cb != NULL)
 					{
-						pa->sample_ready_cb(pa);
+						pa->sample_ready_cb(NULL, pa);
 					}
 				}
 				else
@@ -240,7 +493,7 @@ int	pulse_play(int *flag)
 		{
 			if(pa->sample_ready_cb != NULL)
 			{
-				pa->sample_ready_cb(pa);
+				pa->sample_ready_cb(NULL, pa);
 			}
 			if(pa->buffer != NULL)
 			{
@@ -272,13 +525,16 @@ long int precise_time(void);
 	p_mp3 = NULL;
 	p_wav = NULL;
 	p_flac = NULL;
-	static const pa_sample_spec pulse_ss =
+	ch = in_number_of_channels;
+	if(ch < 1) ch = 1;
+
+	static pa_sample_spec pulse_ss =
 	{
 		.format = PA_SAMPLE_S16LE,
 		.rate = (uint32_t)in_hz,
 		.channels = (uint8_t)in_number_of_channels
 	};
-    	static const pa_buffer_attr ba = 
+   	static const pa_buffer_attr ba = 
 	{
 		.maxlength = 8192,
         	.tlength = 1,
@@ -286,6 +542,9 @@ long int precise_time(void);
         	.minreq = 1,
         	.fragsize = 2048
 	};
+	pulse_ss.rate = (uint32_t)in_hz;
+	pulse_ss.channels = (uint8_t)in_number_of_channels;
+
 	device = NULL;
 	if(in_device != NULL)
 	{
@@ -296,14 +555,31 @@ long int precise_time(void);
 	mute = 0;
 	stop = 0;
 	mode = in_mode;
-	volume = 0.0;
+	volume1 = 0.0;
+	volume2 = 0.0;
 	average = 0.0;
+	sample_rate = in_hz;
 	number_of_channels = in_number_of_channels;
 	number_of_samples = in_number_of_samples;
 	buffer_size = number_of_samples * sizeof(SAMPLE) * number_of_channels;
 	buffer = default_buffer;
 	is_microphone = 0;
 	repeating = 0;
+	high_pass = 0;
+	high_pass_frequency = 0.0;
+	low_pass = 0;
+	low_pass_frequency = 0.0;
+	reverb = 0;
+	reverb_delay = 0.25;
+	reverb_decay = 0.25;
+	compress = 0;
+	compress_high = 0.75;
+	compress_low = 0.25;
+	compress_percent = 0.1;
+	ndi_capture = 0;
+	strcpy(ndi_path, "");
+	stream = NULL;
+	mini_pause = 0;
 	if(buffer != NULL)
 	{
 		memset(buffer, 0, buffer_size);
@@ -327,33 +603,46 @@ long int precise_time(void);
 		else if(device != NULL)
 		{
 			failure = 1;
-			static drmp3 mp3;
-			static drwav wav;
-			const char *extension = fl_filename_ext((const char *)device);
-			if(extension != NULL)
+			if(strncmp(device, "ndi://", strlen("ndi://")) == 0)
 			{
-				if(strcmp(extension, ".mp3") == 0)
+				char *cp = device + strlen("ndi://");
+				if(strlen(cp) > 0)
 				{
-					if(drmp3_init_file(&mp3, device, NULL)) 
-					{
-						p_mp3 = &mp3;
-						failure = 0;
-					}
+					strcpy(ndi_path, cp);
+					ndi_capture = 1;
+					failure = 0;
 				}
-				else if(strcmp(extension, ".wav") == 0)
+			}
+			else
+			{
+				static drmp3 mp3;
+				static drwav wav;
+				const char *extension = fl_filename_ext((const char *)device);
+				if(extension != NULL)
 				{
-					if(drwav_init_file(&wav, device, NULL)) 
+					if(strcmp(extension, ".mp3") == 0)
 					{
-						p_wav = &wav;
-						failure = 0;
+						if(drmp3_init_file(&mp3, device, NULL)) 
+						{
+							p_mp3 = &mp3;
+							failure = 0;
+						}
 					}
-				}
-				else if(strcmp(extension, ".flac") == 0)
-				{
-					p_flac = drflac_open_file(device, NULL);
-					if(p_flac != NULL)
+					else if(strcmp(extension, ".wav") == 0)
 					{
-						failure = 0;
+						if(drwav_init_file(&wav, device, NULL)) 
+						{
+							p_wav = &wav;
+							failure = 0;
+						}
+					}
+					else if(strcmp(extension, ".flac") == 0)
+					{
+						p_flac = drflac_open_file(device, NULL);
+						if(p_flac != NULL)
+						{
+							failure = 0;
+						}
 					}
 				}
 			}
@@ -395,6 +684,8 @@ PulseAudio::~PulseAudio()
 	usleep(1000);
 	if(stream != NULL)
 	{
+		int err = 0;
+		pa_simple_flush(stream, &err);
 		pa_simple_free(stream);
 		stream = NULL;
 	}
@@ -428,21 +719,27 @@ void	PulseAudio::Record()
 	int err = 0;
 	if(is_microphone == 1)
 	{
-		pa_simple_flush(stream, &err);
+		if(stream != NULL)
+		{
+			pa_simple_flush(stream, &err);
+		}
 	}
 	else
 	{
-		if(p_mp3 != NULL)
+		if(ndi_capture != 1)
 		{
-			drmp3_seek_to_pcm_frame((drmp3 *)p_mp3, 0);
-		}
-		else if(p_wav != NULL)
-		{
-			drwav_seek_to_pcm_frame((drwav *)p_wav, 0);
-		}
-		else if(p_flac != NULL)
-		{
-			drflac_seek_to_pcm_frame((drflac *)p_flac, 0);
+			if(p_mp3 != NULL)
+			{
+				drmp3_seek_to_pcm_frame((drmp3 *)p_mp3, 0);
+			}
+			else if(p_wav != NULL)
+			{
+				drwav_seek_to_pcm_frame((drwav *)p_wav, 0);
+			}
+			else if(p_flac != NULL)
+			{
+				drflac_seek_to_pcm_frame((drflac *)p_flac, 0);
+			}
 		}
 	}
 }
@@ -462,7 +759,10 @@ void	PulseAudio::Resume()
 	int err = 0;
 	if(is_microphone == 1)
 	{
-		pa_simple_flush(stream, &err);
+		if(stream != NULL)
+		{
+			pa_simple_flush(stream, &err);
+		}
 	}
 }
 
@@ -470,6 +770,11 @@ void	PulseAudio::Stop()
 {
 	pause = 1;
 	stop = 1;
+	int err = 0;
+	if(stream != NULL)
+	{
+		pa_simple_flush(stream, &err);
+	}
 }
 
 int	done = 0;
@@ -479,15 +784,14 @@ void grab_sample(PulseAudio *pa)
 	write(STDOUT_FILENO, pa->buffer, pa->buffer_size);
 }
 
-void use_sample(PulseAudio *pa)
+void use_sample(void *in_win, PulseAudio *pa)
 {
 }
 
-
-int	play_audio_process(char *device)
+int	play_audio_process(char *device, int channels, int rate)
 {
 	SAMPLE *buffer = (SAMPLE *)malloc(1024 * sizeof(SAMPLE));
-	PulseAudio *pa_play = new PulseAudio("alsa_output.pci-0000_00_1f.3.hdmi-stereo", MODE_PLAY, 4096, 44100, 2, buffer);
+	PulseAudio *pa_play = new PulseAudio("alsa_output.pci-0000_00_1f.3.hdmi-stereo", MODE_PLAY, 4096, rate, channels, buffer);
 	pa_play->sample_ready_cb = use_sample;
 	pa_play->Play();
 	while(done == 0)

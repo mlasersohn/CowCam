@@ -2,6 +2,8 @@
 #include "stdlib.h"
 #include "unistd.h"
 #include "fcntl.h"
+#include <sys/stat.h>
+
 
 extern "C"
 {
@@ -9,6 +11,13 @@ extern "C"
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 }
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/video.hpp>
 
 void SaveFrameToFile(int fd, AVFrame *pFrame, int width, int height, long int timecode)
 {
@@ -40,19 +49,51 @@ int  y;
 	}
 }
 
-int	extract_video(int *progress, char *in_filename, char *out_filename)
+void SaveFrameAsPNG(char *filename_preface, AVFrame *pFrame, int width, int height, int iFrame)
 {
-void	update_extracting_message(int type);
+char	filename[4096];
+int		x, y;
+
+	if(access(filename_preface, 0) != 0)
+	{
+		int success = mkdir(filename_preface, 0777);
+	}
+	cv::Mat out;
+	cv::Mat local_mat(height, width, CV_8UC3, cv::Scalar(0, 0, 0));
+	unsigned char *ptr = local_mat.ptr();
+	for(y = 0;y < height;y++) 
+	{
+		unsigned char *data = (unsigned char *)(pFrame->data[0] + (y * pFrame->linesize[0]));
+		for(x = 0;x < (width * 3);x++)
+		{
+			*ptr++ = *data++;
+		}
+	}
+	sprintf(filename, "%s/frame_%06d.png", filename_preface, iFrame);
+	cv::cvtColor(local_mat, out, cv::COLOR_RGB2BGR);
+	cv::imwrite(filename, out);
+}
+
+int	extract_video(int *progress, char *in_filename, char *out_filename, int in_sequence)
+{
+void			update_extracting_message(int type);
 AVFormatContext *pFormatCtx = NULL;
-int		 i, videoStream;
+int				 i, videoStream;
 AVCodecContext	*pCodecCtx = NULL;
-AVCodec		*pCodec = NULL;
-AVFrame		*pFrame = NULL;
-AVFrame		*pFrameRGB = NULL;
-AVPacket	packet;
-int		frameFinished;
-int		numBytes;
-uint8_t		*buffer = NULL;
+AVCodec			*pCodec = NULL;
+AVFrame			*pFrame = NULL;
+AVFrame			*pFrameRGB = NULL;
+AVPacket		packet;
+int				frameFinished;
+int				numBytes;
+uint8_t			*buffer = NULL;
+
+int cow1 = 0;
+int cow2 = 0;
+int cow3 = 0;
+int cow4 = 0;
+int cow5 = 0;
+int cow6 = 0;
 
 	int rr = 0;
 	AVDictionary *optionsDict = NULL;
@@ -113,29 +154,73 @@ uint8_t		*buffer = NULL;
 							// Assign appropriate parts of buffer to image planes in pFrameRGB.  Note that pFrameRGB is an AVFrame, but AVFrame is a superset of AVPicture
 							avpicture_fill((AVPicture *)pFrameRGB, buffer, AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
 
-							int fd = open(out_filename, O_CREAT | O_TRUNC | O_WRONLY, 0777);
-							int depth = 3;
-							int ufps = (int)videoFPS;
-							write(fd, &pCodecCtx->width, sizeof(int));
-							write(fd, &pCodecCtx->height, sizeof(int));
-							write(fd, &depth, sizeof(int));
-							write(fd, &ufps, sizeof(int));
+							if(in_sequence == 0)
+							{
+								int fd = open(out_filename, O_CREAT | O_TRUNC | O_WRONLY, 0777);
+								int depth = 3;
+								int ufps = (int)videoFPS;
+								write(fd, &pCodecCtx->width, sizeof(int));
+								write(fd, &pCodecCtx->height, sizeof(int));
+								write(fd, &depth, sizeof(int));
+								write(fd, &ufps, sizeof(int));
 
-							if(fd > -1)
+								if(fd > -1)
+								{
+									i = 0;
+									long int timecode = 0;
+									while(av_read_frame(pFormatCtx, &packet) >= 0)
+									{
+cow1++;
+										// Is this a packet from the video stream?
+										if(packet.stream_index == videoStream)
+										{
+cow2++;
+											// Decode video frame
+											avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
+									
+											// Did we get a video frame?
+											if(frameFinished)
+											{
+cow3++;
+												// Convert the image from its native format to RGB
+												sws_scale(sws_ctx, 
+													(uint8_t const * const *)pFrame->data,
+													pFrame->linesize,
+													0,
+													pCodecCtx->height,
+													pFrameRGB->data,
+													pFrameRGB->linesize);
+												// Save the frame to disk
+												timecode = (long int)(((double)packet.pts * (double)((double)units.num / (double)units.den)) * 1000.0);
+												SaveFrameToFile(fd, pFrameRGB, pCodecCtx->width, pCodecCtx->height, timecode);
+												i++;
+												update_extracting_message(1);
+											}
+										}
+										// Free the packet that was allocated by av_read_frame
+										av_free_packet(&packet);
+									}
+									close(fd);
+								}
+							}
+							else
 							{
 								i = 0;
 								long int timecode = 0;
 								while(av_read_frame(pFormatCtx, &packet) >= 0)
 								{
+cow4++;
 									// Is this a packet from the video stream?
 									if(packet.stream_index == videoStream)
 									{
+cow5++;
 										// Decode video frame
 										avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
-								
+									
 										// Did we get a video frame?
 										if(frameFinished)
 										{
+cow6++;
 											// Convert the image from its native format to RGB
 											sws_scale(sws_ctx, 
 												(uint8_t const * const *)pFrame->data,
@@ -146,7 +231,7 @@ uint8_t		*buffer = NULL;
 												pFrameRGB->linesize);
 											// Save the frame to disk
 											timecode = (long int)(((double)packet.pts * (double)((double)units.num / (double)units.den)) * 1000.0);
-											SaveFrameToFile(fd, pFrameRGB, pCodecCtx->width, pCodecCtx->height, timecode);
+											SaveFrameAsPNG(out_filename, pFrameRGB, pCodecCtx->width, pCodecCtx->height, i);
 											i++;
 											update_extracting_message(1);
 										}
@@ -154,7 +239,6 @@ uint8_t		*buffer = NULL;
 									// Free the packet that was allocated by av_read_frame
 									av_free_packet(&packet);
 								}
-								close(fd);
 							}
 							av_free(buffer);av_free(pFrameRGB); // Free the RGB image
 							av_free(pFrame); // Free the YUV frame

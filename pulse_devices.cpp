@@ -10,7 +10,14 @@ typedef struct pa_devicelist {
 	char name[512];
 	uint32_t index;
 	char description[256];
+	int channels;
+	int	rate;
 } pa_devicelist_t;
+
+typedef struct pa_default {
+	char default_sink[4096];
+	char default_source[4096];
+} pa_default_t;
 
 void pa_state_cb(pa_context *c, void *userdata);
 void pa_sinklist_cb(pa_context *c, const pa_sink_info *l, int eol, void *userdata);
@@ -59,14 +66,18 @@ void pa_sinklist_cb(pa_context *c, const pa_sink_info *l, int eol, void *userdat
 	// contents into it and we're done.  If we receive more than 16 devices,
 	// they're going to get dropped.  You could make this dynamically allocate
 	// space for the device list, but this is a simple example.
-	for (ctr = 0; ctr < 16; ctr++) {
-	if (! pa_devicelist[ctr].initialized) {
-		strncpy(pa_devicelist[ctr].name, l->name, 511);
-		strncpy(pa_devicelist[ctr].description, l->description, 255);
-		pa_devicelist[ctr].index = l->index;
-		pa_devicelist[ctr].initialized = 1;
-		break;
-	}
+	for (ctr = 0; ctr < 16; ctr++) 
+	{
+		if(!pa_devicelist[ctr].initialized) 
+		{
+			strncpy(pa_devicelist[ctr].name, l->name, 511);
+			strncpy(pa_devicelist[ctr].description, l->description, 255);
+			pa_devicelist[ctr].index = l->index;
+			pa_devicelist[ctr].channels = l->sample_spec.channels;
+			pa_devicelist[ctr].rate = l->sample_spec.rate;
+			pa_devicelist[ctr].initialized = 1;
+			break;
+		}
 	}
 }
 
@@ -79,18 +90,37 @@ void pa_sourcelist_cb(pa_context *c, const pa_source_info *l, int eol, void *use
 	return;
 	}
 
-	for (ctr = 0; ctr < 16; ctr++) {
-	if (! pa_devicelist[ctr].initialized) {
-		strncpy(pa_devicelist[ctr].name, l->name, 511);
-		strncpy(pa_devicelist[ctr].description, l->description, 255);
-		pa_devicelist[ctr].index = l->index;
-		pa_devicelist[ctr].initialized = 1;
-		break;
-	}
+	for (ctr = 0; ctr < 16; ctr++) 
+	{
+		if(!pa_devicelist[ctr].initialized) 
+		{
+			strncpy(pa_devicelist[ctr].name, l->name, 511);
+			strncpy(pa_devicelist[ctr].description, l->description, 255);
+			pa_devicelist[ctr].index = l->index;
+			pa_devicelist[ctr].channels = l->sample_spec.channels;
+			pa_devicelist[ctr].rate = l->sample_spec.rate;
+			pa_devicelist[ctr].initialized = 1;
+			break;
+		}
 	}
 }
 
-int pa_get_devicelist(pa_devicelist_t *input, pa_devicelist_t *output) {
+static void set_server_info( pa_context *context, const pa_server_info *info, void *userdata)
+{
+  pa_default_t *def = (pa_default *)userdata;
+  pa_sample_spec ss;
+
+  if(!info) 
+  {
+    return;
+  }
+  ss = info->sample_spec;
+  strcpy(def->default_sink, info->default_sink_name);
+  strcpy(def->default_source, info->default_source_name);
+}
+
+
+int pa_get_devicelist(pa_default_t *def, pa_devicelist_t *input, pa_devicelist_t *output) {
 	// Define our pulse audio loop and connection variables
 	pa_mainloop *pa_ml;
 	pa_mainloop_api *pa_mlapi;
@@ -143,49 +173,51 @@ int pa_get_devicelist(pa_devicelist_t *input, pa_devicelist_t *output) {
 	switch (state) {
 		// State 0: we haven't done anything yet
 		case 0:
+			pa_op = pa_context_get_server_info(pa_ctx, set_server_info, def); // server info
+			state++;
+		break;
+		case 1:
 		// This sends an operation to the server.  pa_sinklist_info is
 		// our callback function and a pointer to our devicelist will
 		// be passed to the callback The operation ID is stored in the
 		// pa_op variable
-		pa_op = pa_context_get_sink_info_list(pa_ctx,
-			pa_sinklist_cb,
-			output
-			);
-
-		// Update state for next iteration through the loop
-		state++;
+			if (pa_operation_get_state(pa_op) == PA_OPERATION_DONE) {
+				pa_operation_unref(pa_op);
+				pa_op = pa_context_get_sink_info_list(pa_ctx, pa_sinklist_cb, output);
+		
+				// Update state for next iteration through the loop
+				state++;
+			}
 		break;
-		case 1:
+		case 2:
 		// Now we wait for our operation to complete.  When it's
 		// complete our pa_output_devicelist is filled out, and we move
 		// along to the next state
-		if (pa_operation_get_state(pa_op) == PA_OPERATION_DONE) {
-			pa_operation_unref(pa_op);
+			if (pa_operation_get_state(pa_op) == PA_OPERATION_DONE) {
+				pa_operation_unref(pa_op);
+	
+				// Now we perform another operation to get the source
+				// (input device) list just like before.  This time we pass
+				// a pointer to our input structure
+				pa_op = pa_context_get_source_info_list(pa_ctx, pa_sourcelist_cb, input);
 
-			// Now we perform another operation to get the source
-			// (input device) list just like before.  This time we pass
-			// a pointer to our input structure
-			pa_op = pa_context_get_source_info_list(pa_ctx,
-				pa_sourcelist_cb,
-				input
-				);
-			// Update the state so we know what to do next
-			state++;
-		}
+				// Update the state so we know what to do next
+				state++;
+			}
 		break;
-		case 2:
-		if (pa_operation_get_state(pa_op) == PA_OPERATION_DONE) {
-			// Now we're done, clean up and disconnect and return
-			pa_operation_unref(pa_op);
-			pa_context_disconnect(pa_ctx);
-			pa_context_unref(pa_ctx);
-			pa_mainloop_free(pa_ml);
-			return 0;
-		}
+		case 3:
+			if (pa_operation_get_state(pa_op) == PA_OPERATION_DONE) {
+				// Now we're done, clean up and disconnect and return
+				pa_operation_unref(pa_op);
+				pa_context_disconnect(pa_ctx);
+				pa_context_unref(pa_ctx);
+				pa_mainloop_free(pa_ml);
+				return 0;
+			}
 		break;
 		default:
-		// We should never see this state
-		fprintf(stderr, "in state %d\n", state);
+			// We should never see this state
+			fprintf(stderr, "in state %d\n", state);
 		return -1;
 	}
 	// Iterate the main loop and go again.  The second argument is whether
@@ -195,7 +227,7 @@ int pa_get_devicelist(pa_devicelist_t *input, pa_devicelist_t *output) {
 	}
 }
 
-int	pulse_list_devices(int in_or_out, int limit, char **list, char **description, int *index)
+int	pulse_list_devices(char *default_source, char *default_sink, int in_or_out, int limit, char **list, char **description, int *index, int *channels, int *rate)
 {
 int ctr;
 
@@ -215,19 +247,23 @@ int ctr;
 	};
 	int cnt = 0;
 
+	pa_default_t def;
+
 	// This is where we'll store the input device list
 	pa_devicelist_t pa_input_devicelist[limit];
 
 	// This is where we'll store the output device list
 	pa_devicelist_t pa_output_devicelist[limit];
 
-	if(pa_get_devicelist(pa_input_devicelist, pa_output_devicelist) < 0) 
+	if(pa_get_devicelist(&def, pa_input_devicelist, pa_output_devicelist) < 0) 
 	{
 		fprintf(stderr, "Error: failed to get device list\n");
 		return(0);
 	}
 	if(list != NULL)
 	{
+		strcpy(default_source, def.default_source);
+		strcpy(default_sink, def.default_sink);
 		if(in_or_out == 0)
 		{
 			for(ctr = 0;ctr < limit;ctr++) 
@@ -239,6 +275,8 @@ int ctr;
 				list[cnt] = strdup(pa_output_devicelist[ctr].name);
 				description[cnt] = strdup(pa_output_devicelist[ctr].description);
 				index[cnt] = pa_output_devicelist[ctr].index;
+				channels[cnt] = pa_output_devicelist[ctr].channels;
+				rate[cnt] = pa_output_devicelist[ctr].rate;
 				cnt++;
 			}
 		}
@@ -259,6 +297,8 @@ int ctr;
 						list[cnt] = strdup(pa_input_devicelist[ctr].name);
 						description[cnt] = strdup(pa_input_devicelist[ctr].description);
 						index[cnt] = pa_input_devicelist[ctr].index;
+						channels[cnt] = pa_input_devicelist[ctr].channels;
+						rate[cnt] = pa_input_devicelist[ctr].rate;
 						cnt++;
 					}
 					pa_simple_free(stream);

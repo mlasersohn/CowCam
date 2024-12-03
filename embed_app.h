@@ -1,16 +1,21 @@
 class   EmbedAppWindow : public Fl_Window
 {
 public:
-		EmbedAppWindow(int, int, int, int);
-		EmbedAppWindow(int, int);
+		EmbedAppWindow(Fl_Window *, int, int, int, int);
+		EmbedAppWindow(Fl_Window *, int, int);
 		~EmbedAppWindow();
 	void	draw();
 	void	my_hide();
 	void	my_show();
 
-	void    EmbedApp(char *, char **argv);
+	int		EmbedApp(char *, char **argv, int& fw, int& fh);
 	void	RestoreOldParent();
+	void	AdjustSize(int in_w, int in_h);
+	int		TestWindow();
 
+	Fl_Window	*my_window;
+	Window		child_win;
+	pid_t pid;
 	int	old_w;
 	int	old_h;
 	Window	my_hwnd;

@@ -57,6 +57,8 @@
 #define	PTZ_LITTLE_FOCUS_MODE			2
 #define	PTZ_LITTLE_ZOOM_AND_FOCUS_MODE		3
 
+#define	PTZ_WINDOW_LIMIT	6
+
 #define	V4L_STOP	0
 #define	V4L_RIGHT	1
 #define	V4L_LEFT	2
@@ -102,20 +104,28 @@
 #define	CAMERA_TYPE_EDGE_DETECT			15
 #define	CAMERA_TYPE_CHROMAKEY			16
 #define	CAMERA_TYPE_OSG					17
+#define	CAMERA_TYPE_TIMER				18
+#define	CAMERA_TYPE_CLOCK				19
+#define	CAMERA_TYPE_DYNAMIC_TEXT		20
+#define	CAMERA_TYPE_ALERT				21
+#define	CAMERA_TYPE_SLIDESHOW			22
+#define	CAMERA_TYPE_VECTOR				23
+#define	CAMERA_TYPE_SPLIT				24
 
 #define	MODE_MOVING		1
 #define	MODE_RESIZING	2
 #define	MODE_TRIMMING	3
 #define	MODE_ROTATING	4
 
-#define	TRANSITION_NONE			0
-#define	TRANSITION_BLEND		1
-#define	TRANSITION_L2R_WIPE		2
-#define	TRANSITION_R2L_WIPE		3
-#define	TRANSITION_T2B_WIPE		4
-#define	TRANSITION_B2T_WIPE		5
+#define	TRANSITION_NONE				0
+#define	TRANSITION_BLEND			1
+#define	TRANSITION_L2R_WIPE			2
+#define	TRANSITION_R2L_WIPE			3
+#define	TRANSITION_T2B_WIPE			4
+#define	TRANSITION_B2T_WIPE			5
 #define	TRANSITION_FADE_FROM_BLACK	6
 #define	TRANSITION_FADE_TO_BLACK	7
+#define	TRANSITION_PLUGIN			8
 
 #define	DRAWING_MODE_NONE					0
 #define	DRAWING_MODE_GENERAL				1
@@ -150,47 +160,47 @@
 
 #define	POINT_TYPE_CURVE		1
 
-#define	KEY_TOGGLE_RECORD			0
-#define	KEY_DELETE_IMMEDIATE			1
-#define	KEY_TOGGLE_PTZ_JOYSTICK			2
+#define	KEY_TOGGLE_RECORD					0
+#define	KEY_DELETE_IMMEDIATE				1
+#define	KEY_TOGGLE_PTZ_JOYSTICK				2
 #define	KEY_INCREASE_PTZ_LITTLE_SPEED		3
 #define	KEY_DECREASE_PTZ_LITTLE_SPEED		4
-#define	KEY_CYCLE_PTZ_LITTLE_MODE		5
-#define	KEY_PTZ_HOME				6
-#define	KEY_CYCLE_DOWN_THUMBGROUP		7
-#define	KEY_CYCLE_UP_THUMBGROUP			8
-#define	KEY_DISPLAY_THUMBGROUP_0		9
-#define	KEY_DISPLAY_THUMBGROUP_1		10
-#define	KEY_DISPLAY_THUMBGROUP_2		11
-#define	KEY_DISPLAY_THUMBGROUP_3		12
-#define	KEY_DISPLAY_THUMBGROUP_4		13
-#define	KEY_DISPLAY_THUMBGROUP_5		14
-#define	KEY_DISPLAY_THUMBGROUP_6		15
-#define	KEY_DISPLAY_THUMBGROUP_7		16
-#define	KEY_DISPLAY_THUMBGROUP_8		17
-#define	KEY_DISPLAY_THUMBGROUP_9		18
-#define	KEY_LITTLE_MOTION_1			19
-#define	KEY_LITTLE_MOTION_2			20
-#define	KEY_LITTLE_MOTION_3			21
-#define	KEY_LITTLE_MOTION_4			22
-#define	KEY_LITTLE_MOTION_5			23
-#define	KEY_LITTLE_MOTION_6			24
-#define	KEY_LITTLE_MOTION_7			25
-#define	KEY_LITTLE_MOTION_8			26
-#define	KEY_LITTLE_MOTION_OTHER_1		27
-#define	KEY_LITTLE_MOTION_OTHER_2		28
-#define	KEY_LITTLE_MOTION_OTHER_3		29
-#define	KEY_LITTLE_MOTION_OTHER_4		30
-#define	KEY_LITTLE_MOTION_OTHER_5		31
-#define	KEY_LITTLE_MOTION_OTHER_6		32
-#define	KEY_LITTLE_MOTION_OTHER_7		33
-#define	KEY_LITTLE_MOTION_OTHER_8		34
-#define	KEY_REVIEW				35
-#define	KEY_LOCAL_ZOOM_IN			36
-#define	KEY_LOCAL_ZOOM_OUT			37
-#define	KEY_TOGGLE_FROZEN			38
-#define	KEY_SNAPSHOT				39
-#define	KEY_SNAPSHOT_OTHER			40
+#define	KEY_CYCLE_PTZ_LITTLE_MODE			5
+#define	KEY_PTZ_HOME						6
+#define	KEY_CYCLE_DOWN_THUMBGROUP			7
+#define	KEY_CYCLE_UP_THUMBGROUP				8
+#define	KEY_DISPLAY_THUMBGROUP_0			9
+#define	KEY_DISPLAY_THUMBGROUP_1			10
+#define	KEY_DISPLAY_THUMBGROUP_2			11
+#define	KEY_DISPLAY_THUMBGROUP_3			12
+#define	KEY_DISPLAY_THUMBGROUP_4			13
+#define	KEY_DISPLAY_THUMBGROUP_5			14
+#define	KEY_DISPLAY_THUMBGROUP_6			15
+#define	KEY_DISPLAY_THUMBGROUP_7			16
+#define	KEY_DISPLAY_THUMBGROUP_8			17
+#define	KEY_DISPLAY_THUMBGROUP_9			18
+#define	KEY_LITTLE_MOTION_1					19
+#define	KEY_LITTLE_MOTION_2					20
+#define	KEY_LITTLE_MOTION_3					21
+#define	KEY_LITTLE_MOTION_4					22
+#define	KEY_LITTLE_MOTION_5					23
+#define	KEY_LITTLE_MOTION_6					24
+#define	KEY_LITTLE_MOTION_7					25
+#define	KEY_LITTLE_MOTION_8					26
+#define	KEY_LITTLE_MOTION_OTHER_1			27
+#define	KEY_LITTLE_MOTION_OTHER_2			28
+#define	KEY_LITTLE_MOTION_OTHER_3			29
+#define	KEY_LITTLE_MOTION_OTHER_4			30
+#define	KEY_LITTLE_MOTION_OTHER_5			31
+#define	KEY_LITTLE_MOTION_OTHER_6			32
+#define	KEY_LITTLE_MOTION_OTHER_7			33
+#define	KEY_LITTLE_MOTION_OTHER_8			34
+#define	KEY_REVIEW							35
+#define	KEY_LOCAL_ZOOM_IN					36
+#define	KEY_LOCAL_ZOOM_OUT					37
+#define	KEY_TOGGLE_FROZEN					38
+#define	KEY_SNAPSHOT						39
+#define	KEY_SNAPSHOT_OTHER					40
 #define	KEY_DISPLAY_SPLIT_SELECTION_0		41
 #define	KEY_DISPLAY_SPLIT_SELECTION_1		42
 #define	KEY_DISPLAY_SPLIT_SELECTION_2		43
@@ -201,9 +211,15 @@
 #define	KEY_DISPLAY_SPLIT_SELECTION_7		48
 #define	KEY_DISPLAY_SPLIT_SELECTION_8		49
 #define	KEY_DISPLAY_SPLIT_SELECTION_9		50
-#define	KEY_SCALE_VIDEO_UP			51
-#define	KEY_SCALE_VIDEO_DOWN			52
-#define	KEY_SCALE_VIDEO_RESET			53
+#define	KEY_SCALE_VIDEO_UP					51
+#define	KEY_SCALE_VIDEO_DOWN				52
+#define	KEY_SCALE_VIDEO_RESET				53
+#define	KEY_DISPLAY_ELEMENTS				54
+#define	KEY_EXIT							55
+#define	KEY_OPEN_MENU						56
+#define	KEY_OPEN_CAMERAS					57
+#define	KEY_OPEN_AUDIO						58
+#define	KEY_OPEN_PTZ						59
 
 #define	FILTER_TYPE_VIDEO			0
 #define	FILTER_TYPE_AUDIO			1
@@ -213,6 +229,13 @@
 #define	LIGHT_GRAY	65
 #define	DARK_RED	66
 #define	DARK_BLUE	67
+#define	BLACK		68
+#define	WHITE		69
+#define	YELLOW		70
+#define	GRAY		71
+#define	RED			72
+#define	BLUE		73
+#define	CYAN		74
 
 #define	FONT_STYLE_BOLD		1
 #define	FONT_STYLE_ITALIC	2
@@ -299,6 +322,97 @@
 #define	BUTTON_ON_DETECT_OBJECT			5
 #define	BUTTON_ON_TRIGGER_CAMERA		6
 
+#define	FOLLOW_MODE_NONE						0
+#define	FOLLOW_MODE_DISPLAY_RECORDING_CAMERA	1
+#define	FOLLOW_MODE_RECORDING_FOLLOWS_DISPLAY	2
+
+#define	SIDE_RIGHT	0
+#define	SIDE_LEFT	1
+
+#define	SCROLL_MODE			0
+#define	RUBBERBAND_MODE		1
+#define	REPOSITION_MODE		2
+#define	GUIDELINE_MODE		3
+
+#define	HORIZONTAL_GUIDELINE	0
+#define	VERTICAL_GUIDELINE		1
+
+#define	SHADE_MODE_DARK		0
+#define	SHADE_MODE_LIGHT	1
+
+#define	OPEN_RIGHT			1
+#define	OPEN_LEFT			2
+#define	OPEN_UP				3
+#define	OPEN_DOWN			4
+
+#define	OPENING				0
+#define	CLOSING				1
+
+#define	KEY_DOWN			0
+#define	KEY_UP				1
+#define	KEY_RIGHT			2
+#define	KEY_LEFT			3
+
+#define	AUDIO_DISPLAY_NONE		0
+#define	AUDIO_DISPLAY_FREQUENCY	1
+#define	AUDIO_DISPLAY_AMPLITUDE	2
+
+#define	STREAMING_FILE			0
+#define	STREAMING_NET			1
+#define	STREAMING_NDI			2
+
+#define	SEND_NDI_VIDEO			0
+#define	SEND_NDI_AUDIO			1
+
+#define	NDI_SEND_VIDEO_FORMAT_BGRX	0
+#define	NDI_SEND_VIDEO_FORMAT_RGBX	1
+#define	NDI_SEND_VIDEO_FORMAT_I420	2
+#define	NDI_SEND_VIDEO_FORMAT_UYVA	3
+#define	NDI_SEND_VIDEO_FORMAT_UYVY	4
+
+#define	VISCA_INTERFACE_TYPE_SERIAL	0
+#define	VISCA_INTERFACE_TYPE_TCP	1
+#define	VISCA_INTERFACE_TYPE_UDP	2
+#define	VISCA_INTERFACE_TYPE_NDI	3
+
+#define	PAN_TILT_STYLE_BUTTONS		0
+#define	PAN_TILT_STYLE_JOYSTICK		1
+
+#define	ALERT_DISPLAY_MODE_ALL			0
+#define	ALERT_DISPLAY_MODE_FIRST_LINE	1
+#define	ALERT_DISPLAY_MODE_LAST_LINE	2
+
+#define	ALERT_TRIGGER_MODE_CHANGED		0
+#define	ALERT_TRIGGER_MODE_CREATED		1
+
+#define	SORT_NAME_ASCENDING				0
+#define	SORT_NAME_DESCENDING			1
+#define	SORT_SIZE_ASCENDING				2
+#define	SORT_SIZE_DESCENDING			3
+#define	SORT_TYPE_ASCENDING				4
+#define	SORT_TYPE_DESCENDING			5
+#define	SORT_TIMESTAMP_ASCENDING		6
+#define	SORT_TIMESTAMP_DESCENDING		7
+
+#define	FILE_SELECTOR_VIEW_STYLE_DETAILS	0
+#define	FILE_SELECTOR_VIEW_STYLE_ICONS		1
+
+#define	MY_SCROLL_LAYOUT_LIST			0
+#define	MY_SCROLL_LAYOUT_GRID			1
+
+#define	DRAG_MODE_LEFT_TOP		1
+#define	DRAG_MODE_RIGHT_TOP		2
+#define	DRAG_MODE_LEFT_BOTTOM	3
+#define	DRAG_MODE_RIGHT_BOTTOM	4
+#define	DRAG_MODE_LEFT			5
+#define	DRAG_MODE_RIGHT			6
+#define	DRAG_MODE_TOP			7
+#define	DRAG_MODE_BOTTOM		8
+
+#define	FRAME_OPERATION_PROPORTIONAL_RESIZE	0
+#define	FRAME_OPERATION_FREE_RESIZE			1
+#define	FRAME_OPERATION_CROP				2
+
 struct	NamedKeys
 {
 	char	*name;
@@ -317,7 +431,6 @@ class	StoredMyWin;
 class	ImageWindow;
 class	StoredImageWindow;
 class	PulseMicrophone;
-class	TransparentWindow;
 class	ProgressScrubber;
 class	Immediate;
 class	ImmediateDrawingWindow;
@@ -326,8 +439,103 @@ class	EmbedAppSettings;
 class	FltkPluginWindow;
 class	QuickText;
 class	PopupMenu;
+class	DragGroup;
 class	DragWindow;
 class	MyGroup;
+class	PTZ_Window;
+class	NewSourceWindow;
+class	MenuButton;
+class	FilterButton;
+class	MyMenuButton;
+class	MyInput;
+
+class	ShortcutWindow : public Fl_Window
+{
+public:
+			ShortcutWindow(Fl_Button *b, int xx, int yy, int ww, int hh);
+			~ShortcutWindow();
+
+	int		handle(int event);
+
+	Fl_Button	*button;
+};
+
+class	MyButton : public Fl_Button
+{
+public:
+			MyButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~MyButton();
+
+	int		handle(int event);
+
+	PopupMenu	*popup;
+	char		path[256];
+};
+
+class	MyToggleButton : public Fl_Toggle_Button
+{
+public:
+			MyToggleButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~MyToggleButton();
+
+	int			handle(int event);
+
+	PopupMenu	*popup;
+	char		path[256];
+};
+
+class	MyLightButton : public Fl_Light_Button
+{
+public:
+			MyLightButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~MyLightButton();
+
+	int			handle(int event);
+
+	PopupMenu	*popup;
+	char		path[256];
+};
+
+class	MyRepeatButton : public Fl_Repeat_Button
+{
+public:
+			MyRepeatButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~MyRepeatButton();
+
+	int			handle(int event);
+
+	PopupMenu	*popup;
+	char		path[256];
+};
+
+class	MyImageButton : public Fl_Button
+{
+public:
+					MyImageButton(Mat& in_mat, int xx, int yy, int ww, int hh, char *lbl = NULL);
+					~MyImageButton();
+
+	void			draw();
+
+	Mat				mat;
+};
+
+class	MyFileImageButton : public Fl_Button
+{
+public:
+					MyFileImageButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+					~MyFileImageButton();
+
+	void			draw();
+
+	Mat				mat;
+};
+
+class	MyColorChooser : public Fl_Color_Chooser
+{
+public:
+			MyColorChooser(int xx, int yy, int ww, int hh);
+			~MyColorChooser();
+};
 
 class	MyGroup : public Fl_Group
 {
@@ -345,7 +553,7 @@ public:
 	MyWin	*my_window;
 };
 
-class	DragWindow : public Fl_Window
+class	DragWindow : public Fl_Double_Window
 {
 public:
 			DragWindow(int ww, int hh);
@@ -357,6 +565,338 @@ public:
 
 	int		last_x;
 	int		last_y;
+};
+
+class	MyBox : public Fl_Box
+{
+public:
+	MyBox(int xx, int yy, int ww, int hh, char *lbl) : Fl_Box(xx, yy, ww, hh)
+	{
+		my_label = strdup(lbl);
+		Fl_Box::label(my_label);
+	}
+	MyBox(int xx, int yy, int ww, int hh) : Fl_Box(xx, yy, ww, hh) 
+	{
+		my_label = NULL;
+	}
+	~MyBox()
+	{
+		free(my_label);
+		my_label = NULL;
+	}
+	void	label(char *lbl)
+	{
+		if(my_label != NULL)
+		{
+			free(my_label);
+			my_label = NULL;
+		}
+		my_label = strdup(lbl);
+		Fl_Box::label(my_label);
+	}
+	char	*my_label;
+};
+
+class	FileInfo
+{
+public:
+					FileInfo(char *in_filename);
+					~FileInfo();
+
+		char		*filename;
+		long int	size;
+		time_t		timestamp;
+		char		*description;
+};
+
+class	MyScroll : public Fl_Scroll
+{
+public:
+				MyScroll(int in_item_width, int in_row_height, int xx, int yy, int ww, int hh);
+				~MyScroll();
+
+	int			handle(int event);
+	void		Add(Fl_Widget *);
+	void		add(Fl_Widget *);
+	void		clear();
+
+	void		SelectNext();
+	void		SelectPrev();
+	void		SelectNextRow();
+	void		SelectPrevRow();
+	void		ScrollToSelection();
+	void		DisplayAsSelected(Fl_Widget *select);
+	void		SelectFirstVisible();
+
+	Fl_Widget	*item[32768];
+	int			item_cnt;
+	Fl_Widget	*selection;
+	int			item_width;
+	int			row_height;
+	int			layout;
+};
+
+class	FileSelector : public DragWindow
+{
+public:
+					FileSelector(char *lbl, char *in_filter, char *result, int select_dir, int new_file);
+					~FileSelector();
+	int				handle(int event);
+	void			draw();
+
+	void			Update(char *path);
+	void			UpdateSort();
+	void			SortFilenames();
+	void			Preview();
+	void			*GetThumbnail(char *filename, int sz);
+
+	MyScroll		*scroll;
+	MyButton		*accept;
+	MyButton		*cancel;
+
+	char			initial_directory[4096];
+	FileInfo		*file_list[32768];
+	int				file_list_cnt;
+	char			current_path[4096];
+	char			*current_selection;
+	int				select_dir;
+	int				new_file;
+	char			*filter;
+	char			hot_filter[4096];
+	int				sort_style;
+	int				previewing;
+	int				view_style;
+
+	MyInput			*path;
+	MyButton		*desktop;
+	MyButton		*documents;
+	MyButton		*downloads;
+	MyButton		*home;
+	MyButton		*music;
+	MyButton		*pictures;
+	MyButton		*root;
+	MyButton		*videos;
+	MyButton		*initial;
+	MyButton		*up;
+	MyButton		*refresh;
+	MyButton		*view_type;
+	MyButton		*preview;
+	MyButton		*sort_name;
+	MyButton		*sort_size;
+	MyButton		*sort_type;
+	MyButton		*sort_timestamp;
+};
+
+class	RelabelWindow : public DragWindow
+{
+public:
+			RelabelWindow(MyWin *win, Fl_Button *b, int xx, int yy, int ww, int hh);
+			~RelabelWindow();
+
+	Fl_Input	*input;
+	Fl_Button	*button;
+};
+
+class	DragGroup : public Fl_Group
+{
+public:
+			DragGroup(int xx, int yy, int ww, int hh);
+			DragGroup(int xx, int yy, int ww, int hh, char *lbl);
+			~DragGroup();
+	int		handle(int event);
+
+	int		last_x;
+	int		last_y;
+};
+
+class	ResizeFrame : public DragGroup
+{
+public:
+			ResizeFrame(int xx, int yy, int ww, int hh);
+			~ResizeFrame();
+
+	void	draw();
+	int		handle(int event);
+	void	resize(double xx, double yy, double ww, double hh);
+	void	Use(Fl_Widget *in_use);
+
+	Fl_Widget	*use;
+	int		mode;
+	int		drag_start_x;
+	int		drag_start_y;
+	double	dx;
+	double	dy;
+	double	dw;
+	double	dh;
+	double	proportion;
+	int		operation;
+};
+
+class	SlidingElement : public DragGroup
+{
+public:
+			SlidingElement(MyWin *in_win, int in_direction, int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~SlidingElement();
+	void	show();
+	void	hide();
+	int		handle(int event);
+	void	TrueHide();
+	void	TrueShow();
+
+	MyWin	*my_window;
+	int		direction;
+	int		in_motion;
+	int		animated;
+	int		behavior;
+	int		final;
+};
+
+class AudioInfo
+{
+public:
+			AudioInfo(MyWin *in_win, int nn, int in_rate, int in_channels, SAMPLE *in_wav)
+			{
+				my_window = in_win;
+				wav = in_wav;
+				number_of_samples = nn;
+				sample_rate = in_rate;
+				channels = in_channels;
+			};
+			~AudioInfo()
+			{
+				if(wav != NULL) free(wav);
+			};
+	MyWin	*my_window;
+	SAMPLE	*wav;
+	int		number_of_samples;
+	int		sample_rate;
+	int		channels;
+};
+
+class	SourceMultiline : public Fl_Multiline_Input
+{
+public:
+				SourceMultiline(int xx, int yy, int ww, int hh, char *lbl);
+				~SourceMultiline();
+	int			handle(int event);
+};
+
+class	Guideline
+{
+public:
+			Guideline(MyWin *in_win, int in_type, int in_pos);
+			~Guideline();
+
+	MyWin	*my_window;
+	int		type;
+	int		pos;
+	int		hide;
+};
+
+class	PlayAudioButton : public MyButton
+{
+public:
+			PlayAudioButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
+			~PlayAudioButton();
+	void	Play();
+
+	MyWin	*my_window;
+	char	*path;
+};
+
+class	AudioLibraryList : public DragWindow
+{
+public:
+					AudioLibraryList(MyWin *my_win);
+					~AudioLibraryList();
+	void			show();
+
+	MyWin			*my_window;
+
+	Fl_Scroll		*scroll;
+	MyButton		*close_button;
+};
+
+class	AudioLibrary : public DragWindow
+{
+public:
+					AudioLibrary(MyWin *my_win);
+					~AudioLibrary();
+	void			show();
+		
+	void			Load(char *filename);
+	void			Save(char *filename);
+	void			Add(char *in_name, char *in_path);
+
+	Fl_Input		*name_input[1024];
+	MyButton		*path_button[1024];
+	MyButton		*play_button[1024];
+
+	char			*filename[1024];
+	char			*name[1024];
+	int				number_of_entries;
+
+	MyWin			*my_window;
+	Fl_Scroll		*scroll;
+	MyButton		*add_button;
+	MyButton		*save_button;
+	MyButton		*cancel_button;
+};
+
+class	VideoThumbnailGroup : public SlidingElement
+{
+public:
+			VideoThumbnailGroup(MyWin *in_win, int xx, int yy, int ww, int hh);
+			~VideoThumbnailGroup();
+	int		handle(int event);
+
+	void		CycleDownThumbgroup();
+	void		CycleUpThumbgroup();
+	void		ScrollDownThumbgroup();
+	void		ScrollUpThumbgroup();
+	int			DisplayThumbgroup(int nn);
+	void		ScrollToDisplayed();
+
+	MyWin		*my_window;
+	int			hovering;
+	int			start_thumbgroup;
+};
+
+class	MainMenu : public SlidingElement
+{
+public:
+				MainMenu(MyWin *in_win, int xx, int yy, int ww, int hh);
+				~MainMenu();
+	int			handle(int event);
+	void		draw();
+	void		show();
+	void		hide();
+
+	void		AddButton(MenuButton *in);
+	void		Advance();
+	void		Retreat();
+	void		Do();
+	void		Select(MenuButton *in);
+	void		ClearSelection();
+
+	MyWin		*my_window;
+	int			hovering;
+	MenuButton	*menu_button[1024];
+	int			menu_button_cnt;
+	int			selected;
+};
+
+class	CurrentFPSWindow : public DragGroup
+{
+public:
+			CurrentFPSWindow(MyWin *in_win, int xx, int yy, int ww, int hh);
+			~CurrentFPSWindow();
+	void	draw();
+
+	MyWin		*my_window;
+	long int	starting_time;
+	long int	running_time;
+	int			showing;
 };
 
 class	Shape : public Fl_Box
@@ -448,7 +988,7 @@ public:
 	QuickText	*quick_text;
 };
 
-class	LayerLabelButton : public Fl_Toggle_Button
+class	LayerLabelButton : public MyToggleButton
 {
 public:
 			LayerLabelButton(MyWin *in_win, int in_layer, int x, int y, int w, int h, char *lbl);
@@ -510,15 +1050,15 @@ public:
 	int					node_cnt;
 	int					widget_cnt;
 
-	Fl_Button			*go_button;
-	Fl_Button			*close_button;
+	MyButton			*go_button;
+	MyButton			*close_button;
 
 	Fl_Input			*frames[128];
 	Fl_Float_Input		*start_x_in[128];
 	Fl_Float_Input		*start_y_in[128];
 	Fl_Float_Input		*start_z_in[128];
 
-	Fl_Button			*command[128];
+	MyButton			*command[128];
 
 	Fl_Float_Input		*end_x_in[128];
 	Fl_Float_Input		*end_y_in[128];
@@ -568,12 +1108,13 @@ public:
 				PTZ_LockWindow(MyWin *in_win);
 				~PTZ_LockWindow();
 	void		draw();
+	int			handle(int event);
 	void		Populate();
 
 	MyWin		*my_window;
 
 	Fl_Scroll		*scroll;
-	MyGroup		*ptz_list;
+	MyGroup			*ptz_list;
 	ArrangeGroup	*assigned_camera_list;
 	ArrangeGroup	*unassigned_camera_list;
 };
@@ -738,17 +1279,18 @@ public:
 	void		draw();
 };
 
-class	MenuButton : public Fl_Button
+class	MenuButton : public MyButton
 {
 public:
-			MenuButton(int font_sz, int xx, int yy, int ww, int hh, char *lbl);
-			~MenuButton();
-	int		handle(int event);
-	void	draw();
-	void	show();
-	void	hide();
+				MenuButton(MainMenu *in_menu, int font_sz, int xx, int yy, int ww, int hh, char *lbl);
+				~MenuButton();
+	int			handle(int event);
+	void		draw();
+	void		show();
+	void		hide();
 
-	int		hover;
+	int			hover;
+	MainMenu	*my_menu;
 };
 
 class	ObjectMenu : public DragWindow
@@ -758,12 +1300,12 @@ public:
 
 	MyWin		*my_window;
 	int			object_page;
-	Fl_Button	*object_name_button[1024];
-	Fl_Button	*object_clear_button;
-	Fl_Button	*object_all_button;
-	Fl_Button	*object_done_button;
-	Fl_Button	*object_next_button;
-	Fl_Button	*object_prev_button;
+	MyButton	*object_name_button[1024];
+	MyButton	*object_clear_button;
+	MyButton	*object_all_button;
+	MyButton	*object_done_button;
+	MyButton	*object_next_button;
+	MyButton	*object_prev_button;
 };
 
 class	ListMenu : public Fl_Window
@@ -804,8 +1346,8 @@ public:
 	ListMenu	*video_codec;
 
 	Fl_Window	*outcome;
-	Fl_Button	*cancel;
-	Fl_Button	*accept;
+	MyButton	*cancel;
+	MyButton	*accept;
 };
 
 class	ColorSlider : public Fl_Value_Slider
@@ -859,7 +1401,7 @@ public:
 	int			*client_alpha;
 
 	Fl_Box		*sample;
-	Fl_Button	*close;
+	MyButton	*close;
 
 	int			last_x;
 	int			last_y;
@@ -934,9 +1476,9 @@ public:
 	Fl_Hor_Slider		*font_size_slider;
 	Fl_Output			*font_size_output;
 	Fl_Choice			*drawing_text_box;
-	Fl_Light_Button		*text_italic_button;
-	Fl_Light_Button		*text_bold_button;
-	Fl_Light_Button		*text_outline_button;
+	MyLightButton		*text_italic_button;
+	MyLightButton		*text_bold_button;
+	MyLightButton		*text_outline_button;
 	Fl_Multiline_Input	*text_initial_text;
 };
 
@@ -957,22 +1499,22 @@ public:
 	void	Color(int in_color);
 	void	CloseAll();
 
-	Fl_Button	*general;
-	Fl_Button	*text;
-	Fl_Button	*line;
-	Fl_Button	*rectangle;
-	Fl_Button	*ellipse;
-	Fl_Button	*image_im;
-	Fl_Button	*polygon;
-	Fl_Button	*loop;
-	Fl_Button	*freehand;
-	Fl_Button	*pixelate;
-	Fl_Button	*select_rectangle;
-	Fl_Button	*select_polygon;
-	Fl_Button	*delete_im;
-	Fl_Button	*hide_im;
-	Fl_Button	*hide_all;
-	Fl_Button	*show_all;
+	MyButton	*general;
+	MyButton	*text;
+	MyButton	*line;
+	MyButton	*rectangle;
+	MyButton	*ellipse;
+	MyButton	*image_im;
+	MyButton	*polygon;
+	MyButton	*loop;
+	MyButton	*freehand;
+	MyButton	*pixelate;
+	MyButton	*select_rectangle;
+	MyButton	*select_polygon;
+	MyButton	*delete_im;
+	MyButton	*hide_im;
+	MyButton	*hide_all;
+	MyButton	*show_all;
 	Fl_Boxtype	text_box_type;
 	Immediate	*selected_widget;
 
@@ -980,13 +1522,13 @@ public:
 		Fl_Hor_Slider		*grid_size_slider;
 		Fl_Output			*grid_size_output;
 		LayerLabelButton	*layer_select_button[8];
-		Fl_Toggle_Button	*layer_visible_button[8];
-		Fl_Button			*layer_up_button[8];
-		Fl_Button			*layer_down_button[8];
-		Fl_Button			*paste_button;
-		Fl_Button			*clear_copy_buffer_button;
-		Fl_Button			*save_button;
-		Fl_Button			*load_button;
+		MyToggleButton	*layer_visible_button[8];
+		MyButton			*layer_up_button[8];
+		MyButton			*layer_down_button[8];
+		MyButton			*paste_button;
+		MyButton			*clear_copy_buffer_button;
+		MyButton			*save_button;
+		MyButton			*load_button;
 
 	MyGroup	*text_group;
 		Fl_Box				*font_output;
@@ -1003,12 +1545,12 @@ public:
 		Fl_Hor_Slider		*font_size_slider;
 		Fl_Output			*font_size_output;
 		Fl_Choice			*drawing_text_box;
-		Fl_Toggle_Button	*text_foreground_color_button;
-		Fl_Toggle_Button	*text_background_color_button;
-		Fl_Toggle_Button	*text_outline_color_button;
-		Fl_Light_Button		*text_italic_button;
-		Fl_Light_Button		*text_bold_button;
-		Fl_Light_Button		*text_outline_button;
+		MyToggleButton	*text_foreground_color_button;
+		MyToggleButton	*text_background_color_button;
+		MyToggleButton	*text_outline_color_button;
+		MyLightButton		*text_italic_button;
+		MyLightButton		*text_bold_button;
+		MyLightButton		*text_outline_button;
 		Fl_Multiline_Input	*text_initial_text;
 
 	MyGroup	*line_group;
@@ -1023,19 +1565,19 @@ public:
 		Fl_Output		*line_alpha_output;
 		Fl_Hor_Slider	*line_size_slider;
 		Fl_Output		*line_size_output;
-		Fl_Toggle_Button	*line_style_solid_button;
-		Fl_Toggle_Button	*line_style_dash_button;
-		Fl_Toggle_Button	*line_style_dot_button;
-		Fl_Toggle_Button	*line_style_flat_button;
-		Fl_Toggle_Button	*line_style_round_button;
-		Fl_Toggle_Button	*line_style_square_button;
-		Fl_Toggle_Button	*line_style_arrow_button;
-		Fl_Toggle_Button	*line_style_erase_button;
-		Fl_Toggle_Button	*line_style_join_miter_button;
-		Fl_Toggle_Button	*line_style_join_round_button;
-		Fl_Toggle_Button	*line_style_join_bevel_button;
-		Fl_Toggle_Button	*line_type_segments_button;
-		Fl_Toggle_Button	*line_type_curves_button;
+		MyToggleButton	*line_style_solid_button;
+		MyToggleButton	*line_style_dash_button;
+		MyToggleButton	*line_style_dot_button;
+		MyToggleButton	*line_style_flat_button;
+		MyToggleButton	*line_style_round_button;
+		MyToggleButton	*line_style_square_button;
+		MyToggleButton	*line_style_arrow_button;
+		MyToggleButton	*line_style_erase_button;
+		MyToggleButton	*line_style_join_miter_button;
+		MyToggleButton	*line_style_join_round_button;
+		MyToggleButton	*line_style_join_bevel_button;
+		MyToggleButton	*line_type_segments_button;
+		MyToggleButton	*line_type_curves_button;
 
 	MyGroup	*rectangle_group;
 		RectangleSample	*rectangle_sample;
@@ -1049,14 +1591,14 @@ public:
 		Fl_Output		*rectangle_alpha_output;
 		Fl_Hor_Slider	*rectangle_size_slider;
 		Fl_Output		*rectangle_size_output;
-		Fl_Toggle_Button	*rectangle_style_solid_button;
-		Fl_Toggle_Button	*rectangle_style_dash_button;
-		Fl_Toggle_Button	*rectangle_style_dot_button;
-		Fl_Toggle_Button	*rectangle_style_join_miter_button;
-		Fl_Toggle_Button	*rectangle_style_join_round_button;
-		Fl_Toggle_Button	*rectangle_style_join_bevel_button;
-		Fl_Toggle_Button	*rectangle_filled_button;
-		Fl_Toggle_Button	*rectangle_erase_button;
+		MyToggleButton	*rectangle_style_solid_button;
+		MyToggleButton	*rectangle_style_dash_button;
+		MyToggleButton	*rectangle_style_dot_button;
+		MyToggleButton	*rectangle_style_join_miter_button;
+		MyToggleButton	*rectangle_style_join_round_button;
+		MyToggleButton	*rectangle_style_join_bevel_button;
+		MyToggleButton	*rectangle_filled_button;
+		MyToggleButton	*rectangle_erase_button;
 
 	MyGroup	*freehand_group;
 		FreehandSample	*freehand_sample;
@@ -1070,22 +1612,22 @@ public:
 		Fl_Output		*freehand_alpha_output;
 		Fl_Hor_Slider	*freehand_size_slider;
 		Fl_Output		*freehand_size_output;
-		Fl_Toggle_Button	*freehand_shape_square_button;
-		Fl_Toggle_Button	*freehand_shape_circle_button;
-		Fl_Toggle_Button	*freehand_shape_erase_square_button;
-		Fl_Toggle_Button	*freehand_shape_erase_circle_button;
-		Fl_Toggle_Button	*freehand_shape_stamp_button;
-		Fl_Button			*freehand_shape_stamp_file_button;
-		Fl_Toggle_Button	*freehand_shape_key_button;
+		MyToggleButton	*freehand_shape_square_button;
+		MyToggleButton	*freehand_shape_circle_button;
+		MyToggleButton	*freehand_shape_erase_square_button;
+		MyToggleButton	*freehand_shape_erase_circle_button;
+		MyToggleButton	*freehand_shape_stamp_button;
+		MyButton			*freehand_shape_stamp_file_button;
+		MyToggleButton	*freehand_shape_key_button;
 	MyGroup	*image_group;
 		RectangleSample		*image_sample;
-		Fl_Toggle_Button	*image_file_button;
+		MyToggleButton	*image_file_button;
 		Fl_Input			*image_file_path;
 	MyGroup	*pixelate_group;
 		Fl_Hor_Slider		*pixelate_size_slider;
 		Fl_Output			*pixelate_size_output;
-		Fl_Toggle_Button	*pixelate_pixelate_button;
-		Fl_Toggle_Button	*pixelate_blur_button;
+		MyToggleButton	*pixelate_pixelate_button;
+		MyToggleButton	*pixelate_blur_button;
 
 	MyWin		*my_window;
 	int			mode;
@@ -1142,18 +1684,18 @@ public:
 class	MyInput : public Fl_Input
 {
 public:
-			MyInput(int xx, int yy, int ww, int hh, char *lbl) : Fl_Input(xx, yy, ww, hh, lbl)
-			{
-				labelcolor(FL_YELLOW);
-				textcolor(FL_WHITE);
-				textsize(9);
-				box(FL_FRAME_BOX);
-				color(FL_BLACK);
-				cursor_color(FL_WHITE);
-			};
-			~MyInput()
-			{
-			};
+		MyInput(int xx, int yy, int ww, int hh, char *lbl) : Fl_Input(xx, yy, ww, hh, lbl)
+		{
+			labelcolor(FL_YELLOW);
+			textcolor(FL_WHITE);
+			textsize(9);
+			box(FL_FRAME_BOX);
+			color(FL_BLACK);
+			cursor_color(FL_WHITE);
+		};
+		~MyInput()
+		{
+		};
 };
 
 class	MyFloatInput : public Fl_Float_Input
@@ -1269,6 +1811,7 @@ public:
 	int		outline;
 	int		bold;
 	int		italic;
+	char	use_font[128];
 };
 
 class	ImText : public ImDefault, public Fl_Multiline_Input
@@ -1434,7 +1977,7 @@ public:
 	void	Populate();
 
 	Fl_Pack				*pack;
-	Fl_Button			*close;
+	MyButton			*close;
 
 	MyWin				*my_window;
 	int					last_x;
@@ -1455,7 +1998,7 @@ public:
 	MyWin				*my_window;
 	Fl_Scroll			*scroll;
 	Fl_Pack				*pack;
-	Fl_Light_Button		*button[128];
+	MyLightButton		*button[128];
 	Fl_Input			*name[128];
 	Fl_Input			*preset[128];
 	int					last_x;
@@ -1475,8 +2018,8 @@ public:
 
 	Fl_Box		*lbl_box;
 	Fl_Input	*value_input;
-	Fl_Button	*value_button;
-	Fl_Choice	*value_menu;
+	MyButton	*value_button;
+	MyMenuButton	*value_menu;
 };
 
 class	CommandKeySettingsWindow : public DragWindow
@@ -1487,16 +2030,16 @@ public:
 
 	void	CloseAll();
 
-	Fl_Button	*accept;
-	Fl_Button	*cancel;
-	Fl_Button	*reset;
+	MyButton	*accept;
+	MyButton	*cancel;
+	MyButton	*reset;
 
 	MyWin		*my_window;
 	CommandKeyGroup	*command_key_group[128];
 	int		command_key_cnt;
 };
 
-class	ThumbButton : public Fl_Button
+class	ThumbButton : public MyButton
 {
 public:
 		ThumbButton(MyWin *, int, int, int, int, int, char * = NULL);
@@ -1513,29 +2056,33 @@ public:
 	int		push_y;
 };
 
-class	ThumbGroup : public Fl_Double_Window
+class	ThumbGroup : public Fl_Group
 {
 public:
 			ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh);
 	void	draw();
 	int		handle(int event);
+	void	resize(int xx, int yy, int ww, int hh);
 	void	UpdateButtons(Camera *cam);
 
 	MyWin		*my_win;
 	ThumbButton	*thumb_button;
-	Fl_Button	*remove;
-	Fl_Button	*place;
-	Fl_Button	*record;
-	Fl_Button	*detect_motion;
-	Fl_Button	*detect_object;
-	Fl_Button	*instrument;
-	Fl_Button	*set_color;
-	Fl_Button	*set_text_color;
-	Fl_Button	*pause_av;
-	Fl_Button	*mute_av;
-	int		index;
+	MyButton	*alias_button;
+	Fl_Input	*alias_input;
+	MyButton	*remove;
+	MyButton	*place;
+	MyButton	*record;
+	MyButton	*detect_motion;
+	MyButton	*detect_object;
+	MyButton	*instrument;
+	MyButton	*set_color;
+	MyButton	*set_text_color;
+	MyButton	*pause_av;
+	MyButton	*mute_av;
+	int			index;
+	int			displayed;
 
-	Fl_Window		*V4L_Window;
+	Fl_Group		*V4L_Window;
 	V4L_Button		*up_left;
 	V4L_Button		*up;
 	V4L_Button		*up_right;
@@ -1548,7 +2095,7 @@ public:
 	V4L_Button		*zoom_in;
 	V4L_Button		*focus_far;
 	V4L_Button		*focus_near;
-	Fl_Toggle_Button	*autofocus;
+	MyToggleButton	*autofocus;
 };
 
 class	MuxPreviewWindow : public Fl_Double_Window
@@ -1635,7 +2182,7 @@ public:
 	void	draw();
 
 	double		initial_value;
-	Fl_Button	*reset;
+	MyButton	*reset;
 };
 
 class	TriggerWindow : public DragWindow
@@ -1652,13 +2199,13 @@ public:
 	int					last_x;
 	int					last_y;
 
-	Fl_Button			*done;
-	Fl_Button			*clear;
+	MyButton			*done;
+	MyButton			*clear;
 
-	Fl_Toggle_Button	*day[7];
+	MyToggleButton	*day[7];
 	Fl_Input			*start_time;
 	Fl_Input			*stop_time;
-	Fl_Light_Button		*trigger[7];
+	MyLightButton		*trigger[7];
 	MySlider			*darkness_slider;
 
 	ThumbButton			*thumbnail[128];
@@ -1685,14 +2232,6 @@ public:
 	int	dragging;
 };
 
-class	TransparentWindow : public Fl_Window
-{
-public:
-			TransparentWindow(Fl_Window *in_win, int xx, int yy, int ww, int hh, char *lbl = NULL);
-			~TransparentWindow();
-	void		draw();
-	Fl_Window	*primary;
-};
 
 class	GUI_SettingsWindow : public DragWindow
 {
@@ -1702,92 +2241,112 @@ public:
 
 	MyWin		*my_window;
 	
-	Fl_Light_Button *retain_commands_button;
-	Fl_Light_Button *retain_cameras_button;
-	Fl_Light_Button *retain_audio_button;
-	Fl_Light_Button *retain_ptz_button;
-	Fl_Light_Button *retain_all_button;
+	MyLightButton *hide_status_button;
+	MyLightButton *retain_commands_button;
+	MyLightButton *retain_cameras_button;
+	MyLightButton *retain_audio_button;
+	MyLightButton *retain_ptz_button;
+	MyLightButton *retain_all_button;
+	MyLightButton *animate_panels_button;
+	MyLightButton *use_tooltips_button;
+	MyLightButton *reverse_panels_button;
+	MyLightButton *transparent_interface_button;
 
+	Fl_Box		*status_color_box;
+	MyButton	*status_color_button;
 	Fl_Box		*background_color_box;
-	Fl_Button	*background_color_button;
+	MyButton	*background_color_button;
 	Fl_Box		*text_color_box;
-	Fl_Button	*text_color_button;
+	MyButton	*text_color_button;
 	Fl_Box		*highlight_color_box;
-	Fl_Button	*highlight_color_button;
+	MyButton	*highlight_color_button;
 	Fl_Box		*gray_color_box;
-	Fl_Button	*gray_color_button;
+	MyButton	*gray_color_button;
 	Fl_Box		*dark_gray_color_box;
-	Fl_Button	*dark_gray_color_button;
+	MyButton	*dark_gray_color_button;
 	Fl_Box		*red_color_box;
-	Fl_Button	*red_color_button;
+	MyButton	*red_color_button;
 	Fl_Box		*dark_red_color_box;
-	Fl_Button	*dark_red_color_button;
+	MyButton	*dark_red_color_button;
 	Fl_Box		*blue_color_box;
-	Fl_Button	*blue_color_button;
+	MyButton	*blue_color_button;
 	Fl_Box		*dark_blue_color_box;
-	Fl_Button	*dark_blue_color_button;
+	MyButton	*dark_blue_color_button;
 	Fl_Box		*cyan_color_box;
-	Fl_Button	*cyan_color_button;
+	MyButton	*cyan_color_button;
 	Fl_Hold_Browser	*font_browser;
 
 	unsigned char	background_color_r;
 	unsigned char	background_color_g;
 	unsigned char	background_color_b;
+	unsigned char	background_color_a;
 
 	unsigned char	highlight_color_r;
 	unsigned char	highlight_color_g;
 	unsigned char	highlight_color_b;
+	unsigned char	highlight_color_a;
 
 	unsigned char	text_color_r;
 	unsigned char	text_color_g;
 	unsigned char	text_color_b;
+	unsigned char	text_color_a;
 
 	unsigned char	gray_color_r;
 	unsigned char	gray_color_g;
 	unsigned char	gray_color_b;
+	unsigned char	gray_color_a;
 
 	unsigned char	dark_gray_color_r;
 	unsigned char	dark_gray_color_g;
 	unsigned char	dark_gray_color_b;
+	unsigned char	dark_gray_color_a;
 
 	unsigned char	red_color_r;
 	unsigned char	red_color_g;
 	unsigned char	red_color_b;
+	unsigned char	red_color_a;
 
 	unsigned char	dark_red_color_r;
 	unsigned char	dark_red_color_g;
 	unsigned char	dark_red_color_b;
+	unsigned char	dark_red_color_a;
 
 	unsigned char	cyan_color_r;
 	unsigned char	cyan_color_g;
 	unsigned char	cyan_color_b;
+	unsigned char	cyan_color_a;
 
 	unsigned char	blue_color_r;
 	unsigned char	blue_color_g;
 	unsigned char	blue_color_b;
+	unsigned char	blue_color_a;
 
 	unsigned char	dark_blue_color_r;
 	unsigned char	dark_blue_color_g;
 	unsigned char	dark_blue_color_b;
+	unsigned char	dark_blue_color_a;
 };
 
 class	TransitionWindow : public DragWindow
 {
 public:
-		TransitionWindow(MyWin *);
-		~TransitionWindow();
-	void	Update();
-	void	draw();
+					TransitionWindow(MyWin *);
+					~TransitionWindow();
+	void			Update();
+	void			draw();
 
-	MyWin		*my_window;
-	Fl_Button	*to_black_button;
-	Fl_Button	*blend_button;
-	Fl_Button	*none_button;
-	Fl_Button	*wipe_b2t_button;
-	Fl_Button	*wipe_l2r_button;
-	Fl_Button	*wipe_r2l_button;
-	Fl_Button	*wipe_t2b_button;
-	Fl_Box		*selection;
+	void			ClearPluginSelection();
+
+	MyWin			*my_window;
+	MyButton		*to_black_button;
+	MyButton		*blend_button;
+	MyButton		*none_button;
+	MyButton		*wipe_b2t_button;
+	MyButton		*wipe_l2r_button;
+	MyButton		*wipe_r2l_button;
+	MyButton		*wipe_t2b_button;
+	Fl_Box			*selection;
+	MyLightButton	*transition_plugin_button[128];
 };
 
 class	SelectAudioWindow : public DragWindow
@@ -1797,7 +2356,8 @@ public:
 			~SelectAudioWindow();
 	void	draw();
 
-	MyWin	*my_window;
+	MyWin					*my_window;
+	NDIlib_find_instance_t	ndi_find;
 };
 
 class	SelectCameraWindow : public DragWindow
@@ -1817,7 +2377,7 @@ public:
 		~PseudoCameraWindow();
 	void	draw();
 
-	Fl_Button	*pseudo[1024];
+	MyButton	*pseudo[1024];
 
 	MyWin		*my_window;
 };
@@ -1825,19 +2385,21 @@ public:
 class	FilterPluginsWindow : public DragWindow
 {
 public:
-				FilterPluginsWindow(MyWin *win, int in_filter_type);
-				~FilterPluginsWindow();
-	int			handle(int event);
-	void		Arrange(int col_flag = 0, int py = -1);
+					FilterPluginsWindow(MyWin *win, int in_filter_type);
+					~FilterPluginsWindow();
+	int				handle(int event);
+	void			Arrange(int col_flag = 0, int py = -1);
 
-	int			last_x;
-	int			last_y;
-	int			filter_type;
-	Fl_Pack		*available;
-	Fl_Pack		*use;
-	MyWin		*my_window;
-	Fl_Button	*my_accept;
-	Fl_Button	*my_cancel;
+	int				last_x;
+	int				last_y;
+	int				filter_type;
+
+	Fl_Pack			*available;
+	Fl_Pack			*use;
+	MyWin			*my_window;
+	MyButton		*my_accept;
+	MyButton		*my_cancel;
+	MyButton		*use_none;
 };
 
 class	FilterButton : public Fl_Box
@@ -1881,10 +2443,10 @@ public:
 	Fl_Int_Input *output_w;
 	Fl_Int_Input *output_h;
 
-	Fl_Toggle_Button 		*timestamp_default;
+	MyToggleButton 		*timestamp_default;
 	Fl_Input 				*timestamp_format;
-	Fl_Button				*timestamp_color_button;
-	Fl_Button				*timestamp_background_color_button;
+	MyButton				*timestamp_color_button;
+	MyButton				*timestamp_background_color_button;
 	Fl_Int_Input			*timestamp_font_size;
 	Fl_Int_Input			*timestamp_position_x;
 	Fl_Int_Input			*timestamp_position_y;
@@ -1894,15 +2456,18 @@ public:
 	MySlider *minimum_fps_slider;
 	MySlider *capture_interval_slider;
 
-	Fl_Light_Button	*realtime_encoding_button;
-	Fl_Light_Button	*embed_pip_button;
-	Fl_Button	*gather_codecs_button;
-	Fl_Light_Button	*record_all_button;
-	Fl_Light_Button	*frame_scaling_button;
-	Fl_Light_Button	*crop_scaling_button;
-	Fl_Light_Button	*crop_output_button;
-	Fl_Light_Button	*single_stream_button;
-	Fl_Light_Button	*create_tag_file_button;
+	MyLightButton	*realtime_encoding_button;
+	MyLightButton	*embed_pip_button;
+	MyButton	*gather_codecs_button;
+	MyLightButton	*record_all_button;
+	MyLightButton	*frame_scaling_button;
+	MyLightButton	*crop_scaling_button;
+	MyLightButton	*crop_output_button;
+	MyLightButton	*single_stream_button;
+	MyLightButton	*create_tag_file_button;
+	MyLightButton *display_recording_button;
+	MyLightButton *recording_follow_display_button;
+	MyLightButton	*html_background_transparent;
 };
 
 class	CameraSettingsWindow : public DragWindow
@@ -1918,24 +2483,29 @@ public:
 	int		last_y;
 
 	MyWin	*main_win;
-	Fl_Int_Input *display_w;
-	Fl_Int_Input *display_h;
+	Fl_Input		*cam_alias;
+	Fl_Int_Input	*display_w;
+	Fl_Int_Input	*display_h;
 
-	MySlider *contrast_slider;
-	MySlider *brightness_slider;
-	MySlider *saturation_slider;
-	MySlider *hue_slider;
-	MySlider *intensity_slider;
-	MySlider *red_intensity_slider;
-	MySlider *green_intensity_slider;
-	MySlider *blue_intensity_slider;
-	MySlider *alpha_intensity_slider;
-	MySlider *aspect_x_slider;
-	MySlider *aspect_y_slider;
-	MySlider *motion_threshold_slider;
-	MySlider *recognition_threshold_slider;
-	MySlider *recognition_interval_slider;
-	MySlider *capture_interval_slider;
+	MySlider		 *contrast_slider;
+	MySlider		 *brightness_slider;
+	MySlider		 *saturation_slider;
+	MySlider		 *hue_slider;
+	MySlider		 *intensity_slider;
+	MySlider		 *red_intensity_slider;
+	MySlider		 *green_intensity_slider;
+	MySlider		 *blue_intensity_slider;
+	MySlider		 *alpha_intensity_slider;
+	MySlider		 *aspect_x_slider;
+	MySlider		 *aspect_y_slider;
+	MySlider		 *motion_threshold_slider;
+	MySlider		 *recognition_threshold_slider;
+	MySlider		 *recognition_interval_slider;
+	MySlider 		*capture_interval_slider;
+	MySlider		 *retrieve_interval_slider;
+
+	MyToggleButton	*apply_to_all_button;
+	MyButton			*load_from;
 };
 
 class	SnapshotSettingWindow : public DragWindow
@@ -1958,10 +2528,10 @@ public:
 	MySlider		*repeat_seconds_delay_slider;
 	MySlider		*repeat_minutes_delay_slider;
 	MySlider		*scale_slider;
-	Fl_Light_Button	*snapshot_trigger_on_button;
-	Fl_Light_Button	*snapshot_trigger_on_start;
-	Fl_Light_Button	*snapshot_trigger_on_record;
-	Fl_Light_Button	*snapshot_continuous;
+	MyLightButton	*snapshot_trigger_on_button;
+	MyLightButton	*snapshot_trigger_on_start;
+	MyLightButton	*snapshot_trigger_on_record;
+	MyLightButton	*snapshot_continuous;
 };
 
 class	DetailWin : public Fl_Double_Window
@@ -1972,6 +2542,30 @@ public:
 
 	void	draw();
 	Mat	mat;
+};
+
+class	SourceSelectWindow : public DragWindow
+{
+public:
+			SourceSelectWindow(MyWin *win, int ww, int hh, char *lbl);
+			~SourceSelectWindow();
+	void	draw();
+	int		handle(int event);
+
+	void	Update();
+	void	Set(char *str);
+	
+	Fl_Scroll	*scroll;
+	Fl_Pack		*pack;
+	Fl_Int_Input	*cols;
+	Fl_Int_Input	*rows;
+
+	MyWin	*my_window;
+	int		cols_nn;
+	int		rows_nn;
+	int		cur_row;
+	int		cur_col;
+	char	*list[128];
 };
 
 class	SaveFIFO
@@ -2021,6 +2615,20 @@ public:
 	int	visible;
 };
 
+class	NDISourceListWindow : public DragWindow
+{
+public:
+							NDISourceListWindow(MyWin *in_win);
+							~NDISourceListWindow();
+	void					Update();
+
+	MyWin					*my_window;
+	MyButton				*ndi_source_button[33];
+	NDIlib_find_instance_t	ndi_find;
+	const NDIlib_source_t	*sources;
+	uint32_t				num_sources;
+};
+
 class	Camera
 {
 public:
@@ -2038,6 +2646,7 @@ public:
 	int				Record();
 	int				SetBackendFlag(char *);
 	void			V4L_Command(int command);
+	void			V4L_RepeatCommand(int command);
 	int				V4L_Test();
 	int				V4L_Test2();
 	void			V4L_Motion(int direction);
@@ -2052,6 +2661,7 @@ public:
 	void			OffsetScaleImageWindows(double factor_w, double factor_h);
 	void			RenderTextToMat(char *text, Mat *mat);
 	void			ScrollTextList(char *);
+	void			GrabSlideshow();
 	void			GrabWindow();
 	void			Save(char *filename);
 	void			Save(int fd);
@@ -2066,11 +2676,11 @@ public:
 	void			HideImmediateList();
 	void			DrawImageWindowsBefore(int current_layer, int check_only, Mat& in_mat, int& moving_element, int& someone_is_dragging);
 	void			DrawImageWindowsAfter();
+	void			HighlightImageWindows();
 	void			DrawEmbeddedPIP();
 	void			DrawImageWindowGrid(int grid_size);
 	void			DisplayAVWindow();
 	double			FocusScore(Mat use_mat);
-	void			SetFocus(int val);
 	void			SetSystemAlias();
 	void			ColorIt();
 	int				CheckRecursion(Camera *dest);
@@ -2104,6 +2714,23 @@ public:
 	int				MotionTrigger();
 	int				ObjectTrigger();
 	void			PaintRecognizedObjects();
+	void			CaptureLoop();
+	void			TransferHotMat(Mat& in_mat);
+	void			Freeze();
+	void			Defrost();
+	void			RecvNDI(Mat& in_mat);
+	void			SaveAsJSON(FILE *fp);
+	void			ActivateBoundMics();
+	void			BindMics();
+	void			UnBindMics();
+	int				TriggerAlert();
+	int				DisplayAlert();
+	void			ReadVectorFile(Mat& mat, char *filename);
+
+	int					hot;
+	Mat					hot_mat;
+	int					hot_delay;
+	int					hot_fps;
 
 	int					type;
 	char				path[4096];
@@ -2111,10 +2738,12 @@ public:
 	char				alias[4096];
 	int					capturing;
 	int					power;
+	int					failed;
 	int					record;
 	int					recording;
 	int					triggers_requested;
 	int					trigger_override;
+	int					result_trigger;
 	time_t				detect_time;
 	int					requested_x;
 	int					requested_w;
@@ -2125,10 +2754,8 @@ public:
 	int					schedule_stop;
 	int					schedule_day;
 	double				darkness_trigger;
-	int					object_detect;
-	int					follow_objects;
-	int					motion_detect;
-	int					follow_motion;
+	double				darkness_score;
+	int					motion_score;
 	int					ever_opened;
 	int					static_initialized;
 	long int			last_grab_time;
@@ -2152,6 +2779,7 @@ public:
 	int					id;
 	int					orig_width;
 	int					orig_height;
+	int					capture_effects;
 	VideoCapture		*cap;
 	XImage				*shared_image;
 	XShmSegmentInfo		shminfo;
@@ -2179,11 +2807,33 @@ public:
 	time_t				since_time;
 	time_t				elapsed;
 	time_t				old_elapsed;
+	time_t				start_timer;
+	time_t				stop_timer;
+	time_t				initial_timer;
+	int					timer_format;
+	int					military_clock;
 	DetectedObject		detected_object[10];
 	int					detected_object_cnt;
 	int					detected_object_countdown;
 	int					object_index[1024];
 	char				format_code[256];
+	char				*extra_css;
+	FILE				*slideshow_fp;
+	char				*slideshow_list[1024];
+	int					slideshow_list_cnt;
+	int					slideshow_current;
+	Mat					slideshow_mat;
+	int					split_cols;
+	int					split_rows;
+	char				*split_source[128];
+	int					split_source_cnt;
+
+	NDIlib_recv_instance_t	ndi_recv;
+	int						ndi_capture;
+
+	irc_session_t		*irc_session;
+	char				irc_buffer[1024];
+	int					irc_done;
 
 	Immediate			**immediate_list;
 	int					immediate_cnt;
@@ -2306,7 +2956,6 @@ public:
 	int					list_position;
 	int					pipe_done;
 	int					piping_text;
-	int					list_ready_for_more;
 	char				text_list[128][1024];
 
 	int					grab_portion_x;
@@ -2331,6 +2980,21 @@ public:
 
 	int					ptz_lock_interface;
 	int					ptz_lock_camera;
+	int					v4l_pending_command;
+
+	int					bound_mic_cnt;
+	char				*bound_mic[128];
+
+	char				alert_monitor_file[4096];
+	char				alert_audio_file[4096];
+	int					alert_trigger_mode;
+	int					alert_display_mode;
+	int					alert_duration;
+	int					alert_did_exist;
+	time_t				alert_end_time;
+	int					alert_permanent_trigger;
+	int					alert_opaque;
+	char				alert_old_buffer[32768];
 };
 
 class	StoredImageWindow
@@ -2372,10 +3036,7 @@ public:
 	int			schedule_stop;
 	int			schedule_day;
 	double		darkness_trigger;
-	int			object_detect;
-	int			follow_objects;
 	int			motion_detect;
-	int			follow_motion;
 	int			font_sz;
 	double		zoom;
 	int			width;
@@ -2425,6 +3086,7 @@ public:
 	int			filter_plugin_cnt;
 
 	char		filter_name[128][256];
+	double		filter_param[128][10];
 	int			filter_cnt;
 };
 
@@ -2439,7 +3101,7 @@ public:
 	int		param_tilt_max_speed;
 };
 
-class	V4L_Button : public Fl_Button
+class	V4L_Button : public MyButton
 {
 public:
 		V4L_Button(ThumbGroup *, int, int, int, int, char *);
@@ -2450,27 +3112,31 @@ public:
 	int		focusing;
 };
 
-class	PTZ_Button : public Fl_Button
+class	PTZ_Button : public MyButton
 {
 public:
-		PTZ_Button(MyWin *, int, int, int, int, char *);
-		~PTZ_Button();
-	int	handle(int);
-	MyWin	*my_window;
+				PTZ_Button(PTZ_Window *, int, int, int, int, char *);
+				~PTZ_Button();
+	int			handle(int);
+
+	PTZ_Window	*my_window;
 };
 
 class	PulseMixer
 {
 public:
-		PulseMixer(MyWin *in_win, int sz);
+		PulseMixer(MyWin *in_win, int sz, int ch);
 		~PulseMixer();
 	void	Mix(PulseMicrophone *mic);
+	void	Mix(SAMPLE *wav, double volume);
 	void	Mute();
 	void	Unmute();
 	void	Stop();
 	void	Resume();
+	void	MixSupplemental(int idx, SAMPLE *wav, int number_of_samples, int in_channels);
 
 	MyWin	*my_window;
+	pthread_mutex_t	direct_mix_mutex;
 	SAMPLE	*buffer;
 	SAMPLE	*preserve;
 	int	size;
@@ -2482,47 +3148,128 @@ public:
 	int	continued;
 	int	out_fd;
 	int	monitor;
+	int	fft_calc;
+	int	channels;
 
-	PulseAudio	*pa_monitor;
-	SAMPLE		*play_buffer;
+	PulseAudio	*pa_monitor[10];
+	SAMPLE		*play_buffer[10];
+	int			monitor_cnt;
+
+	double		*fft_in_buffer;
+	double		*fft_out_buffer;
+	fftw_plan	fft_plan;
+	int			fft_start_index;
+	int			fft_spectro_size;
+	double		fft_frequency[200];
+	int			fft_frequency_cnt;
+
+	SAMPLE		*supplemental_buffer[10];
+	int			supplemental_current_position[10];
+	int			supplemental_total_size[10];
 };
 
 class	PulseMicrophone : public PulseAudio
 {
 public:
-		PulseMicrophone(MyWin *in_win, char *device_name);
-		~PulseMicrophone();
+			PulseMicrophone(MyWin *in_win, char *device_name, int hz, int ch);
+			~PulseMicrophone();
+	void	RecvNDI(SAMPLE *audio_buffer);
+	void	Save(int fd);
+	void	SaveAsJSON(FILE *fp);
 
-	MyWin	*my_window;
-	char	name[4096];
-	void	*filter_plugin[128];
-	int		filter_plugin_cnt;
+	MyWin					*my_window;
+	char					name[4096];
+	void					*filter_plugin[128];
+	char					*filter_plugin_name[128];
+	int						filter_plugin_cnt;
+	NDIlib_recv_instance_t	ndi_recv;
+	int						in_use;
+};
+
+class	PulseAudioFilterWindow : public DragWindow
+{
+public:
+						PulseAudioFilterWindow(MyWin *in_win);
+						~PulseAudioFilterWindow();
+	void				show();
+
+	MyToggleButton	*high_pass_button;
+	MyToggleButton	*low_pass_button;
+	MyToggleButton	*reverb_button;
+	MyToggleButton	*compress_button;
+	MySlider			*high_pass_slider;
+	MySlider			*low_pass_slider;
+	MySlider			*reverb_delay_slider;
+	MySlider			*reverb_decay_slider;
+	MySlider			*compress_high_slider;
+	MySlider			*compress_low_slider;
+	MySlider			*compress_percent_slider;
+
+	MyButton			*close;
+
+	MyWin				*my_window;
+	PulseMicrophone		*mic;
 };
 
 class	PulseAudioButton : public MyGroup
 {
 public:
-		PulseAudioButton(MyWin *, char *, int, int, int, int, char *);
-		~PulseAudioButton();
-	void	draw();
+						PulseAudioButton(MyWin *, char *, int, int, int, int, int, int, char *);
+						~PulseAudioButton();
+	void				draw();
+	int					handle(int event);
+	void				show();
+	void				Start();
+	void				Stop();
 
-	Fl_Toggle_Button	*button;
-	Fl_Hor_Fill_Slider	*volume;
-	Fl_Button			*delete_button;
-	Fl_Button			*repeat_button;
+	MyButton			*alias_button;
+	MyToggleButton	*select_button;
+	MyToggleButton	*filter_button;
+	Fl_Hor_Fill_Slider	*volume1;
+	Fl_Hor_Fill_Slider	*volume2;
+	MyButton			*delete_button;
+	MyToggleButton	*repeat_button;
+	Fl_Multiline_Input	*alias_in;
 	MyWin				*my_window;
 	char				*device_name;
 	PulseMicrophone		*microphone;
 	int					peak;
+	char				*alias;
+};
+
+class	MyMenuButton : public Fl_Menu_Button
+{
+public:
+			MyMenuButton(int xx, int yy, int ww, int hh, char *lbl);
+			~MyMenuButton();
+	void	draw();
+};
+
+class	AudioSettingsWindow : public DragWindow
+{
+public:
+					AudioSettingsWindow(MyWin *in_win);
+					~AudioSettingsWindow();
+	void			show();
+
+	void			SetToMyWin();
+	
+	MyWin			*my_window;
+	MyMenuButton	*sample_rate;
+	MyMenuButton	*channels;
+	MyMenuButton	*display;
+	MyLightButton	*direct_mix;
+	Fl_Hor_Slider	*incidental_volume_slider;
 };
 
 class	PTZ_Position
 {
 public:
-		PTZ_Position(int set, int pan, int tilt, int zoom, int focus);
-		~PTZ_Position();
+			PTZ_Position(int set, int pan, int tilt, int zoom, int focus);
+			~PTZ_Position();
 	void	Set(int in_pan, int in_tilt, int in_zoom, int in_focus);
 	void	UnSet();
+	void	Save(FILE *fp);
 
 	int	set;
 	int	pan;
@@ -2531,16 +3278,96 @@ public:
 	int	focus;
 };
 
+class	AlertWindow : public DragWindow
+{
+public:		
+					AlertWindow(MyWin *in_win, int ww, int hh);
+					~AlertWindow();
+
+	MyWin			*my_window;
+	NewSourceWindow	*new_source_window;
+	Fl_Input		*alert_file_path;
+	MyButton		*alert_file_button;
+	Fl_Input		*alert_audio_file;
+	MyButton		*alert_audio_file_button;
+	MyLightButton	*alert_trigger_changed;
+	MyLightButton	*alert_trigger_created;
+	MyLightButton	*alert_display_all;
+	MyLightButton	*alert_display_last_line;
+	MyLightButton	*alert_display_first_line;
+	Fl_Int_Input	*alert_duration;
+	MyLightButton	*alert_opaque;
+	MyButton		*cancel;
+	MyButton		*accept;
+
+	char			monitor_file[4096];
+};
+
+class	TimerWindow : public DragWindow
+{
+public:		
+					TimerWindow(MyWin *in_win, int ww, int hh);
+					~TimerWindow();
+
+	MyWin			*my_window;
+	NewSourceWindow	*new_source_window;
+	time_t			start_seconds;
+	time_t			stop_seconds;
+	int				format;
+	
+	MyToggleButton	*use_clock;
+	MyToggleButton	*use_timer;
+	MyToggleButton	*use_military;
+	MyToggleButton	*format1;
+	MyToggleButton	*format2;
+	MyToggleButton	*format3;
+	Fl_Box				*start_label;
+	Fl_Input			*start;
+	Fl_Box				*stop_label;
+	Fl_Input			*stop;
+	MyButton			*cancel;
+	MyButton			*accept;
+};
+
 class	AliasWindow : public DragWindow
 {
 public:		
-				AliasWindow(MyWin *in_win, int xx, int yy);
+				AliasWindow(MyWin *in_win);
 				~AliasWindow();
 	int			handle(int event);
 	void		show();
 
 	Fl_Input	*alias;
 	MyWin		*my_window;
+};
+
+class	SpecifyURLWindow : public DragWindow
+{
+public:
+						SpecifyURLWindow(MyWin *in_win);
+						~SpecifyURLWindow();
+	Fl_Input			*url;
+	Fl_Multiline_Input	*css;
+	MyButton			*accept;
+	MyButton			*cancel;
+
+	MyWin				*my_window;
+};
+
+class	SpecifyIRCWindow : public DragWindow
+{
+public:
+						SpecifyIRCWindow(MyWin *in_win);
+						~SpecifyIRCWindow();
+	Fl_Input			*server;
+	Fl_Input			*port;
+	Fl_Input			*user;
+	Fl_Input			*password;
+	Fl_Input			*channel;
+	MyButton			*accept;
+	MyButton			*cancel;
+
+	MyWin				*my_window;
 };
 
 class	NewSourceWindow : public DragWindow
@@ -2551,7 +3378,7 @@ public:
 	int		handle(int event);
 	void	Show(int edit_mode);
 
-	Fl_Multiline_Input	*source;
+	SourceMultiline		*source;
 	Fl_Input			*alias;
 	Fl_Float_Input		*width;
 	Fl_Float_Input		*height;
@@ -2568,28 +3395,37 @@ public:
 	Fl_Box				*color_box;
 	Fl_Box				*text_color_box;
 
-	Fl_Button		*create;
-	Fl_Button		*cancel;
-	Fl_Button		*camera_select;
-	Fl_Button		*audio_select;
-	Fl_Button		*box_select;
-	Fl_Button		*window_select;
-	Fl_Button		*desktop_select;
-	Fl_Button		*av_file_select;
-	Fl_Button		*image_file_select;
-	Fl_Button		*html_select;
-	Fl_Button		*html_source_select;
-	Fl_Button		*sourced_select;
-	Fl_Button		*edge_detect_select;
-	Fl_Button		*chromakey_green_select;
-	Fl_Button		*chromakey_blue_select;
-	Fl_Button		*alternating_select;
-	Fl_Button		*all_select;
-	Fl_Button		*pipe_select;
-	Fl_Button		*single_frame_file_select;
-	Fl_Button		*osg_select;
-	Fl_Button		*pseudo_camera_select;
-	Fl_Button		*plugin_camera_select;
+	MyButton		*create;
+	MyButton		*cancel;
+	MyButton		*camera_select;
+	MyButton		*audio_select;
+	MyButton		*box_select;
+	MyButton		*window_select;
+	MyButton		*desktop_select;
+	MyButton		*av_file_select;
+	MyButton		*vector_file_select;
+	MyButton		*image_file_select;
+	MyButton		*html_select;
+	MyButton		*html_source_select;
+	MyButton		*irc_source_select;
+	MyButton		*ndi_source_select;
+	MyButton		*sourced_select;
+	MyButton		*edge_detect_select;
+	MyButton		*chromakey_green_select;
+	MyButton		*chromakey_blue_select;
+	MyButton		*alternating_select;
+	MyButton		*all_select;
+	MyButton		*split_select;
+	MyButton		*pipe_select;
+	MyButton		*single_frame_file_select;
+	MyButton		*clock_timer_select;
+	MyButton		*dynamic_text_select;
+	MyButton		*alert_select;
+	MyButton		*slideshow_select;
+	MyButton		*slideshow_directory_select;
+	MyButton		*osg_select;
+	MyButton		*pseudo_camera_select;
+	MyButton		*plugin_camera_select;
 
 	MyWin			*my_window;
 	int				edit_mode;
@@ -2604,17 +3440,184 @@ public:
 	void	Reset();
 
 	MyWin		*my_window;
-	Fl_Button	*button[11];
+	MyButton	*button[11];
 	char		label_buf[11][8];
 };
 
-class	PTZ_Window : public Fl_Window
+class	SelectButton : public Fl_Group
 {
 public:
-		PTZ_Window(MyWin *in_win, int xx, int yy, int ww, int hh);
-		~PTZ_Window();
+				SelectButton(int xx, int yy, int ww, int hh, char *lbl);
+				~SelectButton();
+	void		SetCurrent(int);
+	void		Next();
+	void		Prev();
+	void		Add(char *);
+
+	MyButton	*prev;
+	MyButton	*next;
+	Fl_Box		*value_box;
+
+	char		*list[128];
+	int			current;
+	int			total;
+};
+
+class	MonitorWindow : public DragWindow
+{
+public:
+				MonitorWindow(MyWin *in_win, int ww, int hh, char *lbl);
+				~MonitorWindow();
+	void		draw();
+	int			handle(int event);
+	void		ShowPopup();
+
+	MyWin		*my_window;
+	Mat			mat;
+	int			size;
+	int			depth;
+	PopupMenu	*popup;
+};
+
+class	PanTiltJoystick : public Fl_Box
+{
+public:
+				PanTiltJoystick(MyWin *in_win, PTZ_Window *in_ptz_window, int xx, int yy, int ww, int hh);
+				~PanTiltJoystick();
+	void		draw();
+	int			handle(int event);
+	void		Move();
+
+	MyWin		*my_window;
+	PTZ_Window	*ptz_window;
+	int			pos_x;
+	int			pos_y;
+	int			dragging;
+};
+
+class	PTZ_Window : public SlidingElement
+{
+public:
+			PTZ_Window(MyWin *in_win, char *in_alias, int in_instance, int xx, int yy, int ww, int hh);
+			~PTZ_Window();
+	int		handle(int event);
+	void	draw();
+	void	hide();
+	void	show();
+
+	int		AddInterfaceButton(int xx, int yy);
+	int		AddCamerasAndPresets(int start_x, int start_y);
+	int		AddPanTiltButtons(int start_x, int start_y);
+	int		AddPanTiltButtonPanel(int start_x, int start_y);
+	int		AddPanTiltJoystickPanel(int start_x, int start_y);
+	int		AddSpeedSlider(int start_x, int start_y);
+	int		AddWindowControls(int start_x, int start_y);
+	int		AddZoomFocusAperture(int start_x, int start_y);
+	int		AddCameraControlButtons(int start_x, int start_y);
+
+	void	UpdatePresets();
+	void	UpdatePTZButtons();
+	void	AutoFocus(int on);
+	void	DigitalZoom(int on);
+	void	AutoExposure(int on);
+	void	BacklightCompensation(int on);
+	void	PTZ_RememberPosition(int num);
+	void	PTZ_UnRememberPosition(int num);
+	int		PTZ_RecallPosition(int speed, int num);
+	void    GoToPTZPosition(int speed, int in_pan, int in_tilt, int in_zoom, int in_focus);
+	void    LoadPTZPositions(int fd);
+	void	ViscaButtonCommands(MyButton *b, int state);
+	int		BacklightStatus();
+	int		DigitalZoomStatus();
+	int		AutoExposureStatus();
+	int		AutoFocusStatus();
 
 	MyWin	*my_window;
+	Camera	*bound_camera;
+	int		instance;
+	int		showing;
+	int		pinned;
+	char	alias[4096];
+	int		contracted;
+	int		hovering;
+	int		key_table[4];
+	int		zooming;
+	int		focusing;
+	int		dir;
+	int		pan_tilt_style;
+
+	VISCAInterface_t		*ptz_current_interface;
+	int						ptz_interface_index;
+	MyVISCACamera			*ptz_current_camera;
+	int						ptz_current_camera_idx;
+	int						ptz_remember_camera[NUMBER_OF_CAMERAS];
+	int						ptz_soft_memory[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS];
+	int						ptz_tour_index;
+	char					*ptz_current_device_path;
+	double					ptz_pan_speed;
+	double					ptz_tilt_speed;
+	int						ptz_focus_speed;
+	int						ptz_zoom_speed;
+	int						ptz_zoomer_speed;
+	int						ptz_adjust_speed_for_zoom;
+
+	Fl_Window				*pan_tilt_button_group;
+	Fl_Window				*pan_tilt_joystick_group;
+
+	Fl_Button				*pt_label;
+	MyButton				*ptz_up_button;
+	MyButton				*ptz_up_right_button;
+	MyButton				*ptz_up_left_button;
+	MyButton				*ptz_down_button;
+	MyButton				*ptz_down_right_button;
+	MyButton				*ptz_down_left_button;
+	MyButton				*ptz_left_button;
+	MyButton				*ptz_right_button;
+	MyButton				*ptz_zoom_in_button;
+	MyButton				*ptz_zoom_out_button;
+	MyButton				*ptz_focus_far_button;
+	MyButton				*ptz_focus_near_button;
+	MyButton				*ptz_aperture_open_button;
+	MyButton				*ptz_aperture_close_button;
+	MyButton				*ptz_home_button;
+	Fl_Box					*zoom_label;
+	Fl_Box					*focus_label;
+	Fl_Box					*aperture_label;
+	Fl_Box					*ptz_zoom_value_label;
+	Fl_Box					*ptz_focus_value_label;
+	SelectButton			*ptz_interface_button;
+	MyButton				*ptz_camera_select_button[NUMBER_OF_CAMERAS];
+
+	PanTiltJoystick			*pt_joystick;
+
+	MyButton				*ptz_camera_preset_button[NUMBER_OF_PRESETS];
+	MyToggleButton			*ptz_camera_set_button[NUMBER_OF_PRESETS];
+	PTZ_Position			*ptz_position[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS][NUMBER_OF_PRESETS];
+	MyButton				*ptz_camera_preset_page_back_button;
+	MyButton				*ptz_camera_preset_page_forward_button;
+	int						ptz_preset_page;
+
+	Fl_Hor_Fill_Slider		*ptz_speed_slider;
+	MyLightButton			*ptz_lock_to_camera_button;
+	MyLightButton			*ptz_bind_camera_button;
+	MyLightButton			*ptz_auto_focus;
+	MyLightButton			*ptz_auto_exp;
+	MyLightButton			*ptz_backlight;
+	MyLightButton			*ptz_follow_button;
+	MyLightButton			*ptz_dzoom_button;
+	MyLightButton			*ptz_tour_button;
+	MyLightButton			*ptz_reverse_horizontal_button;
+	MyLightButton			*ptz_reverse_vertical_button;
+	MyToggleButton			*ptz_zoom_speed_adjust_button;
+	MyLightButton			*ptz_joystick_button;
+	MyLightButton			*ptz_soft_memory_button;
+	MyButton				*ptz_spawn_another_button;
+	MyButton				*ptz_hide_button;
+	MyLightButton			*ptz_pin_button;
+	Fl_Output				*ptz_bound_name_box;
+	MyButton				*ptz_alias_button;
+	MyButton				*ptz_contract_button;
+	Fl_Group				*ptz_contract_group;
 };
 
 class	CameraCaps
@@ -2655,7 +3658,6 @@ public:
 			, char **in_source
 			, int in_audio_source_cnt
 			, char **in_audio_source
-			, int in_direct
 			, int ww
 			, int hh
 			, int output_ww
@@ -2679,11 +3681,13 @@ public:
 			, int in_desktop_w
 			, int in_desktop_h
 			, int in_single_stream
-			, int in_display_recording_camera
+			, int in_follow_mode
 			, int in_transition
+			, char *in_transition_plugin
 			, int in_ptz_path_cnt
 			, char *in_ptz_path[NUMBER_OF_INTERFACES]
 			, char *in_ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS]
+			, char *in_ptz_bind_alias[NUMBER_OF_INTERFACES]
 			, char *in_ptz_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_home_on_launch
 			, int in_use_yolo_model
@@ -2708,7 +3712,6 @@ public:
 			, int use_detect
 			, int use_timestamp
 			, int use_frame_scaling
-			, int use_scale_gui
 			, char *load_file
 			, int use_retain_commands
 			, int use_retain_cameras
@@ -2719,15 +3722,19 @@ public:
 			, int crop_output
 			, int crop_display
 			, int use_disregard_settings
+			, int use_transparent_interface
+			, int use_animate_panels
+			, int use_exclude_directories
 			, char *lbl);
 		~MyWin();
 	void	Shutdown();
+	void	PartialShutdown();
 
 	void    draw();
 	int	handle(int);
 
 	int			MatchArea(int, int, int);
-	Camera		*CurrentCamera();
+	Camera		*RecordingCamera();
 	Camera		*DisplayedCamera();
 	void		ShowButtons();
 	void		HideButtons();
@@ -2746,9 +3753,8 @@ public:
 	void		CropFrame(Mat in, Mat *out, int xx, int yy, int ww, int hh);
 	void		MarkInterestGrid();
 	void		SplitScreen();
-	void		Detect();
+	void		ObsoleteDetect();
 	void		MarkInterest();
-	void		CurrentFPS();
 	void		CalcInitialFPS();
 	void		ResizeDetail();
 	void		DrawThumbnails();
@@ -2769,41 +3775,29 @@ public:
 	void		OpenNamedPulse();
 	void		ReadClasses();
 	int			DrawPred(Camera *cam, int classId, float conf, int left, int top, int right, int bottom, Mat &frame);
-	void		AllCameraMotion();
 	void		RecordOn();
 	void		RecordOff();
 	void		SetupObjectDetection();
 	void		RecordAll();
-	void		SelectRecordingCamera();
+	void		DisplayRecordingCamera();
 	void		SetAllCamerasToStream(Camera *in_cam);
 	void		SetAllCamerasToStop();
 	void		SetAllCamerasToGo();
 	void		ResetCameras(int reset_cameras, char **source, int source_cnt);
+	void		ResetCamera(Camera *cam);
 	void		TriggerCamera(Camera *cam);
-	void		PTZ_DoCommand(int button, int arg_cnt = 0, int arg0 = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
+	void		PTZ_DoCommand(int index, int button, int arg_cnt = 0, int arg0 = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0);
+	void		ViscaCommand(int ptz_window_index, int command, int arg_cnt = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0, int arg5 = 0);
 	void		ViscaSpecs(VISCAInterface_t *interface, MyVISCACamera *camera);
-	void		AutoFocus(int on);
-	void		DigitalZoom(int on);
-	void		AutoExposure(int on);
-	void		BacklightCompensation(int on);
 	void		StartVisca();
-	void		ViscaCommand(int command, int arg_cnt = 0, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0, int arg5 = 0);
-	void		ViscaButtonCommands(Fl_Button *b, int state);
-	void		SetupPTZWindow(int home_on_launch);
-	void		PTZ_MoveTo(int spd_x, int spd_y, int xx, int yy);
-	void		PTZ_GoToAbs(int dx, int dy);
-	void		SavePTZPositions();
-	void		LoadPTZPositions();
-	void		PTZ_RememberPosition(int num);
-	void		PTZ_UnRememberPosition(int num);
-	int			PTZ_RecallPosition(int speed, int num);
-	void		GoToPTZPosition(int speed, int in_pan, int in_tilt, int in_zoom, int in_focus);
+	void		SetupPTZWindow(int in_instance);
+	void		PTZ_MoveTo(int instance, int spd_x, int spd_y, int xx, int yy);
 	void		UpdatePresets();
 	void		TourPresets();
-	void		MoveALittle(int key);
-	void		ZoomALittle(int key);
-	void		FocusALittle(int key);
-	void		ZoomAndFocusALittle(int key);
+	void		MoveALittle(int instance, int key);
+	void		ZoomALittle(int instance, int key);
+	void		FocusALittle(int instance, int key);
+	void		ZoomAndFocusALittle(int instance, int key);
 	void		CenterMessage(char *msg, int timer);
 	int			ptz_joystick_handler();
 	void		SendToNetwork();
@@ -2813,9 +3807,14 @@ public:
 	void		Done();
 	void		RunPulse(int mode);
 	void		RemoveCamera(Camera *cam);
-	void		ShowButtonPanel(int xx);
+	void		ShowButtonPanel(int xx, int yy);
 	void		RecordingFullStop();
 	void		ShowLog();
+	void		SaveMicrophones();
+	void		SaveMicrophones(char *filename);
+	int			LoadMicrophone(int fd, int orig_cnt);
+	void		LoadMicrophones();
+	void		LoadMicrophones(char *filename);
 	void		LoadCamera(char *filename);
 	void		LoadCamera(int fd);
 	Camera		*FindCameraByPath(char *path);
@@ -2848,13 +3847,14 @@ public:
 	void		ScaleVideoUp();
 	void		ScaleVideoDown();
 	void		ScaleVideoReset();
-	int			DisplaySplitSelection(int nn);
-	int			HandlePushForSplit();
-	int			HandlePushToSelectImmediate(Camera *cam);
-	int			HandlePushToEditImmediate(Camera *cam);
 	void		ImmediateNewlySelectedHighlight();
 	int			DoMarkInterest();
+	int			DisplaySplitSelection(int nn);
+	int			HandlePushToSelectImmediate(Camera *cam);
+	int			HandlePushToEditImmediate(Camera *cam);
+	int			HandlePushForEmbedded(int xx, int yy);
 	int			HandlePushForPTZ(Camera *cam);
+	int			HandleReleaseForSplit();
 	int			HandleReleaseForImmediate(Camera *cam);
 	int			HandleRelease(Camera *cam);
 	int			HandleReleaseForPTZ(Camera *cam);
@@ -2873,6 +3873,7 @@ public:
 	void		FrameImage(Camera *cam, Mat& in_mat, Mat& out_mat, double force_aspect_x, double force_aspect_y);
 	double		CalcButtonSize(int y_pos, int& y_inc, int req_w, int req_h);
 	void		AddEmbeddedWindow(EmbedAppWindow *embed);
+	void		RemoveEmbeddedWindow(EmbedAppWindow *embed);
 	void		CalcEmbeddedWindowPosition(int use_w, int use_h, int& x_pos, int& y_pos);
 	void		ReadInExternalPrograms();
 	void		DisplayOutput(Camera *cam, Mat in_mat, Camera *alt_cam);
@@ -2896,9 +3897,7 @@ public:
 	int			PushToSelectColors(Camera *cam);
 	FilterDialog	*MakeFilterDialog(char *name);
 	void			UpdateThumbButtons();
-	void			Display(int cam_index);
 	void			AltDisplay(int cam_index);
-	void			Display(Camera *cam);
 	void			AddImmediate(Immediate *in);
 	void			PasteImmediate();
 	void			ClearImmediate();
@@ -2916,17 +3915,69 @@ public:
 	int				ShapeHandleEvent(int event);
 	void			TagRecognized(Camera *cam, char *label, double confidence);
 	void			ClearMuxerArray();
+	void			FlushMuxerArray();
 	int				CountRecordingCameras();
 	void			Scheduled();
-	void			UpdatePTZButtons();
-	int				AutoFocusStatus();
-	int				AutoExposureStatus();
-	int				DigitalZoomStatus();
-	int				BacklightStatus();
 	int				LockedCameraStatus();
 	int				CalcMenuHeight(MyGroup *in_grp);
+	void			AdjustMainMenuHeight();
+	void			ReadGUISettings();
+	void			SelectPulseAudioButton(char *name);
+	void			SelectCamera(char *name);
+	void			DisplayCamera(Camera *cam);
+	void			DisplayCamera(int index);
+	PulseAudioButton			*AddAudioSource(int started_here, char *str, char *use_str);
+	void			PlaceButtonGroup(int side);
+	void			HideAllElements();
+	void			ShowAllElements();
+	int				SetCodec();
+	void			SaveAllPTZPositions();
+	void			LoadAllPTZPositions();
+	void			Transparent(int flag);
+	void			ScrollDownThumbGroup();
+	void			ScrollUpThumbGroup();
+	void			SaveCodecs();
+	void			LoadCodecs();
+	void			SaveTransition();
+	void			LoadTransition();
+	void			RecordOn(Camera *cam);
+	void			RecordOff(Camera *cam);
+	void			InitiateExit();
+	void			SaveAudioSettings(char *filename);
+	void			LoadAudioSettings(char *filename);
+	void			ResetAudio();
+	void			ErrorMessage();
+	void			SetErrorMessage(char *msg, int timeout = 3);
+	void			StreamToNDI(Camera *cam, int video_or_audio);
+	void			CompressCameraList();
+	void				LoadJSON(char *filename);
+	int					ParseJSON(char *str);
+	Camera				*ParseJSONCamera(cJSON *json, Camera *cam = NULL);
+	Immediate			*ParseJSONImmediate(cJSON *immediate, Camera *cam);
+	void				ParseJSONColorIt(cJSON *name, Camera *cam);
+	MatrixState			*ParseJSONMatrixState(cJSON *matrix_state);
+	ImageWindow			*ParseJSONImageWindow(cJSON *image_window, Camera *cam, int cnt);
+	PulseAudioButton	*ParseJSONMicrophone(cJSON *json);
+	void				SaveCamerasAsJSON(FILE *fp);
+	void				SaveMicrophonesAsJSON(FILE *fp);
+	void				SaveAsJSON(FILE *fp);
+	void				ParseJSONSystem(cJSON *json);
+	void				ParseJSONMicrophones(cJSON *json);
+	void				ParseJSONCameras(cJSON *json);
+	void				LoadJSONCamera(char *filename, Camera *cam = NULL);
+	void				SaveVideoSettings();
+	void				ReallyToggleButtonPanel();
+	void				ReallyToggleButtonPanel(int show_m);
+	void				ReallyToggleCameras();
+	void				ReallyToggleCameras(int show_m);
+	void				ReallyToggleAudio();
+	void				ReallyToggleAudio(int show_m);
+	void				ReallyTogglePTZ();
+	void				ReallyTogglePTZ(int idx, int show_m);
+	void				LoadPluginTransition(char *name);
+	Camera				*FindCameraByAlias(char *tst);
 
-	MyGroup	*resize_grp;
+	MyGroup		*resize_grp;
 	int			current_source;
 	int			displayed_source;
 	int			alt_displayed_source;
@@ -2935,20 +3986,32 @@ public:
 	char		**audio_source;
 	int			audio_source_cnt;
 	Camera		*camera[128];
+	Camera		*recording_camera;
 	int			original_w;
 	int			original_h;
 	int			disregard_settings;
+	time_t		exit_timer;
 	Mat			yuv;
 	Mat			in_mat;
 	Mat			monitor_mat;
 	Mat			desktop_mat;
 	int			all_fd;
 	int			clipboard_changed;
+	int			error_timeout;
 	int			refreshed;
+	char		*error_message;
+	int			highlight_image_windows;
+	time_t		error_start_time;
 	int			split_bx[10];
 	int			split_by[10];
 	int			split_rx[10];
 	int			split_ry[10];
+	Guideline	*guideline[1024];
+	int			audio_display;
+	int			audio_display_timer;
+	int			audio_sample_rate;
+	int			audio_channels;
+	int			guideline_cnt;
 	int			requested_w;
 	int			requested_h;
 	int			output_width;
@@ -2962,8 +4025,8 @@ public:
 	int			recording;
 	int			init_detect;
 	int			use_mousewheel;
+	int			mouse_moving;
 	int			resize_capture;
-	int			direct_recording;
 	int			hour;
 	int			minute;
 	int			second;
@@ -2976,12 +4039,39 @@ public:
 	int			no_audio_scan;
 	int			mux_init;
 	int			selecting_colors;
-	VideoWriter 	*direct_recorder;
-	int			video_count;
-	char		last_used_filename[256];
+	int			animate_panels;
+	int			use_tooltips;
+	int			file_selector_layout;
+	int			file_selector_exclude_directories;
+	int					video_count;
+	char				last_used_filename[256];
+	SpecifyURLWindow	*specify_url_window;
+	SpecifyIRCWindow	*specify_irc_window;
+	CurrentFPSWindow	*current_fps_window;
+	SourceSelectWindow	*source_select_window;
+	int					transparent_interface;
+	MonitorWindow		*monitor_window;
+	TimerWindow			*timer_window;
+	AlertWindow			*alert_window;
+	int					html_background;
+	NDISourceListWindow	*ndi_source_window;
+	MenuButton			*command_button_list[1024];
+	int					command_button_cnt;
+	
+	uchar		status_color_r;
+	uchar		status_color_g;
+	uchar		status_color_b;
+	uchar		status_color_a;
 
-	Muxer		*my_muxer[128];
-	int			muxer_cnt;
+	Muxer									*my_muxer[128];
+	int										muxer_cnt;
+	NDIlib_send_instance_t					ndi_send;
+	NDIlib_video_frame_v2_t					ndi_video_frame;
+	NDIlib_audio_frame_interleaved_16s_t	ndi_audio_frame;
+	char									ndi_stream_name[256];
+	int										ndi_streaming;
+	int										ndi_send_video_format;
+	time_t									ndi_initialized;
 
 	int			fresh_image;
 	int			use_old;
@@ -3042,6 +4132,12 @@ public:
 	int			retain_ptz;
 	int			hide_status;
 	int			auto_scale;
+	int						ptz_home_on_launch;
+	int						ptz_window_index;
+	int						visca_command;
+	int						visca_arg[10];
+	int						visca_arg_cnt;
+	MyVISCACamera			visca_camera[NUMBER_OF_CAMERAS];
 
 	char		*output_name[128];
 	char		*output_path[128];
@@ -3053,25 +4149,43 @@ public:
 	int			dragging_thumb_y;
 	Immediate	**immediate_list;
 	int			immediate_cnt;
-	int			rubber_band_x;
-	int			rubber_band_y;
-	int			rubber_band_w;
-	int			rubber_band_h;
+	int			rubberband_x;
+	int			rubberband_y;
+	int			rubberband_w;
+	int			rubberband_h;
 	int			rubberband_mode;
+	int			guideline_mode;
+	ResizeFrame			*resize_frame;
 	PopupMenu	*popup;
 	MiscCopy	**misc_copy;
 	int			misc_copy_cnt;
 	int			editing_misc_outer;
 	int			editing_misc_inner;
 	int			editing_misc_mode;
+	int			initial_button_group_x;
+	int			initial_button_group_y;
+	int			initial_thumbnail_group_x;
+	int			initial_thumbnail_group_y;
+	int			initial_audio_thumbnail_group_x;
+	int			initial_audio_thumbnail_group_y;
+	int			initial_ptz_x[PTZ_WINDOW_LIMIT];
+	int			initial_ptz_y[PTZ_WINDOW_LIMIT];
+	int			initial_current_fps_x;
+	int			initial_current_fps_y;
+	int			initial_video_out_x;
+	int			initial_video_out_y;
 
 	PulseMicrophone	*pulse_microphone[128];
 	int				pulse_microphone_cnt;
 	PulseMixer		*pulse_mixer;
 	int				audio;
 	int				mute_audio;
+	int				audio_direct_mix;
+	double			audio_incidental_volume;
+	int				active_audio_playback;
 
 	ColorItWindow	*color_it_window;
+	PulseAudioFilterWindow	*pulse_audio_filter_window;
 
 	Shape			**shape;
 	int				shape_cnt;
@@ -3083,8 +4197,10 @@ public:
 	char		mux_format[128];
 	pthread_mutex_t	mux_mutex;
 
-	Fl_Window	*button_group;
+	MainMenu 			*button_group;
+	Fl_Pack				*button_group_pack;
 	EncodeSpeedWindow	*encode_speed_window;
+
 	MenuButton	*record_button;
 	MenuButton	*power_button;
 	MenuButton	*mute_video_button;
@@ -3093,10 +4209,6 @@ public:
 	MenuButton	*load_setup_button;
 	MenuButton	*save_setup_button;
 	MenuButton	*override_button;
-	MenuButton	*motion_button;
-	MenuButton	*object_button;
-	MenuButton	*follow_button;
-	MenuButton	*follow_objects_button;
 	MenuButton	*trigger_button;
 	MenuButton	*timestamp_button;
 	MenuButton	*dump_button;
@@ -3117,12 +4229,14 @@ public:
 	MenuButton	*reset_cameras_button;
 	MenuButton	*resize_capture_button;
 	MenuButton	*split_button;
+	MenuButton	*monitor_video_button;
 	MenuButton	*open_standalone_button;
 	MenuButton	*new_source_button;
 	MenuButton	*edit_source_button;
 	MenuButton	*edit_output_button;
 	MenuButton	*select_output_button;
 	MenuButton	*alias_button;
+	MenuButton	*reset_camera_button;
 	MenuButton	*flip_horizontal_button;
 	MenuButton	*flip_vertical_button;
 	MenuButton	*ptz_lock_window_button;
@@ -3139,69 +4253,34 @@ public:
 	MenuButton	*fltk_plugin_button;
 	MenuButton	*immediate_drawing_button;
 	MenuButton	*dynamic_coloring_button;
+	MenuButton	*toggle_camera_effects_button;
 	MenuButton	*save_camera_button;
 	MenuButton	*load_camera_button;
 	MenuButton	*codecs_button;
 	MenuButton	*audio_mute_button;
+	MenuButton	*audio_settings_button;
+	MenuButton	*audio_bind_to_camera_button;
+	MenuButton	*audio_save_button;
+	MenuButton	*audio_load_button;
 	MenuButton	*monitor_audio_button;
+	MenuButton	*audio_library_button;
+	MenuButton	*audio_library_list_button;
+	MenuButton	*play_audio_file_button;
+	MenuButton	*stop_playing_audio_button;
+	MenuButton	*pause_playing_audio_button;
 	MenuButton	*toggle_objects_button;
-	Fl_Button	*quit_button;
+	MyButton	*quit_button;
 
-	Fl_Button	*ptz_up_button;
-	Fl_Button	*ptz_up_right_button;
-	Fl_Button	*ptz_up_left_button;
-	Fl_Button	*ptz_down_button;
-	Fl_Button	*ptz_down_right_button;
-	Fl_Button	*ptz_down_left_button;
-	Fl_Button	*ptz_left_button;
-	Fl_Button	*ptz_right_button;
-	Fl_Button	*ptz_zoom_in_button;
-	Fl_Button	*ptz_zoom_out_button;
-	Fl_Button	*ptz_focus_far_button;
-	Fl_Button	*ptz_focus_near_button;
-	Fl_Button	*ptz_aperture_open_button;
-	Fl_Button	*ptz_aperture_close_button;
-	Fl_Button	*ptz_home_button;
-	Fl_Box		*zoom_label;
-	Fl_Box		*focus_label;
-	Fl_Box		*aperture_label;
-	Fl_Box		*ptz_zoom_value_label;
-	Fl_Box		*ptz_focus_value_label;
-	Fl_Button	*ptz_interface_select_button[NUMBER_OF_INTERFACES];
-	Fl_Button	*ptz_camera_select_button[NUMBER_OF_CAMERAS];
-	CodecSelectionWindow *codec_selection_window;
-	int		SetCodec();
-
-	Fl_Button		*ptz_camera_preset_button[NUMBER_OF_PRESETS];
-	Fl_Toggle_Button	*ptz_camera_set_button[NUMBER_OF_PRESETS];
-	PTZ_Position		*ptz_position[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS][NUMBER_OF_PRESETS];
-	Fl_Button		*ptz_camera_preset_page_back_button;
-	Fl_Button		*ptz_camera_preset_page_forward_button;
-	int			ptz_preset_page;
-	Fl_Pack		*audio_thumbnail_pack[3];
-	MyGroup	*audio_thumbnail_group;
-
-	Fl_Hor_Fill_Slider	*ptz_speed_slider;
-	Fl_Light_Button		*ptz_lock_to_camera_button;
-	Fl_Light_Button		*ptz_auto_focus;
-	Fl_Light_Button		*ptz_auto_exp;
-	Fl_Light_Button		*ptz_backlight;
-	Fl_Light_Button		*ptz_follow_button;
-	Fl_Light_Button		*ptz_dzoom_button;
-	Fl_Light_Button		*ptz_tour_button;
-	Fl_Light_Button		*ptz_reverse_horizontal_button;
-	Fl_Light_Button		*ptz_reverse_vertical_button;
-	Fl_Toggle_Button	*ptz_zoom_speed_adjust_button;
-	Fl_Light_Button		*ptz_joystick_button;
-	Fl_Light_Button		*ptz_soft_memory_button;
-	PTZ_Window			*ptz_window;
-
-	int							start_thumbgroup;
-	MyGroup					*video_thumbnail_group;
+	PTZ_Window					*ptz_window[PTZ_WINDOW_LIMIT];
+	CodecSelectionWindow		*codec_selection_window;
+	Fl_Pack						*audio_thumbnail_pack[3];
+	SlidingElement				*audio_thumbnail_group;
+	VideoThumbnailGroup			*video_thumbnail_group;
 	ThumbGroup					*thumbnail[128];
 	PulseAudioButton			*audio_thumbnail[128];
 	int							audio_thumbnail_cnt;
 	VideoSettingsWindow			*video_settings_window;
+	AudioSettingsWindow			*audio_settings_window;
 	CameraSettingsWindow		*camera_settings_window;
 	SnapshotSettingWindow		*snapshot_settings_window;
 	GUI_SettingsWindow			*gui_settings_window;
@@ -3226,6 +4305,8 @@ public:
 	MuxPreviewWindow			*review_muxed;
 	PTZ_LockWindow				*ptz_lock_window;
 	ObjectMenu					*object_menu;
+	AudioLibrary				*audio_library_window;
+	AudioLibraryList			*audio_library_list;
 
 	int		force_center_x;
 	int		force_center_y;
@@ -3259,7 +4340,6 @@ public:
 	int		crop_output;
 	int		crop_output_x;
 	int		crop_output_y;
-	int		scale_gui;
 	int		resizing_detail;
 	int		grid_sz;
 	int		detail_x;
@@ -3279,37 +4359,33 @@ public:
 	int		split;
 	int		showing_alias_window;
 	int		encoding_frame_cnt;
-	int		frozen;
 	int		redraw_cnt;
 	Net		net;
 
-	double	transition_cnt;
-	Camera	*last_cam;
-	int		trigger_select_mode;
-	int		record_all;
-	int		record_desktop;
-	int		desktop_x;
-	int		desktop_y;
-	int		desktop_w;
-	int		desktop_h;
-	int		single_stream;
-	int		display_recording_camera;
-	int		transition;
+	double				transition_cnt;
+	Camera				*last_cam;
+	int					trigger_select_mode;
+	int					record_all;
+	int					record_desktop;
+	int					desktop_x;
+	int					desktop_y;
+	int					desktop_w;
+	int					desktop_h;
+	int					single_stream;
+	int					follow_mode;
+	int					transition;
+	char				transition_plugin[256];
+	int					button_group_side;
 	ProgressScrubber	*progress_scrubber;
 	
 	VISCAInterface_t	iface[NUMBER_OF_INTERFACES];
-	VISCAInterface_t	*ptz_current_interface;
-	int					ptz_interface_index;
-	MyVISCACamera		visca_camera[NUMBER_OF_CAMERAS];
-	MyVISCACamera		*ptz_current_camera;
-	int					ptz_current_camera_idx;
-	int					ptz_remember_camera[NUMBER_OF_CAMERAS];
 	int					ptz_mode;
 	char				*ptz_device_path[NUMBER_OF_INTERFACES];
 	char				*ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS];
 	char				*ptz_alias[NUMBER_OF_INTERFACES];
+	char				*ptz_bind_alias[NUMBER_OF_INTERFACES];
+	int					ptz_interface_type[NUMBER_OF_INTERFACES];
 	int					ptz_device_cnt;
-	char				*ptz_current_device_path;
 	int					ptz_zoom;
 	int					old_ptz_zoom;
 	int					ptz_panning;
@@ -3321,28 +4397,20 @@ public:
 	int					ptz_dragging;
 	int					ptz_zoom_reading;
 	int					ptz_focus_reading;
-	int					ptz_pan_reading;
-	int					ptz_tilt_reading;
-	double				ptz_pan_speed;
-	double				ptz_tilt_speed;
+	short int			ptz_pan_reading;
+	short int			ptz_tilt_reading;
 	int					ptz_dragged;
 	int					use_pan_speed;
 	int					use_tilt_speed;
-	int					visca_command;
-	int					visca_arg[10];
-	int					visca_arg_cnt;
+	pthread_mutex_t		ndi_send_mutex;
 	pthread_mutex_t		muxer_mutex;
 	pthread_mutex_t		visca_mutex;
 	pthread_cond_t		visca_cond;
 	double				ptz_travel_x;
 	double				ptz_travel_y;
-	int					ptz_focus_speed;
-	int					ptz_zoom_speed;
 	int					ptz_follow;
 	int					ptz_follow_home_pan;
 	int					ptz_follow_home_tilt;
-	int					ptz_adjust_speed_for_zoom;
-	int					ptz_tour_index;
 	int					ptz_little_speed;
 	int					ptz_little_mode;
 	char				center_message[256];
@@ -3350,13 +4418,11 @@ public:
 	int					ptz_reverse_horizontal;
 	int					ptz_reverse_vertical;
 	int					ptz_zoomer;
-	int					ptz_zoomer_speed;
 	int					ptz_joystick;
 	int					ptz_joystick_x;
 	int					ptz_joystick_y;
 	int					ptz_last_joystick_x;
 	int					ptz_last_joystick_y;
-	int					ptz_soft_memory[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS];
 	int					magic_x;
 	int					magic_y;
 	int					transmitting;
@@ -3413,7 +4479,6 @@ public:
 	int			image_sx;
 	int			image_sy;
 	int			use_mousewheel;
-	int			direct_recording;
 	int			muxing;
 	int			no_scan;
 	int			no_audio_scan;
@@ -3470,27 +4535,24 @@ public:
 	int		desktop_w;
 	int		desktop_h;
 	int		single_stream;
-	int		display_recording_camera;
+	int		follow_mode;
 	int		transition;
+	char	transition_plugin[256];
 	
 	char			ptz_device_path[NUMBER_OF_INTERFACES][4096];
 	char			ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS][4096];
 	char			ptz_alias[NUMBER_OF_INTERFACES][4096];
+	char			ptz_bind_alias[NUMBER_OF_INTERFACES][4096];
 	int				ptz_device_cnt;
 	int				ptz_zoom;
 	int				old_ptz_zoom;
 	int				ptz_panning;
 	int				ptz_zooming;
 	int				ptz_focusing;
-	double			ptz_pan_speed;
-	double			ptz_tilt_speed;
 	int				use_pan_speed;
 	int				use_tilt_speed;
-	int				ptz_focus_speed;
-	int				ptz_zoom_speed;
 	int				ptz_follow;
 	int				ptz_adjust_speed_for_zoom;
-	int				ptz_tour_index;
 	int				ptz_little_speed;
 	int				ptz_little_mode;
 	int				ptz_reverse_horizontal;
@@ -3517,7 +4579,7 @@ public:
 	void	draw();
 
 	Fl_Multiline_Input	*text_in;
-	Fl_Button			*remove_button;
+	MyButton			*remove_button;
 	int					draw_mode;
 	int					font_size;
 	int					font_num;
@@ -3562,17 +4624,17 @@ public:
 	TitleBox	*title_box[1024];
 	int			title_box_cnt;
 
-	Fl_Button			*play;
-	Fl_Button			*play_trim;
-	Fl_Repeat_Button	*advance_one;
-	Fl_Repeat_Button	*retreat_one;
-	Fl_Button			*encode;
-	Fl_Button			*start_trim_button;
-	Fl_Button			*end_trim_button;
-	Fl_Button			*clear_trim_button;
-	Fl_Button			*snap_one_button;
-	Fl_Button			*moving_crop_button;
-	Fl_Button			*add_text_button;
+	MyButton			*play;
+	MyButton			*play_trim;
+	MyRepeatButton	*advance_one;
+	MyRepeatButton	*retreat_one;
+	MyButton			*encode;
+	MyButton			*start_trim_button;
+	MyButton			*end_trim_button;
+	MyButton			*clear_trim_button;
+	MyButton			*snap_one_button;
+	MyButton			*moving_crop_button;
+	MyButton			*add_text_button;
 	Fl_Box				*frame_box;
 	MyScrubber			*scrub;
 	Fl_Value_Slider		*speed_slider;
@@ -3631,6 +4693,12 @@ public:
 	double		dy;
 	double		dw;
 	double		dh;
+	double		parent_scale_width;
+	double		parent_scale_height;
+	double		displayed_x;
+	double		displayed_y;
+	double		displayed_w;
+	double		displayed_h;
 	int			buttonize;
 	int			buttonized_x;
 	int			buttonized_y;
@@ -3656,16 +4724,36 @@ public:
 class	EmbedAppSettings : public DragWindow
 {
 public:
-	EmbedAppSettings(MyWin *in_win);
-	~EmbedAppSettings();
+			EmbedAppSettings(MyWin *in_win);
+			~EmbedAppSettings();
+	void	ClearCurrent();
+	void	LoadFromArray();
+	void	SaveToArray();
+	void	Save(char *filename);
+	void	Load(char *filename);
+	void	Next();
+	void	Prev();
+	void	FreeAll();
 
 	MyWin		*my_window;
+	Fl_Box		*title;
+	Fl_Box		*current_index;
+	MyButton	*prev;
+	MyButton	*next;
 	Fl_Input	*path;
 	Fl_Input	*use_w;
 	Fl_Input	*use_h;
 	Fl_Input	*arg[10];
-	Fl_Button	*accept;
-	Fl_Button	*cancel;
+	MyButton	*execute;
+	MyButton	*accept;
+	MyButton	*cancel;
+
+	int			current;
+	char		*my_path[10];
+	int			my_w[10];
+	int			my_h[10];
+	char		*my_arg[10][10];
+	char		label_buf[128];
 };
 
 class	FltkPluginWindow : public DragWindow
@@ -3681,8 +4769,8 @@ public:
 	int			last_x;
 	int			last_y;
 
-	Fl_Light_Button	*plug_in[1024];
+	MyLightButton	*plug_in[1024];
 
-	Fl_Button	*accept;
-	Fl_Button	*cancel;
+	MyButton	*accept;
+	MyButton	*cancel;
 };

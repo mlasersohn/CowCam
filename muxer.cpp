@@ -39,6 +39,8 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
+#include	<fftw3.h>
+
 #include	<vorbis/codec.h>
 #include	<vorbis/vorbisenc.h>
 #include	<vorbis/vorbisfile.h>
@@ -109,6 +111,11 @@ extern "C"
 #include	<vlc/vlc.h>
 #include	<cairo.h>
 
+#include	"libircclient.h"
+#include    <Processing.NDI.Lib.h>
+
+#include	<cjson/cJSON.h>
+
 using namespace cv;
 using namespace dnn;
 using namespace std;
@@ -116,7 +123,6 @@ using namespace std;
 #include "image_memory.h"
 #include "PulseAudio.h"
 #include "vlc_window.h"
-#include "render_html.h"
 #include "html_window.h"
 #include "embed_app.h"
 #include "osg.h"
@@ -325,7 +331,14 @@ void Muxer::add_stream(int use_nvidia, OutputStream *ost, AVFormatContext *oc, c
 				}
 			}
 			c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
-			c->channel_layout = AV_CH_LAYOUT_STEREO;
+			if(used_channels == 1)
+			{
+				c->channel_layout = AV_CH_LAYOUT_MONO;
+			}
+			else
+			{
+				c->channel_layout = AV_CH_LAYOUT_STEREO;
+			}
 			if((*codec)->channel_layouts) 
 			{
 				c->channel_layout = (*codec)->channel_layouts[0];
@@ -498,11 +511,11 @@ short int raw_tmp_buffer[32768];
 
 	if(raw == 0)
 	{
-		memcpy(frame->data[0], (uint8_t *)in_buffer, frame->nb_samples * 4);
+		memcpy(frame->data[0], (uint8_t *)in_buffer, frame->nb_samples * 2 * used_channels);
 	}
 	else
 	{
-		int nn = frame->nb_samples * 2;
+		int nn = frame->nb_samples * 2 * used_channels;
 		int rn = read(raw_audio_fd, raw_tmp_buffer, nn);
 		if(rn != nn)
 		{
@@ -514,9 +527,11 @@ short int raw_tmp_buffer[32768];
 			short int *p2 = (short int *)frame->data[0];
 			for(loop = 0;loop < frame->nb_samples;loop++)
 			{
-				*p2++ = *p1;
-				*p2++ = *p1;
-				p1++;
+				*p2++ = *p1++;
+				if(used_channels == 2)
+				{
+					*p2++ = *p1++;
+				}
 			}
 		}
 	}
@@ -721,6 +736,11 @@ int Muxer::write_video_frame(AVFormatContext *oc, OutputStream *ost)
 	return(rr);
 }
 
+void	Muxer::Flush()
+{
+	avio_flush(oc->pb);
+}
+
 void Muxer::close_stream(AVFormatContext *oc, OutputStream *ost)
 {
 	avcodec_free_context(&ost->enc);
@@ -739,28 +759,43 @@ extern long int precise_time();
 	{
 		encode_audio = 1;
 	}
-	if(encode_video && (!encode_audio || av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base) <= 0)) 
+	int encode_done = 0;
+	while((encode_done == 0) && (stop_activity == 0))
 	{
-		if(realtime_factor > 0)
+		if((video_st.enc != NULL) && (audio_st.enc != NULL))
 		{
-			if((current_frame % realtime_factor) == 0)
+			if(encode_video && (!encode_audio || av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base) <= 0)) 
 			{
-				write_video_frame(oc, &video_st);
-				if(!encode_audio)
+				if(realtime_factor > 0)
 				{
-					usleep(15000);
+					if((current_frame % realtime_factor) == 0)
+					{
+						write_video_frame(oc, &video_st);
+						if(!encode_audio)
+						{
+							usleep(15000);
+						}
+					}
 				}
+				else if(realtime_factor < 0)
+				{
+					int nn = abs(realtime_factor);
+					for(int loop = 0;loop < nn;loop++)
+					{
+						write_video_frame(oc, &video_st);
+					}
+				}
+				current_frame++;
 			}
-		}
-		else if(realtime_factor < 0)
-		{
-			int nn = abs(realtime_factor);
-			for(int loop = 0;loop < nn;loop++)
+			else
 			{
-				write_video_frame(oc, &video_st);
+				encode_done = 1;
 			}
 		}
-		current_frame++;
+		else
+		{
+			encode_done = 1;
+		}
 	}
 	if(encode_audio)
 	{
@@ -983,7 +1018,7 @@ int i;
 	return(r);
 }
 
-int	Muxer::InitMux(int use_audio, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *in_url, char *in_desktop_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_frame_cnt, int *in_crop_x, int *in_crop_y)
+int	Muxer::InitMux(int use_audio, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *in_url, char *in_desktop_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_channels, int in_frame_cnt, int *in_crop_x, int *in_crop_y)
 {
 const AVOutputFormat *fmt;
 const char *filename;
@@ -996,8 +1031,8 @@ int i;
 	int using_audio = 0;
 	current_frame = 0;
 	filename = output_filename;
-	double used_rate = 44100;
-	int used_channels = 1;
+	used_rate = in_rate;
+	used_channels = in_channels;
 	crop_x = in_crop_x;
 	crop_y = in_crop_y;
 	local_frame_cnt = in_frame_cnt;
@@ -1014,7 +1049,7 @@ int i;
 	{
 		if(use_audio == 1)
 		{
-			used_rate = Open(audio_device, in_rate);
+			used_rate = Open(audio_device, in_rate, in_channels);
 			using_video = 1;
 			if(mixer != NULL)
 			{
@@ -1076,8 +1111,8 @@ int i;
 	avformat_alloc_output_context2(&oc, NULL, NULL, filename);
 	if(!oc) 
 	{
-		printf("Could not deduce output format from file extension: using MPEG.\n");
-		avformat_alloc_output_context2(&oc, NULL, "mpeg", filename);
+		printf("Could not deduce output format from file extension: using FLV.\n");
+		avformat_alloc_output_context2(&oc, NULL, "flv", filename);
 	}
 	if(!oc)
 	{
@@ -1214,8 +1249,6 @@ int     simple_record(int *flag)
 						SAMPLE one = *p2;
 						*p1 = one;
 						p1++;
-						*p1 = one;
-						p1++;
 						p2++;
 					}
 				}
@@ -1234,12 +1267,12 @@ int     simple_record(int *flag)
 	return(0);
 }
 
-double	Muxer::Open(int audio_dev, double requested_rate)
+double	Muxer::Open(int audio_dev, double requested_rate, int requested_channels)
 {
 static const pa_sample_spec pulse_ss = {
         .format = PA_SAMPLE_S16LE,
         .rate = (uint32_t)requested_rate,
-        .channels = 2
+        .channels = (uint8_t)requested_channels
 };
 
 	double rate = 0.0;
@@ -1249,6 +1282,7 @@ static const pa_sample_spec pulse_ss = {
 	{
 		int nn = FRAMES_PER_BUFFER * sizeof(SAMPLE) * 2;
 		recordedSamples = (SAMPLE *)malloc(nn);
+		rate = requested_rate;
 	}
 	else
 	{
@@ -1369,7 +1403,7 @@ void	Muxer::Stop()
 	if(raw == 0)
 	{
 		stop_activity = 1;
-		usleep(10000);
+		usleep(100000);
 		if(no_audio == 0)
 		{
 			if(mixer != NULL)
@@ -1590,7 +1624,7 @@ void	MyFormat::AddAudio(char *in_name, int id)
 			}
 			else
 			{
-				AVCodec *tst = avcodec_find_encoder((AVCodecID)id);
+				AVCodec *tst = (AVCodec *)avcodec_find_encoder((AVCodecID)id);
 				if(tst != NULL)
 				{
 					audio_codec[audio_codec_cnt] = strdup(in_name);
@@ -1627,7 +1661,7 @@ AVCodecID codec_by_name(char *name);
 			}
 			else
 			{
-				AVCodec *tst = avcodec_find_encoder((AVCodecID)id);
+				AVCodec *tst = (AVCodec *)avcodec_find_encoder((AVCodecID)id);
 				if(tst != NULL)
 				{
 					video_codec[video_codec_cnt] = strdup(in_name);

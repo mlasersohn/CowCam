@@ -54,7 +54,7 @@ struct MyCameraPostDrawCallback : public osg::Camera::DrawCallback
 	osg::Image *image;
 };
 
-/* COW COW
+/* COW REMOVED
 int	walk_tree(osg::Group *start, int limit, int total, osg::Node **list)
 {
 int	loop;

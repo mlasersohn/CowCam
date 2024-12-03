@@ -78,7 +78,7 @@ public:
 		Muxer(MyWin *, ReviewWin *, int);
 		~Muxer();
 
-	double	Open(int audio_dev, double rate);
+	double	Open(int audio_dev, double rate, int channels);
 	void	*GetFrame();
 	void	Stop();
 	void	Pause();
@@ -99,8 +99,9 @@ public:
 	void close_stream(AVFormatContext *oc, OutputStream *ost);
 	void EncodeAudioAndVideo(void *in_buffer);
 	int TestMux(enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *output_filename, int in_width, int in_height, double in_fps, double in_rate);
+	void	Flush();
 
-	int InitMux(int encode_audio, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *url, char *desk_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_frame_cnt, int *crop_x, int *crop_y);
+	int InitMux(int encode_audio, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *url, char *desk_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_channels, int in_frame_cnt, int *crop_x, int *crop_y);
 	void FinishMux();
 
 	MyWin	*my_window;
@@ -130,6 +131,8 @@ public:
 	char		*url;
 	int		mute;
 	int		not_audible;
+	int		used_channels;
+	int		used_rate;
 
 	int		raw;
 	int		raw_video_fd;
