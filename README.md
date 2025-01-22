@@ -113,7 +113,8 @@ libmagic
 stdc++
 
 ## Optional Libraries
-To build the optional library "libosg_camera.so" which supports OSG (rendered 3D models as video sources),
+### Open Scene Graph
+To build the optional library "libosg_camera.so" which supports OSG (rendered 3D models as a video sources),
 you must have the following OSG libraries installed:
 ```
 libosg
@@ -125,6 +126,7 @@ If you do not want to build in OSG support, edit or delete the following line in
 ```
 OSG := 1
 ```
+### CEF and libhtml_window.so
 To build the optional library "libhtml_window.so" which supports rendering HTML as a video source, you
 must set the value of '$(CEF_PATH)' in the Makefile to point at the directory where CEF keeps its include
 files and have the following CEF libraries installed:
@@ -136,8 +138,12 @@ If you do not want to build in CEF support, edit or delete the following line in
 ```
 CEF := 1
 ```
+At runtime, if libhtml_window.so is available, libcef.so must also be available. There must also 
+be an icedtl.dat file and the entire "assets" directory as supplied in the CEF build environment.
+
+### NDI
 if libndi.so is available during runtime, Cowcam will attempt to open it and use the NDI functions
-it makes available. 
+it makes available. At runtime.
 
 Once you have installed all of the necessary libraries and have edited the Makefile appropriately (if necessary), building 
 CowCam is simply a matter of invoking make: 
