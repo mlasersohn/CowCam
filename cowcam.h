@@ -412,6 +412,10 @@
 #define	FRAME_OPERATION_PROPORTIONAL_RESIZE	0
 #define	FRAME_OPERATION_FREE_RESIZE			1
 #define	FRAME_OPERATION_CROP				2
+#define	FRAME_OPERATION_DELETE				3
+
+#define	FRAME_OBJECT_TYPE_IMAGE_WINDOW	0
+#define	FRAME_OBJECT_TYPE_IMMEDIATE		1
 
 struct	NamedKeys
 {
@@ -448,6 +452,8 @@ class	MenuButton;
 class	FilterButton;
 class	MyMenuButton;
 class	MyInput;
+class	MySlider;
+class	ColorSlider;
 
 class	ShortcutWindow : public Fl_Window
 {
@@ -712,22 +718,30 @@ public:
 class	ResizeFrame : public DragGroup
 {
 public:
-			ResizeFrame(int xx, int yy, int ww, int hh);
+			ResizeFrame(MyWin *in_win, int xx, int yy, int ww, int hh);
 			~ResizeFrame();
 
 	void	draw();
 	int		handle(int event);
+	void	show();
 	void	resize(double xx, double yy, double ww, double hh);
-	void	Use(Fl_Widget *in_use);
+	void	Use(int in_type, Fl_Widget *in_use);
+	int		AdjustForImmediateLine();
+	int		AdjustImmediateLinePosition(int dx, int dy);
 
+	MyWin		*my_window;
 	Fl_Widget	*use;
+	int			object_type;
 	int		mode;
+	int		potential_mode;
 	int		drag_start_x;
 	int		drag_start_y;
 	double	dx;
 	double	dy;
 	double	dw;
 	double	dh;
+	int		original_w;
+	int		original_h;
 	double	proportion;
 	int		operation;
 };
@@ -751,7 +765,7 @@ public:
 	int		final;
 };
 
-class AudioInfo
+class	AudioInfo
 {
 public:
 			AudioInfo(MyWin *in_win, int nn, int in_rate, int in_channels, SAMPLE *in_wav)
@@ -1350,12 +1364,6 @@ public:
 	MyButton	*accept;
 };
 
-class	ColorSlider : public Fl_Value_Slider
-{
-public:
-		ColorSlider(int xx, int yy, int ww, int hh, double val, char *lbl);
-		~ColorSlider();
-};
 
 class	ColorItWindow : public DragWindow
 {
@@ -1498,6 +1506,7 @@ public:
 	void	FreehandSetup();
 	void	Color(int in_color);
 	void	CloseAll();
+	void	ClearSelectedWidget();
 
 	MyButton	*general;
 	MyButton	*text;
@@ -1721,6 +1730,7 @@ public:
 				ImDefault();
 				~ImDefault();
 	void		Copy(Immediate *in_im, ImDefault *source);
+	void		SetToDialog();
 
 	MyWin		*my_window;
 	Immediate	*my_immediate;
@@ -1879,12 +1889,19 @@ public:
 		ImLine(MyWin *in_win, Immediate *in_im, int in_type, int xx, int yy, int ww, int hh);
 		~ImLine();
 	void	draw();
+	void	resize(int xx, int yy, int ww, int hh);
 
 	void	Extent(int& ix, int& iy, int& iw, int& ih);
+	void	Extent();
 	void	AddPoint(int in_x, int in_y);
 	void	Revise(int in_x, int in_y);
 	void	DoStamp(cairo_t *cr, double xx, double yy);
 	void	ImageLine(cairo_t *cr, int x0, int y0, int x1, int y1, int in_sz);
+
+	int		extent_x1;
+	int		extent_y1;
+	int		extent_x2;
+	int		extent_y2;
 };
 
 class	Immediate : public MyGroup
@@ -1893,8 +1910,10 @@ public:
 			Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh);
 			Immediate(Immediate *old, Camera *in_cam);
 			Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int hh);
+			~Immediate();
 	int		handle(int event);
 	void	draw();
+	void	resize(int xx, int yy, int ww, int hh);
 
 	void	Hide();
 	void	Show();
@@ -1936,6 +1955,14 @@ public:
 	int		drag_mode;
 	double	overall_alpha;
 	int		mw_mode;
+	double	scale_w;
+	double	scale_h;
+	int		extent_w;
+	int		extent_h;
+	int		extent_taken;
+	int		orig_w;
+	int		orig_h;
+	int		actively_drawing;
 };
 
 class	StoredImmediate
@@ -2177,12 +2204,19 @@ public:
 class	MySlider : public Fl_Slider
 {
 public:
-		MySlider(int, int, int, int, char *);
+		MySlider(int, int, int, int, char * = NULL, MyButton *in_reset = NULL);
 		~MySlider();
 	void	draw();
 
 	double		initial_value;
 	MyButton	*reset;
+};
+
+class	ColorSlider : public MySlider
+{
+public:
+				ColorSlider(int xx, int yy, int ww, int hh, double val, char *lbl);
+				~ColorSlider();
 };
 
 class	TriggerWindow : public DragWindow
@@ -2670,7 +2704,8 @@ public:
 	void			AddImmediate(Immediate *in);
 	int				RemoveImmediate(Immediate *ptr);
 	int				FindImmediate(Immediate *ptr);
-	void			GrabWindowImage(Window win, Mat *use_mat);
+	Immediate		*EventInImmediate();
+	void			GrabWindowImage(Window win, Mat& use_mat);
 	void			ColorIntensity(Mat frame, double red, double green, double blue, double alpha);
 	void			ShowImmediateList();
 	void			HideImmediateList();
@@ -2830,6 +2865,8 @@ public:
 
 	NDIlib_recv_instance_t	ndi_recv;
 	int						ndi_capture;
+	int						ndi_ptz;
+	int						prefer_ndi;
 
 	irc_session_t		*irc_session;
 	char				irc_buffer[1024];
@@ -3259,7 +3296,7 @@ public:
 	MyMenuButton	*channels;
 	MyMenuButton	*display;
 	MyLightButton	*direct_mix;
-	Fl_Hor_Slider	*incidental_volume_slider;
+	MySlider		*incidental_volume_slider;
 };
 
 class	PTZ_Position
@@ -3545,6 +3582,7 @@ public:
 	int		focusing;
 	int		dir;
 	int		pan_tilt_style;
+	int		prefer_ndi;
 
 	VISCAInterface_t		*ptz_current_interface;
 	int						ptz_interface_index;
@@ -3646,6 +3684,8 @@ public:
 	time_t	last_time;
 	int		image_mat_cnt;
 	Mat		image_mat[128];
+	int		use_updates;
+	FILE	*intro_pipe_fp;
 };
 
 class	MyWin : public Fl_Double_Window
@@ -3688,6 +3728,7 @@ public:
 			, char *in_ptz_path[NUMBER_OF_INTERFACES]
 			, char *in_ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS]
 			, char *in_ptz_bind_alias[NUMBER_OF_INTERFACES]
+			, int in_ptz_prefer_ndi[NUMBER_OF_INTERFACES]
 			, char *in_ptz_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_home_on_launch
 			, int in_use_yolo_model
@@ -3976,6 +4017,7 @@ public:
 	void				ReallyTogglePTZ(int idx, int show_m);
 	void				LoadPluginTransition(char *name);
 	Camera				*FindCameraByAlias(char *tst);
+	void				SnapAll();
 
 	MyGroup		*resize_grp;
 	int			current_source;
@@ -3991,6 +4033,7 @@ public:
 	int			original_h;
 	int			disregard_settings;
 	time_t		exit_timer;
+	int			actively_exiting;
 	Mat			yuv;
 	Mat			in_mat;
 	Mat			monitor_mat;
@@ -4384,6 +4427,7 @@ public:
 	char				*ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS];
 	char				*ptz_alias[NUMBER_OF_INTERFACES];
 	char				*ptz_bind_alias[NUMBER_OF_INTERFACES];
+	int					ptz_prefer_ndi[NUMBER_OF_INTERFACES];
 	int					ptz_interface_type[NUMBER_OF_INTERFACES];
 	int					ptz_device_cnt;
 	int					ptz_zoom;
@@ -4543,6 +4587,7 @@ public:
 	char			ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS][4096];
 	char			ptz_alias[NUMBER_OF_INTERFACES][4096];
 	char			ptz_bind_alias[NUMBER_OF_INTERFACES][4096];
+	int				ptz_prefer_ndi[NUMBER_OF_INTERFACES];
 	int				ptz_device_cnt;
 	int				ptz_zoom;
 	int				old_ptz_zoom;
@@ -4674,6 +4719,7 @@ public:
 	void	Restore();
 	void	Delete();
 	void	Buttonize();
+	void	Resize(int xx, int yy, int ww, int hh);
 
 	int			index;
 	Mat			mat;
