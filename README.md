@@ -181,6 +181,12 @@ period, cowcam will scan your system ("/dev" directories) for cameras and microp
 are many startup flags and arguments allowing you to customize cowcam on startup as well as bypass the scan and specify
 exactly which audio and video sources you wish to have available during startup.
 
+A typical startup with both audio and video scanning, no html rendering capability, and 1280 by 720 resolution to a FLV file, might be
+something like:
+```
+cowcam --animate_panels --no_frame_scaling --streaming_only --width=1280 --height=720 --container=flv --detect --recording_follows_display --no_html_renderer
+```
+
 ## Arguments:
 #### Specify a video device
 `cowcam --source=/dev/video0`
