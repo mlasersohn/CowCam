@@ -62573,7 +62573,7 @@ int	main(int argc, char **argv)
 int		loop;
 
 	int html = 0;
-	int placard = 2;
+	int placard = 1;
 	int shade_mode = SHADE_MODE_DARK;
 	int message_delay = 0;
 	int run_it = 1;
