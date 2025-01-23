@@ -10,6 +10,13 @@ Realtime streaming to streaming sites, such as Twitch and Youtube is also provid
 for a cursory rundown.
 
 # Building
+First, let me apologize for still using a simple Makefile in this day and age. I am old fashioned because I am old. The Makefile
+works for me and because, until recently, I was the only person even considering compiling this program, I didn't see any reason
+to dedicate time towards changing that. Fortunately, though it uses many libraries, the program is not composed of many pieces nor
+requires terribly obscure libraries or especially unique versions of the libraries it does use. The most daunting of these is optional
+use of CEF. Building CEF is a bit of trial and few system's provide it already built. The most obscure is probably libvisca-ip, the 
+IP enabled version of libvisca. I believe I got that from: https://github.com/norihiro/libvisca-ip.
+
 The Makefile defaults to mostly using the clang C++ compiler. Switching it over to only using g++ and gcc is a simple matter of editing
 the lines, selecting which pair you mean to use:
 ```
@@ -436,15 +443,18 @@ do not expect timely answers to questions, nor will I defend myself or this prog
 This source code is copyrighted by Mark Lasersohn &copy; 2025. You are licensed to use any portion of it for any non-nefarious
 purpose. I am not responsible in any way for anything that happens to you or anyone else if you do. I make no claim that this
 program or any of the code you might lift from it does much of anything you might want. It might, but then I am not entirely
-sure you and I agree on terminology.
+sure you and I agree on terminology. I would appreciated attribution if you find the software useful, but keep my name out of 
+when your boss is looking for someone to blame. If you are seeking attribution for a library I am using and you authored, please
+let me know. I will be happy to set your name down here and in the placard that appears when CowCam starts.
 
-All of the libraries necessary to build and run Cowcam are the property of the various license holders, and have nothing to do 
-with me, really. I am attempting to abide by the terms of the LGPL (available all over the internet), as well as several other 
-liberal open-source oriented licenses. It is possible to use Cowcam to decode and encode audio and video using any codec you have 
-installed on your system. That is up to you, not me. Cowcam simply scans what you have made available and then uses whatever 
-you tell it to use. If my program is using a library you authored and you would like some attribution, please let me know. 
-I will be happy to include some words here or during startup to that effect. If you would like me to include your license tucked
-in among the source code, I will do that as well.
+As they say:
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 # Bye
 Farewell and have fun.
