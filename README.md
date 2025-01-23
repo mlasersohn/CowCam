@@ -2,13 +2,15 @@
 
 
 CowCam is an elaborate video and audio management systems for Linux. It accepts video inputs through all sources accepted by OpenCV
-(USB/UVC cameras, IP videos, and video files of various formats) as well as several other sources including NDI® (NDI is registered 
-trademark of Vizrt NDI AB), still and video files, real-time 3D rendering, HTML rendering, pipes, plugins, text files, some vector 
-formats, and much else. Audio sources include all those supported by PulseAudio as well as several other audio file formats. It 
-supports PTZ cameras using Visca, either through the network or USB. Optionally, PTZ functionality can be accessed through NDI or 
-V4L functions. Output to various video file formats is supported as well as numerous streaming formats. Realtime streaming to 
-streaming sites, such as Twitch and Youtube is also provided. There are too many features to list here. See below for a cursory 
-rundown.
+(USB/UVC cameras, IP videos, and video files of various formats) as well as several other optional sources including NDI®
+, still and video files, real-time 3D rendering, 
+HTML rendering, pipes, plugins, text files, some vector formats, and much else. Audio sources include all those supported by 
+PulseAudio as well as several other audio file formats. It supports PTZ cameras using Visca, either through the network or USB. 
+Optionally, PTZ functionality can be accessed through NDI or V4L functions. Output to various video file formats is supported as 
+well as numerous streaming formats. Realtime streaming to streaming sites, such as Twitch and Youtube is also provided. There are 
+too many features to list here. See below for a cursory rundown.
+
+NDI is optionally provided using the NDI SDK, available at https://ndi.video/. NDI is registered trademark of Vizrt NDI AB.
 
 # Building
 First, let me apologize for still using a simple Makefile in this day and age. I am old fashioned because I am old. The Makefile
