@@ -23,9 +23,14 @@ memories. To the best I can recollect, these came from somewhat obscure third pa
 other more obvious sources:
 
 I believe I got libvisca-ip from: https://github.com/norihiro/libvisca-ip.
+<br>
 libcjson is available at: https://github.com/DaveGamble/cJSON
+<br>
 libfftw3 might be from: https://github.com/FFTW/fftw3
+<br>
 libblend2d: came from https://blend2d.com/
+<br>
+This might be the source for libirclient: https://github.com/shaoner/libircclient
 
 The Makefile defaults to mostly using the clang C++ compiler. Switching it over to only using g++ and gcc is a simple matter of editing
 the lines, selecting which pair you mean to use:
@@ -45,24 +50,24 @@ To build CowCam, you must have installed the following libraries:
 
 ## Required Libraries
 ### OpenCV (4.5.2 or greater, likely required)
-libopencv_imgproc
-libopencv_videoio
-libopencv_core
-libopencv_imgcodecs
-libopencv_highgui
-libopencv_dnn
+libopencv_imgproc\
+libopencv_videoio\
+libopencv_core\
+libopencv_imgcodecs\
+libopencv_highgui\
+libopencv_dnn\
 libopencv_objdetect
 
 ### AV/FFMPEG (58.76.100 or greater, might be required)
-libavformat
-libavcodec
-libavutil
-libswresample
-libswscale
+libavformat\
+libavcodec\
+libavutil\
+libswresample\
+libswscale\
 libavfilter
 
 ### Pulse Audio (0.24.1)
-libpulse
+libpulse\
 libpulse-simple
 
 ### VLC
@@ -75,23 +80,23 @@ libcurl
 libcairo
 
 ### FLTK (1.4 or greater, required)
-libfltk
+libfltk\
 libfltk_images
 
 ### X11
-libXcursor
-libX11
-libxcb
-libXdmcp
-libXau
-libXext
-libXtst
-libm
-libXft
-libXrender
-libXfixes
+libXcursor\
+libX11\
+libxcb\
+libXdmcp\
+libXau\
+libXext\
+libXtst\
+libm\
+libXft\
+libXrender\
+libXfixes\
 libXinerama
-libXrender
+libXrender\
 libXcomposite
 
 ### VISCA
@@ -101,8 +106,8 @@ libvisca_ip
 libcjson
 
 ### Font
-libfontconfig
-libexpat
+libfontconfig\
+libexpat\
 libfreetype
 
 ### Fourier
@@ -121,24 +126,24 @@ libjpeg
 libircclient
 
 ### Misc
-libuuid
-librt
-libz
-liblzma
-libbz2
-libmagic
+libuuid\
+librt\
+libz\
+liblzma\
+libbz2\
+libmagic\
 stdc++
 
 ## Optional Libraries
 ### Open Scene Graph
 To build the optional library "libosg_camera.so" which supports OSG (rendered 3D models as a video sources),
 you must have the following OSG libraries installed:
-```
-libosg
-libosgViewer
-libosgDB
+
+libosg\
+libosgViewer\
+libosgDB\
 libosgGA
-```
+
 If you do not want to build in OSG support, edit or delete the following line in the Makefile:
 ```
 OSG := 1
