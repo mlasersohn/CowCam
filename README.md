@@ -459,7 +459,9 @@ adjustable.
 Cowcam's user interface was built primarily with FLTK, with a lot of help from Cairo and OpenCV. It provides many examples of how to do things
 with these libraries and also quite a few examples of how not to do things with the same libraries. As that much of this code is experimental
 and some of it is ill-advised, borrow and run this code at your own risk. I will support you in a haphazard and willy-nilly sort of way, so
-do not expect timely answers to questions, nor will I defend myself or this program from criticism of any sort. I'd rather have fun.
+do not expect timely answers to questions, nor will I defend myself or this program from criticism of any sort. I'd rather have fun. Primarily,
+I use CowCam as a testbed for ideas and to recognize birds and squirrels when either one or the other get in my bird-feeders. Every once in
+a while, I post bird videos to Facebook and very occasionally stream their antics to Twitch.
 
 # License
 This source code is copyrighted by Mark Lasersohn &copy; 2025. You are licensed to use any portion of it for any non-nefarious
