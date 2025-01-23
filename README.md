@@ -453,7 +453,7 @@ with these libraries and also quite a few examples of how not to do things with 
 and some of it is ill-advised, borrow and run this code at your own risk. I will support you in a haphazard and willy-nilly sort of way, so
 do not expect timely answers to questions, nor will I defend myself or this program from criticism of any sort. I'd rather have fun.
 
-# LICENSE
+# License
 This source code is copyrighted by Mark Lasersohn &copy; 2025. You are licensed to use any portion of it for any non-nefarious
 purpose. I am not responsible in any way for anything that happens to you or anyone else if you do. I make no claim that this
 program or any of the code you might lift from it does much of anything you might want. It might, but then I am not entirely
@@ -461,7 +461,7 @@ sure you and I agree on terminology. I would appreciated attribution if you find
 when your boss is looking for someone to blame. If you are seeking attribution for a library I am using and you authored, please
 let me know. I will be happy to set your name down here and in the placard that appears when CowCam starts.
 
-As they say:
+### As they say:
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
