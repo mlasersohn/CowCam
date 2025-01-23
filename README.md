@@ -1,21 +1,31 @@
 # CowCam
 © 2025 Mark Lasersohn
 
-CowCam is an elaborate video and audio management systems for Linux. It accepts video inputs through all sources accepted by OpenCV,
-as well as several other sources including NDI® (NDI is registered trademark of Vizrt NDI AB), still and video files, real-time 3D
-rendering, HTML rendering, pipes, plugins, and much else. Audio sources include all those supported by PulseAudio as well as several 
-other audio file formats. It supports PTZ cameras using Visca, either through the network or USB. Optionally, PTZ functionality can 
-be accessed through NDI or V4L functions. Output to various video file formats is supported as well as numerous streaming formats.
-Realtime streaming to streaming sites, such as Twitch and Youtube is also provided. There are too many features to list here. See below 
-for a cursory rundown.
+CowCam is an elaborate video and audio management systems for Linux. It accepts video inputs through all sources accepted by OpenCV
+(USB/UVC cameras, IP videos, and video files of various formats) as well as several other sources including NDI® (NDI is registered 
+trademark of Vizrt NDI AB), still and video files, real-time 3D rendering, HTML rendering, pipes, plugins, text files, some vector 
+formats, and much else. Audio sources include all those supported by PulseAudio as well as several other audio file formats. It 
+supports PTZ cameras using Visca, either through the network or USB. Optionally, PTZ functionality can be accessed through NDI or 
+V4L functions. Output to various video file formats is supported as well as numerous streaming formats. Realtime streaming to 
+streaming sites, such as Twitch and Youtube is also provided. There are too many features to list here. See below for a cursory 
+rundown.
 
 # Building
 First, let me apologize for still using a simple Makefile in this day and age. I am old fashioned because I am old. The Makefile
 works for me and because, until recently, I was the only person even considering compiling this program, I didn't see any reason
-to dedicate time towards changing that. Fortunately, though it uses many libraries, the program is not composed of many pieces nor
+to dedicate time towards changing that out. Fortunately, though it uses many libraries, the program is not composed of many pieces nor
 requires terribly obscure libraries or especially unique versions of the libraries it does use. The most daunting of these is optional
 use of CEF. Building CEF is a bit of trial and few system's provide it already built. The most obscure is probably libvisca-ip, the 
-IP enabled version of libvisca. I believe I got that from: https://github.com/norihiro/libvisca-ip.
+IP enabled version of libvisca. 
+
+It was quite a while ago since I gathered all the libraries needed to compile this program, so forgive me while I rummage through fading
+memories. To the best I can recollect, these came from somewhat obscure third parties rather than part of my system's repositories or
+other more obvious sources:
+
+I believe I got libvisca-ip from: https://github.com/norihiro/libvisca-ip.
+libcjson is available at: https://github.com/DaveGamble/cJSON
+libfftw3 might be from: https://github.com/FFTW/fftw3
+libblend2d: came from https://blend2d.com/
 
 The Makefile defaults to mostly using the clang C++ compiler. Switching it over to only using g++ and gcc is a simple matter of editing
 the lines, selecting which pair you mean to use:
@@ -414,20 +424,19 @@ Sony, through USB for the Aver, and through TCP (NDI) for the BZBGear camera. Fu
 Most, maybe all of these options can be set once within the program, as well as many more. 
 
 # Some of the Features
-Cowcam allows the user to save the state of the entire
-system as well as the state of any of the cameras or other sources. Within the program, or using the --source= flag, you can select between dozens
-of supported input sources. You can also set hundreds (thousands?) of combinations of containers, and audio and video codecs, for output files; the exact
-number depending on how many you have licensed/installed on your system and made available to the ffmpeg library. Many container formats for images,
-audio, and video are also available as input sources.
+Cowcam allows the user to save the state of the entire system as well as the state of any of the cameras or other sources. Within the program, 
+or using the --source= flag, you can select between dozens of supported input sources. You can also set hundreds (thousands?) of combinations 
+of containers, and audio and video codecs, for output files; the exact number depending on how many you have licensed/installed on your system 
+and made available to the ffmpeg library. Many container formats for images, audio, and video are also available as input sources.
 
 Cowcam is also capable of streaming to the usual stream receiving websites, including Twitch, YouTube, and Facebook as well as any others that allow
 for RTMP protocol. Cowcam can also be used as a NDI source on output for other programs, devices, or sites.
 
 Cowcam has many features including transitions; various sorts of plug-ins for audio and video effects and GUI elements; render HTML both locally and 
-from the websites, including entire websites; drawing various directly on the screen, including fonts and text; picture in picture from multiple
-sources; detecting objects and labeling them; triggering recording based on object recognition, motion, time of day, interval, and changing light 
-conditions. Cowcam allows for multiple audio sources to be mixed or muted, including recording the output of other programs. The entire desktop
-or individual windows can also be captured as video sources, allowing for game-play to be streamed.
+from the websites, including entire websites; drawing various graphics directly on the incoming video, including fonts and text; picture in picture 
+from multiple sources; detecting objects and labeling them; triggering recording based on object recognition, motion, time of day, interval, and 
+changing light conditions. Cowcam allows for multiple audio sources to be mixed or muted, including recording the output of other programs. The 
+entire desktop or individual windows can also be captured as video sources, allowing for game-play to be streamed.
 
 Cowcam supports control over PTZ cameras using VISCA. If the camera does not provide VISCA through either USB, RS232, or TCP/UDP, Cowcam will 
 attempt to control the camera through the PTZ functions supported by V4L2. Through VISCA, Cowcam supports pan, tilt, zoom, focus, as well as
@@ -443,7 +452,7 @@ do not expect timely answers to questions, nor will I defend myself or this prog
 This source code is copyrighted by Mark Lasersohn &copy; 2025. You are licensed to use any portion of it for any non-nefarious
 purpose. I am not responsible in any way for anything that happens to you or anyone else if you do. I make no claim that this
 program or any of the code you might lift from it does much of anything you might want. It might, but then I am not entirely
-sure you and I agree on terminology. I would appreciated attribution if you find the software useful, but keep my name out of 
+sure you and I agree on terminology. I would appreciated attribution if you find the software useful, but keep my name out of it 
 when your boss is looking for someone to blame. If you are seeking attribution for a library I am using and you authored, please
 let me know. I will be happy to set your name down here and in the placard that appears when CowCam starts.
 
