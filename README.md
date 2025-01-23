@@ -1,5 +1,5 @@
-# CowCam
-© 2025 Mark Lasersohn
+![starting_up](https://github.com/user-attachments/assets/6f24ea9d-3833-417f-8117-6b7f76adccd0)
+
 
 CowCam is an elaborate video and audio management systems for Linux. It accepts video inputs through all sources accepted by OpenCV
 (USB/UVC cameras, IP videos, and video files of various formats) as well as several other sources including NDI® (NDI is registered 
@@ -473,3 +473,10 @@ SOFTWARE.
 # Bye
 Farewell and have fun.
 Mark Lasersohn
+
+# A couple of screenshots
+![running1](https://github.com/user-attachments/assets/f41d6f90-3e20-4c7e-9b96-fbc8b5593698)
+![running2](https://github.com/user-attachments/assets/f02bc786-0ada-4b98-beca-d9f821bf82fa)
+
+
+
