@@ -5457,27 +5457,6 @@ int		ResizeFrame::handle(int event)
 				if((x() != old_x) || (y() != old_y))
 				{
 					use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
-					if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
-					{
-						Immediate *im = (Immediate *)use;
-						if((im->immediate_type == DRAWING_MODE_LINE)
-						|| (im->immediate_type == DRAWING_MODE_POLYGON)
-						|| (im->immediate_type == DRAWING_MODE_POLYGON_SELECT)
-						|| (im->immediate_type == DRAWING_MODE_FREEHAND)
-						|| (im->immediate_type == DRAWING_MODE_LOOP))
-						{
-							if(im->line != NULL)
-							{
-								if((im->line->xx != NULL) && (im->line->yy != NULL))
-								{
-									int dx = old_x - x();
-									int dy = old_y - y();
-									im->line->xx[0] -= dx;
-									im->line->yy[0] -= dy;
-								}
-							}
-						}
-					}
 				}
 			}
 		}
@@ -48839,10 +48818,23 @@ ImLine::~ImLine()
 	cnt = 0;
 }
 
-void	ImLine::resize(int xx, int yy, int ww, int hh)
+void	ImLine::resize(int in_xx, int in_yy, int in_ww, int in_hh)
 {
 	Extent();
-	Fl_Group::resize(xx, yy, ww, hh);
+	int old_x = x();
+	int old_y = y();
+	Fl_Group::resize(in_xx, in_yy, in_ww, in_hh);
+	if(my_immediate->actively_drawing == 0)
+	{
+		int dx = in_xx - old_x;
+		int dy = in_yy - old_y;
+		if((xx != NULL) && (yy != NULL))
+		{
+			xx[0] += dx;
+			yy[0] += dy;
+		}
+		Extent();
+	}
 }
 
 void	ImLine::Revise(int in_x, int in_y)
@@ -62577,6 +62569,7 @@ int		loop;
 	int shade_mode = SHADE_MODE_DARK;
 	int message_delay = 0;
 	int run_it = 1;
+	int ndi_notice = 0;;
 	for(loop = 0;loop < argc;loop++)
 	{
 		if(strncmp(argv[loop], "--no_html_renderer", strlen("--no_html_renderer")) == 0)
@@ -62644,6 +62637,10 @@ int		loop;
 		{
 			fprintf(stderr, "Error: Unable to initialize NDI.\n");
 			no_go = 1;
+		}
+		else
+		{
+			ndi_notice = 1;
 		}
 	}
 	int do_auto_scale = 0;
@@ -62739,6 +62736,10 @@ int		loop;
 				if(start_win->intro_pipe_fp != NULL)
 				{
 					start_win->hide();
+					if(ndi_notice == 1)
+					{
+						fprintf(start_win->intro_pipe_fp, "ndi notice\n");
+					}
 					StartMain(0);
 					fprintf(start_win->intro_pipe_fp, "quit\n");
 					fflush(start_win->intro_pipe_fp);
