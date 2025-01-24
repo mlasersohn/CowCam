@@ -441,6 +441,8 @@ Most, maybe all of these options can be set once within the program, as well as 
 Once within the program, menus will appear as you move the mouse near the edges of the screen. Unless you specify otherwise, the main menu will
 appear along the right edge. Cameras and other video sources, with live thumbnails, will appear along the left edge. Audio devices are along the
 top. And, PTZ controls appear along the bottom.
+![image](https://github.com/user-attachments/assets/0ec578a1-a59f-4b92-acee-39e5c5bb5775)
+
 
 # Some of the Features
 Cowcam allows the user to save the state of the entire system as well as the state of any of the cameras or other sources. Within the program, 
