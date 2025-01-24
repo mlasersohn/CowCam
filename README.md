@@ -155,8 +155,8 @@ To build the optional library "libhtml_window.so" which supports rendering HTML 
 must set the value of '$(CEF_PATH)' in the Makefile to point at the directory where CEF keeps its include
 files and have the following CEF libraries installed:
 ```
-libcef.so ; copied right into the CowCam build directory
-$(CEF_PATH)/build/libcef_dll_wrapper/libcef_dll_wrapper.a; down under '$(CEF_PATH)' somewhere
+libcef.so // copied right into the CowCam build directory
+$(CEF_PATH)/build/libcef_dll_wrapper/libcef_dll_wrapper.a // down under '$(CEF_PATH)' somewhere
 ```
 If you do not want to build in CEF support, edit or delete the following line in the Makefile:
 ```
@@ -181,7 +181,9 @@ In the simplest case, running CowCam is just a matter of invoking the executable
 invoke the "intro" executable by default, which will display status messages as the cowcam program starts. During this
 period, cowcam will scan your system ("/dev" directories) for cameras and microphones and various other audio sources. There
 are many startup flags and arguments allowing you to customize cowcam on startup as well as bypass the scan and specify
-exactly which audio and video sources you wish to have available during startup.
+exactly which audio and video sources you wish to have immediately available. Any sources you do not specify using these
+flags and not disovered during the device scan, can be added by selecting "New Source" from the main menu on the righthand
+side of the main screen.
 
 A typical startup with both audio and video scanning, no html rendering capability, and 1280 by 720 resolution to a FLV file, might be
 something like:
@@ -434,12 +436,16 @@ This allows me to open my Sony SRG-120DU as a USV/UVC device, my AVer CAM520 as 
 setting up YOLO object detection using coco. I set the resolution to 1280 and 720 with a default container of FLV. I also setup PTZ over UDP for the
 Sony, through USB for the Aver, and through TCP (NDI) for the BZBGear camera. Furthermore, I set the system to record which ever camera is displayed.
 
-Most, maybe all of these options can be set once within the program, as well as many more. 
+Most, maybe all of these options can be set once within the program, as well as many more.
+
+Once within the program, menus will appear as you move the mouse near the edges of the screen. Unless you specify otherwise, the main menu will
+appear along the right edge. Cameras and other video sources, with live thumbnails, will appear along the left edge. Audio devices are along the
+top. And, PTZ controls appear along the bottom.
 
 # Some of the Features
 Cowcam allows the user to save the state of the entire system as well as the state of any of the cameras or other sources. Within the program, 
 or using the --source= flag, you can select between dozens of supported input sources. You can also set hundreds (thousands?) of combinations 
-of containers, and audio and video codecs, for output files; the exact number depending on how many you have licensed/installed on your system 
+of container formats, and audio and video codecs, for output files; the exact number depending on how many you have licensed/installed on your system 
 and made available to the ffmpeg library. Many container formats for images, audio, and video are also available as input sources.
 
 Cowcam is also capable of streaming to the usual stream receiving websites, including Twitch, YouTube, and Facebook as well as any others that allow
