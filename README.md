@@ -322,7 +322,7 @@ cowcam --animate_panels --no_frame_scaling --streaming_only --width=1280 --heigh
 `cowcam --yolo_model=coco`
 
 ####  If JPEG streaming is turned on, stream the current camera's image to
-####  a custom server running at www.example.com on port 20000. Port 20001
+####  a custom server running on port 20000. Port 20001
 ####  will be used as the PTZ control port. If port 10000 was selected
 ####  port 10001 would be the control port.
 `cowcam --jpeg_streaming=www.example.com:20000`
@@ -441,6 +441,7 @@ Most, maybe all of these options can be set once within the program, as well as 
 Once within the program, menus will appear as you move the mouse near the edges of the screen. Unless you specify otherwise, the main menu will
 appear along the right edge. Cameras and other video sources, with live thumbnails, will appear along the left edge. Audio devices are along the
 top. And, PTZ controls appear along the bottom.
+
 ![image](https://github.com/user-attachments/assets/adb132b8-25bf-405c-8977-002a81c89ea9)
 
 # Some of the Features
