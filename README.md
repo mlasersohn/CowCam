@@ -472,10 +472,10 @@ I use CowCam as a testbed for ideas and to recognize birds and squirrels when ei
 a while, I post bird videos to Facebook and very occasionally stream their antics to Twitch.
 
 # License
-This source code is copyrighted by Mark Lasersohn &copy; 2025. You are licensed to use any portion of it for any non-nefarious
+Much of this source code is copyrighted by Mark Lasersohn &copy; 2025. You are licensed to use any portion of it for any non-nefarious
 purpose. I am not responsible in any way for anything that happens to you or anyone else if you do. I make no claim that this
 program or any of the code you might lift from it does much of anything you might want. It might, but then I am not entirely
-sure you and I agree on terminology. I would appreciated attribution if you find the software useful, but keep my name out of it 
+sure you and I agree on terminology. I would appreciate attribution if you find the software useful, but keep my name out of it 
 when your boss is looking for someone to blame. If you are seeking attribution for a library I am using and you authored, please
 let me know. I will be happy to set your name down here and in the placard that appears when CowCam starts.
 
