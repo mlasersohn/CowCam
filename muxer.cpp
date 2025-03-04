@@ -792,6 +792,16 @@ extern long int precise_time();
 				encode_done = 1;
 			}
 		}
+		else if(video_st.enc != NULL)
+		{
+			write_video_frame(oc, &video_st);
+			usleep(12000);
+			current_frame++;
+			if(my_window != NULL)
+			{
+				my_window->recorded_frames = current_frame;
+			}
+		}
 		else
 		{
 			encode_done = 1;

@@ -9,6 +9,7 @@
 #include	<link.h>
 #include	<dlfcn.h>
 #include	<dirent.h>
+#include	<libgen.h>
 #include	<magic.h>
 
 #include <iostream>
@@ -139,10 +140,14 @@ extern "C"
 #include	<Processing.NDI.Lib.h>
 #include	<Processing.NDI.DynamicLoad.h>
 
+#include	<lunasvg.h>
+
 #include	"osg.h"
 #include	"libircclient.h"
 #include	"irc.h"
 #include	"intro.h"
+
+#include	"folder.h"
 
 extern "C"
 {
@@ -256,8 +261,10 @@ void			*void_OSG_Scale = NULL;
 void			*void_OSG_open_osg = NULL;
 int				global_osg_enabled = 0;
 
-cairo_matrix_t	global_cairo_matrix[128];
-int				global_cairo_matrix_cnt = 0;
+cairo_matrix_t			global_cairo_matrix[128];
+int						global_cairo_matrix_cnt = 0;
+
+Mat						global_folder_mat;
 
 pid_t			clock_pid = -1;
 
@@ -279,8 +286,8 @@ char	*available_scheme[] = {
 	"blank://92,27,124,255",
 	"chroma://[(fact#)]alias",
 	"chroma://(0.72)MyCamera1",
-	"clock://mil#:clock format#",
-	"clock://0:1\n[military time (0=off, 1=on) clock formats from 0 to 2]",
+	"clock://mil#:clock format#:analog#:analog size#",
+	"clock://0:1\n[military time (0=off, 1=on) clock formats from 0 to 2] analog (1=on) analog size",
 	"desktop://",
 	"desktop://",
 	"dynamic://text",
@@ -424,6 +431,11 @@ struct	NamedKeys named_key[] = {
 
 // SECTION *********************************** UTILITY FUNCTIONS *******************************************
 
+void force_crash() 
+{
+	raise(SIGTRAP);
+}
+
 void magic(char *filename, char *result) 
 {
 magic_t magic_cookie;
@@ -472,6 +484,64 @@ void	strip_lf(char *in)
 	}
 }
 
+int	test_for_ndi_path(char *str)
+{
+	int r = 0;
+	if((strncasecmp(str, "ndi://", strlen("ndi://")) == 0)
+	|| (strncasecmp(str, "ndi_rgbx://", strlen("ndi_rgbx://")) == 0)
+	|| (strncasecmp(str, "ndi_bgrx://", strlen("ndi_bgrx://")) == 0)
+	|| (strncasecmp(str, "ndi_i420://", strlen("ndi_i420://")) == 0)
+	|| (strncasecmp(str, "ndi_p216://", strlen("ndi_p216://")) == 0)
+	|| (strncasecmp(str, "ndi_uyva://", strlen("ndi_uyva://")) == 0)
+	|| (strncasecmp(str, "ndi_uyvy://", strlen("ndi_uyvy://")) == 0))
+	{
+		r = 1;
+	}
+	return(r);
+}
+
+void	find_url_css_js(char *buf, char *url, char *css, char *js_once, char *js_always)
+{
+	*url = '\0';
+	*css = '\0';
+	*js_once = '\0';
+	*js_always = '\0';
+
+	char *cp = buf;
+	char *cpo = url;
+	while(*cp != '\0')
+	{
+		if(strncasecmp(cp, "url://", strlen("url://")) == 0)
+		{
+			cp += strlen("url://");
+			*cpo = '\0';
+			cpo = url;
+		}
+		if(strncasecmp(cp, "css://", strlen("css://")) == 0)
+		{
+			cp += strlen("css://");
+			*cpo = '\0';
+			cpo = css;
+		}
+		if(strncasecmp(cp, "js once://", strlen("js once://")) == 0)
+		{
+			cp += strlen("js once://");
+			*cpo = '\0';
+			cpo = js_once;
+		}
+		if(strncasecmp(cp, "js always://", strlen("js always://")) == 0)
+		{
+			cp += strlen("js always://");
+			*cpo = '\0';
+			cpo = js_always;
+		}
+		*cpo = *cp;
+		cp++;
+		cpo++;
+	}
+	*cpo = '\0';
+}
+
 int	my_file_chooser(char *prompt, char *filter, char *start_path, char *current_selection, int select_dir = 0, int new_file = 0)
 {
 char	cwd[4096];
@@ -489,7 +559,12 @@ char	cwd[4096];
 	{
 		Fl::wait(1);
 	}
+	if(fs->use_result != 1)
+	{
+		strcpy(current_selection, "");
+	}
 	Fl::delete_widget(fs);
+	Fl::check();
 	fl_chdir(cwd);
 	int nn = strlen(current_selection);
 	return(nn);
@@ -1322,6 +1397,24 @@ static ColorDialog	*cd = NULL;
 	return(1);
 }
 
+void	my_video_settings_chooser(MyWin *in_win, double& contrast, double& brightness, double& saturation, double& hue, double& intensity)
+{
+	MiscVideoSettingsWindow *mvsw = in_win->misc_video_settings_window;
+	if(mvsw != NULL)
+	{
+		mvsw->show();
+		while(mvsw->visible())
+		{
+			contrast = mvsw->contrast;
+			brightness = mvsw->brightness;
+			saturation = mvsw->saturation;
+			hue = mvsw->hue;
+			intensity = mvsw->intensity;
+			Fl::check();
+		}
+	}
+}
+
 int	my_color_chooser(char *title, int& red, int& green, int &blue, int& alpha)
 {
 static ColorDialog	*cd = NULL;
@@ -1395,11 +1488,11 @@ Mat	crop_section(Mat source, Mat& cropped, int xx, int yy, int ww, int hh)
 	if(yy < -1) yy = 0;
 	if((xx + ww) >= source.cols)
 	{
-		ww -= ((xx + ww) - (source.cols + 1));
+		ww -= ((xx + ww + 1) - source.cols);
 	}
 	if((yy + hh) >= source.rows)
 	{
-		hh -= ((yy + hh) - (source.rows + 1));
+		hh -= ((yy + hh + 1) - source.rows);
 	}
 	if(((xx + ww) < source.cols) && ((yy + hh) < source.rows))
 	{
@@ -1490,7 +1583,7 @@ void	blur_it(Camera *cam, int factor, int xx, int yy, int ww, int hh)
 	}
 }
 
-void	mask_it(Mat mat, Mat &out, int point_cnt, int xx[1024], int yy[1024])
+void	mask_polygon(Mat mat, Mat &out, int point_cnt, int xx[1024], int yy[1024])
 {
 int	loop;
 
@@ -1507,7 +1600,11 @@ int	loop;
 	cv::Mat mask(mat.rows, mat.cols, CV_8UC4, cv::Scalar(0, 0, 0, 0));
 	cv::fillPoly(mask, corner_list, &num_points, num_polygons, cv::Scalar(255, 255, 255, 255), line_type);
 
-	cv::Mat result;
+	cv::bitwise_and(mat, mask, out);
+}
+
+void	mask_mats(Mat mat, Mat mask, Mat &out)
+{
 	cv::bitwise_and(mat, mask, out);
 }
 
@@ -1714,7 +1811,7 @@ void	clahe_mat(Mat& mat, double contrast)
 	cv::cvtColor(mat, mat, COLOR_BGR2BGRA);
 }
 
-Mat	change_saturation(Mat frame, double amount)
+Mat	change_saturation(Mat& frame, double amount)
 {
 int	i, j;
 
@@ -3293,7 +3390,6 @@ static int old_h = -1;
 		image = x11_create_shared_image(&shminfo, start_w, start_h);
 		old_w = start_w;
 		old_h = start_h;
-printf("RES: %d %d\n", start_w, start_h);
 	}
 	if(image != NULL)
 	{
@@ -3415,28 +3511,23 @@ XColor colors;
 
 void	read_svg_file(Mat& mat, char *filename, int width, int height)
 {
-	Fl_SVG_Image *svg = new Fl_SVG_Image(filename);
-	if(!svg->fail())
+	auto document = lunasvg::Document::loadFromFile(filename);
+	if(document != nullptr)
 	{
-		XShmSegmentInfo	shminfo;
-		Fl_Offscreen oscr = fl_create_offscreen(width, height);
-		fl_begin_offscreen(oscr);
-		fl_color(BLACK);
-		fl_rectf(0, 0, width, height);
-		svg->draw(0, 0);
-		fl_end_offscreen();
-
-		XImage *image = x11_create_shared_image(&shminfo, width, height);
-		XShmGetImage(fl_display, oscr, image, 0, 0, AllPlanes);
-
-		int depth = 4;
-		unsigned char *use_data = (unsigned char *)image->data;
-		int cv_flag = CV_8UC4;
-		Mat frame(cv::Size(width, height), cv_flag, use_data);
-
-		cvtColor(frame, frame, COLOR_BGRA2RGBA);
-		frame.copyTo(mat);
-		fl_delete_offscreen(oscr);
+		auto bitmap = document->renderToBitmap(width, height);
+		if(!bitmap.isNull())
+		{
+			bitmap.convertToRGBA();
+			uint8_t *use_data = bitmap.data();
+			if(use_data != NULL)
+			{
+				width = bitmap.width();
+				height = bitmap.height();
+				int cv_flag = CV_8UC4;
+				Mat frame(cv::Size(width, height), cv_flag, use_data);
+				frame.copyTo(mat);
+			}
+		}
 	}
 }
 
@@ -4917,6 +5008,7 @@ ResizeFrame::ResizeFrame(MyWin *win, int xx, int yy, int ww, int hh) : DragGroup
 	use = NULL;
 	mode = 0;
 	potential_mode = 0;
+	ignore_release = 0;
 	drag_start_x = -1;
 	drag_start_y = -1;
 	dx = xx;
@@ -4945,7 +5037,6 @@ void	ResizeFrame::show()
 void	ResizeFrame::draw()
 {
 	DragGroup::draw();
-
 	fl_color(color());
 	char *mode_str = NULL;
 	if(operation == FRAME_OPERATION_PROPORTIONAL_RESIZE)
@@ -4960,6 +5051,10 @@ void	ResizeFrame::draw()
 	{
 		mode_str = "Crop";
 	}
+	else if(operation == FRAME_OPERATION_ROTATE)
+	{
+		mode_str = "Rotate";
+	}
 	else if(operation == FRAME_OPERATION_DELETE)
 	{
 		mode_str = "Delete";
@@ -4968,6 +5063,7 @@ void	ResizeFrame::draw()
 	{
 		fl_rectf(x() + 25, y() + 12, 90, 14);
 		fl_color(BLACK);
+		fl_font(FL_HELVETICA, 8);
 		fl_draw(mode_str, x() + 25, y() + 12, 90, 14, FL_ALIGN_CENTER);
 		fl_color(color());
 		if(operation == FRAME_OPERATION_DELETE)
@@ -4979,64 +5075,67 @@ void	ResizeFrame::draw()
 	}
 	fl_rect(x() + 6, y() + 6, w() - 12, h() - 12);
 
-	if(potential_mode == DRAG_MODE_LEFT_TOP)
+	if(operation != FRAME_OPERATION_DELETE)
 	{
-		fl_color(RED);
-	}
-	fl_rectf(x(), y(), 10, 4);
-	fl_rectf(x(), y(), 4, 10);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_LEFT_TOP)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x(), y(), 10, 4);
+		fl_rectf(x(), y(), 4, 10);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_RIGHT_TOP)
-	{
-		fl_color(RED);
-	}
-	fl_rectf(x() + w() - 10, y(), 10, 4);
-	fl_rectf(x() + w() - 4, y(), 4, 10);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_RIGHT_TOP)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x() + w() - 10, y(), 10, 4);
+		fl_rectf(x() + w() - 4, y(), 4, 10);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_LEFT_BOTTOM)
-	{
-		fl_color(RED);
-	}
-	fl_rectf(x(), y() + h() - 10, 4, 10);
-	fl_rectf(x(), y() + h() - 4, 10, 4);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_LEFT_BOTTOM)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x(), y() + h() - 10, 4, 10);
+		fl_rectf(x(), y() + h() - 4, 10, 4);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_RIGHT_BOTTOM)
-	{
-		fl_color(RED);
-	}
-	fl_rectf(x() + w() - 10, y() + h() - 4, 10, 4);
-	fl_rectf(x() + w() - 4, y() + h() - 10, 4, 10);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_RIGHT_BOTTOM)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x() + w() - 10, y() + h() - 4, 10, 4);
+		fl_rectf(x() + w() - 4, y() + h() - 10, 4, 10);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_TOP)
-	{
-		fl_color(RED);
-	}
-	fl_rectf(x() + (w() / 2) - 5, y(), 10, 4);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_TOP)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x() + (w() / 2) - 5, y(), 10, 4);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_BOTTOM)
-	{
-		fl_color(RED);
-	}
-	fl_rectf(x() + (w() / 2) - 5, y() + h() - 4, 10, 4);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_BOTTOM)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x() + (w() / 2) - 5, y() + h() - 4, 10, 4);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_LEFT)
-	{
-		fl_color(RED);
-	}
-	fl_rectf(x(), y() + (h() / 2) - 5, 4, 10);
-	fl_color(YELLOW);
+		if(potential_mode == DRAG_MODE_LEFT)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x(), y() + (h() / 2) - 5, 4, 10);
+		fl_color(YELLOW);
 
-	if(potential_mode == DRAG_MODE_RIGHT)
-	{
-		fl_color(RED);
+		if(potential_mode == DRAG_MODE_RIGHT)
+		{
+			fl_color(RED);
+		}
+		fl_rectf(x() + w() - 4, y() + (h() / 2) - 5, 4, 10);
 	}
-	fl_rectf(x() + w() - 4, y() + (h() / 2) - 5, 4, 10);
 }
 
 void	ResizeFrame::resize(double xx, double yy, double ww, double hh)
@@ -5092,70 +5191,95 @@ int		ResizeFrame::handle(int event)
 					operation = FRAME_OPERATION_PROPORTIONAL_RESIZE;
 				}
 				flag = 1;
+				ignore_release = 1;
 			}
 			else if(((xx > x()) && (xx < x() + 20))
 			&& ((yy > y()) && (yy < y() + 20)))
 			{
-				mode = DRAG_MODE_LEFT_TOP;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_LEFT_TOP;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((xx > x()) && (xx < x() + 20))
 			&& ((yy < y() + h()) && (yy > y() + h() - 20)))
 			{
-				mode = DRAG_MODE_LEFT_BOTTOM;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_LEFT_BOTTOM;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((xx < x() + w()) && (xx > x() + w() - 20))
 			&& ((yy < y() + h()) && (yy > y() + h() - 20)))
 			{
-				mode = DRAG_MODE_RIGHT_BOTTOM;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_RIGHT_BOTTOM;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((xx < x() + w()) && (xx > x() + w() - 20))
 			&& ((yy > y()) && (yy < y() + 20)))
 			{
-				mode = DRAG_MODE_RIGHT_TOP;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_RIGHT_TOP;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((xx > x() + (w() / 2) - 5) && (xx < x() + (w() / 2) + 5))
 			&& ((yy > y()) && (yy < y() + 16)))
 			{
-				mode = DRAG_MODE_TOP;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_TOP;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((xx > x() + (w() / 2) - 5) && (xx < x() + (w() / 2) + 5))
-			&& ((yy > y() + h() - 16) && (yy < y() + w())))
+			&& ((yy > y() + h() - 16) && (yy < y() + h())))
 			{
-				mode = DRAG_MODE_BOTTOM;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_BOTTOM;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((yy > y() + (h() / 2) - 5) && (yy < y() + (h() / 2) + 5))
 			&& ((xx > x()) && (xx < x() + 16)))
 			{
-				mode = DRAG_MODE_LEFT;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_LEFT;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 			else if(((yy > y() + (h() / 2) - 5) && (yy < y() + (h() / 2) + 5))
 			&& ((xx > x() + w() - 16) && (xx < x() + w())))
 			{
-				mode = DRAG_MODE_RIGHT;
-				drag_start_x = xx;
-				drag_start_y = yy;
-				flag = 1;
+				if(operation != FRAME_OPERATION_DELETE)
+				{
+					mode = DRAG_MODE_RIGHT;
+					drag_start_x = xx;
+					drag_start_y = yy;
+					flag = 1;
+				}
 			}
 		}
 	}
@@ -5165,145 +5289,226 @@ int		ResizeFrame::handle(int event)
 		{
 			if(use != NULL)
 			{
-				if(mode == DRAG_MODE_LEFT_TOP)
+				if((operation != FRAME_OPERATION_DELETE)
+				&& (operation != FRAME_OPERATION_ROTATE))
+				{
+					if(mode == DRAG_MODE_LEFT_TOP)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if((w() + dx > 20) && (h() + dy > 20))
+						{
+							resize(x() - dx, y() - dy, w() + dx, h() + dy);
+							AdjustImmediateLinePosition(dx, dy);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_LEFT_BOTTOM)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if((w() + dx > 20) && (h() - dy > 20))
+						{
+							resize(x() - dx, y(), w() + dx, h() - dy);
+							AdjustImmediateLinePosition(dx, 0);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_RIGHT_TOP)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if((w() - dx > 20) && (h() + dy > 20))
+						{
+							resize(x(), y() - dy, w() - dx, h() + dy);
+							AdjustImmediateLinePosition(0, dy);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_RIGHT_BOTTOM)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if((w() - dx > 20) && (h() - dy > 20))
+						{
+							resize(x(), y(), w() - dx, h() - dy);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_TOP)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if(h() + dy > 20)
+						{
+							resize(x(), y() - dy, w(), h() + dy);
+							AdjustImmediateLinePosition(0, dy);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_BOTTOM)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if(h() - dy > 20)
+						{
+							resize(x(), y(), w(), h() - dy);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_LEFT)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if(w() + dx > 20)
+						{
+							resize(x() - dx, y(), w() + dx, h());
+							AdjustImmediateLinePosition(dx, 0);
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					else if(mode == DRAG_MODE_RIGHT)
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						int dx = drag_start_x - xx;
+						int dy = drag_start_y - yy;
+						if(w() - dx > 20)
+						{
+							resize(x(), y(), w() - dx, h());
+							drag_start_x = xx;
+							drag_start_y = yy;
+						}
+						flag = 1;
+					}
+					if(mode > 0)
+					{
+						if(operation == FRAME_OPERATION_FREE_RESIZE)
+						{
+							use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
+						}
+						else if(operation == FRAME_OPERATION_PROPORTIONAL_RESIZE)
+						{
+							double ddh = proportion * (double)w();
+							resize(x(), y(), w(), ddh);
+							use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
+						}
+						else if(operation == FRAME_OPERATION_CROP)
+						{
+						}
+					}
+				}
+				else if(operation == FRAME_OPERATION_ROTATE)
 				{
 					int xx = Fl::event_x();
 					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
 					int dy = drag_start_y - yy;
-					if((w() + dx > 10) && (h() + dy > 10))
+					if(xx > x() + (w() / 2))
 					{
-						resize(x() - dx, y() - dy, w() + dx, h() + dy);
-						AdjustImmediateLinePosition(dx, dy);
-						drag_start_x = xx;
-						drag_start_y = yy;
+						if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
+						{
+							Immediate *im = (Immediate *)use;
+							if(dy > 0)
+							{
+								im->angle -= M_PI / 100.0;
+								drag_start_y = yy;
+								im->redraw();
+							}
+							else if(dy < 0)
+							{
+								im->angle += M_PI / 100.0;
+								drag_start_y = yy;
+								im->redraw();
+							}
+						}
+						else
+						{
+							ImageWindow *iw = (ImageWindow *)use;
+							if(dy > 0)
+							{
+								iw->angle -= M_PI / 100.0;
+								drag_start_y = yy;
+								iw->redraw();
+							}
+							else if(dy < 0)
+							{
+								iw->angle += M_PI / 100.0;
+								drag_start_y = yy;
+								iw->redraw();
+							}
+						}
+					}
+					else
+					{
+						if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
+						{
+							Immediate *im = (Immediate *)use;
+							if(dy < 0)
+							{
+								im->angle -= M_PI / 100.0;
+								drag_start_y = yy;
+								im->redraw();
+							}
+							else if(dy > 0)
+							{
+								im->angle += M_PI / 100.0;
+								drag_start_y = yy;
+								im->redraw();
+							}
+						}
+						else
+						{
+							ImageWindow *iw = (ImageWindow *)use;
+							if(dy < 0)
+							{
+								iw->angle -= M_PI / 100.0;
+								drag_start_y = yy;
+								iw->redraw();
+							}
+							else if(dy > 0)
+							{
+								iw->angle += M_PI / 100.0;
+								drag_start_y = yy;
+								iw->redraw();
+							}
+						}
 					}
 					flag = 1;
-				}
-				else if(mode == DRAG_MODE_LEFT_BOTTOM)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if((w() + dx > 10) && (h() - dy > 10))
-					{
-						resize(x() - dx, y(), w() + dx, h() - dy);
-						AdjustImmediateLinePosition(dx, 0);
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				else if(mode == DRAG_MODE_RIGHT_TOP)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if((w() - dx > 10) && (h() + dy > 10))
-					{
-						resize(x(), y() - dy, w() - dx, h() + dy);
-						AdjustImmediateLinePosition(0, dy);
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				else if(mode == DRAG_MODE_RIGHT_BOTTOM)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if((w() - dx > 10) && (h() - dy > 10))
-					{
-						resize(x(), y(), w() - dx, h() - dy);
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				else if(mode == DRAG_MODE_TOP)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if(h() + dy > 10)
-					{
-						resize(x(), y() - dy, w(), h() + dy);
-						AdjustImmediateLinePosition(0, dy);
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				else if(mode == DRAG_MODE_BOTTOM)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if(h() - dy > 10)
-					{
-						resize(x(), y(), w(), h() - dy);
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				else if(mode == DRAG_MODE_LEFT)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if(w() + dx > 10)
-					{
-						resize(x() - dx, y(), w() + dx, h());
-						AdjustImmediateLinePosition(dx, 0);
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				else if(mode == DRAG_MODE_RIGHT)
-				{
-					int xx = Fl::event_x();
-					int yy = Fl::event_y();
-					int dx = drag_start_x - xx;
-					int dy = drag_start_y - yy;
-					if(w() - dx > 10)
-					{
-						resize(x(), y(), w() - dx, h());
-						drag_start_x = xx;
-						drag_start_y = yy;
-					}
-					flag = 1;
-				}
-				if(mode > 0)
-				{
-					if(operation == FRAME_OPERATION_FREE_RESIZE)
-					{
-						use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
-					}
-					else if(operation == FRAME_OPERATION_PROPORTIONAL_RESIZE)
-					{
-						double ddh = proportion * (double)w();
-						resize(x(), y(), w(), ddh);
-						use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
-					}
-					else if(operation == FRAME_OPERATION_CROP)
-					{
-					}
 				}
 			}
 		}
 	}
 	else if(event == FL_RELEASE)
 	{
-		if(mode > 0)
+		if((mode > 0) && (ignore_release == 0))
 		{
 			if(Fl::event_button() == FL_LEFT_MOUSE)
 			{
@@ -5315,19 +5520,34 @@ int		ResizeFrame::handle(int event)
 				}
 				else if(operation == FRAME_OPERATION_CROP)
 				{
-					ImageWindow *im = (ImageWindow *)use;
-					int xx = x() - im->x();
-					if(xx < im->x()) xx = 0;
-					int yy = y() - im->y();
-					if(yy < im->y()) yy = 0;
-					int ww = w();
-					if(ww > im->w() - 1) ww = im->w() - 1;
-					int hh = h();
-					if(hh > im->h() - 1) hh = im->h() - 1;
-					im->crop_x = xx;
-					im->crop_y = yy;
-					im->crop_w = ww;
-					im->crop_h = hh;
+					if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
+					{
+						Immediate *im = (Immediate *)use;
+						int xx = x() - im->x();
+						int yy = y() - im->y();
+						int ww = w();
+						int hh = h();
+						im->crop_x = xx;
+						im->crop_y = yy;
+						im->crop_w = ww;
+						im->crop_h = hh;
+					}
+					else
+					{
+						ImageWindow *im = (ImageWindow *)use;
+						int xx = x() - im->x();
+						if(xx < 0) xx = 0;
+						int yy = y() - im->y();
+						if(yy < 0) yy = 0;
+						int ww = w();
+						if(ww > im->w() - 1) ww = im->w() - 1;
+						int hh = h();
+						if(hh > im->h() - 1) hh = im->h() - 1;
+						im->crop_x = xx;
+						im->crop_y = yy;
+						im->crop_w = ww;
+						im->crop_h = hh;
+					}
 				}
 				mode = 0;
 				drag_start_x = -1;
@@ -5339,6 +5559,7 @@ int		ResizeFrame::handle(int event)
 				flag = 1;
 			}
 		}
+		ignore_release = 0;
 	}
 	else if(event == FL_LEAVE)
 	{
@@ -5354,16 +5575,52 @@ int		ResizeFrame::handle(int event)
 	{
 		if(use != NULL)
 		{
-			int nn = Fl::event_dy();
-			if(nn > 0)
+			if(operation == FRAME_OPERATION_ROTATE)
 			{
-				resize(x(), y(), dw * 1.1, dh * 1.1);
-				use->size(w() - 12, h() - 12);
+				if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
+				{
+					Immediate *im = (Immediate *)use;
+					int nn = Fl::event_dy();
+					if(nn < 0)
+					{
+						im->angle -= M_PI / 1000.0;
+						im->redraw();
+					}
+					else if(nn > 0)
+					{
+						im->angle += M_PI / 1000.0;
+						im->redraw();
+					}
+				}
+				else
+				{
+					ImageWindow *iw = (ImageWindow *)use;
+					int nn = Fl::event_dy();
+					if(nn < 0)
+					{
+						iw->angle -= M_PI / 1000.0;
+						iw->redraw();
+					}
+					else if(nn > 0)
+					{
+						iw->angle += M_PI / 1000.0;
+						iw->redraw();
+					}
+				}
 			}
-			else if(nn < 0)
+			else
 			{
-				resize(x(), y(), dw * 0.9, dh * 0.9);
-				use->size(w() - 12, h() - 12);
+				int nn = Fl::event_dy();
+				if(nn > 0)
+				{
+					resize(x(), y(), dw * 1.01, dh * 1.01);
+					use->size(w() - 12, h() - 12);
+				}
+				else if(nn < 0)
+				{
+					resize(x(), y(), dw * 0.99, dh * 0.99);
+					use->size(w() - 12, h() - 12);
+				}
 			}
 			flag = 1;
 		}
@@ -5384,6 +5641,11 @@ int		ResizeFrame::handle(int event)
 			&& (xx < x() + 25 + 90) && (yy < y() + 12 + 14))
 			{
 				fl_cursor(FL_CURSOR_DEFAULT);
+			}
+			else if(operation == FRAME_OPERATION_ROTATE)
+			{
+				potential_mode = 0;
+				fl_cursor(FL_CURSOR_NS);
 			}
 			else if(((xx > x()) && (xx < x() + 20))
 			&& ((yy > y()) && (yy < y() + 20)))
@@ -5416,7 +5678,7 @@ int		ResizeFrame::handle(int event)
 				fl_cursor(FL_CURSOR_NS);
 			}
 			else if(((xx > x() + (w() / 2) - 5) && (xx < x() + (w() / 2) + 5))
-			&& ((yy > y() + h() - 16) && (yy < y() + w())))
+			&& ((yy > y() + h() - 16) && (yy < y() + h())))
 			{
 				potential_mode = DRAG_MODE_BOTTOM;
 				fl_cursor(FL_CURSOR_NS);
@@ -5438,6 +5700,11 @@ int		ResizeFrame::handle(int event)
 				potential_mode = 0;
 				fl_cursor(FL_CURSOR_MOVE);
 			}
+			if(operation == FRAME_OPERATION_DELETE)
+			{
+				potential_mode = 0;
+				fl_cursor(FL_CURSOR_DEFAULT);
+			}
 			flag = 1;
 		}
 		else
@@ -5452,11 +5719,22 @@ int		ResizeFrame::handle(int event)
 		flag = DragGroup::handle(event);
 		if(use != NULL)
 		{
-			if(event != FL_MOVE)
+			if((event != FL_MOVE) && (ignore_release == 0))
 			{
-				if((x() != old_x) || (y() != old_y))
+				if(Fl::event_button() == FL_LEFT_MOUSE)
 				{
-					use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
+					if((x() != old_x) || (y() != old_y))
+					{
+						if((operation != FRAME_OPERATION_CROP)
+						&& (operation != FRAME_OPERATION_DELETE))
+						{
+							use->resize(x() + 6, y() + 6, w() - 12, h() - 12);
+						}
+						else
+						{
+							use->resize(x() + 6, y() + 6, use->w(), use->h());
+						}
+					}
 				}
 			}
 		}
@@ -5470,20 +5748,23 @@ int		ResizeFrame::AdjustForImmediateLine()
 	Immediate *im = (Immediate *)use;
 	if(im != NULL)
 	{
-		if((im->immediate_type == DRAWING_MODE_LINE)
-		|| (im->immediate_type == DRAWING_MODE_POLYGON)
-		|| (im->immediate_type == DRAWING_MODE_POLYGON_SELECT)
-		|| (im->immediate_type == DRAWING_MODE_FREEHAND)
-		|| (im->immediate_type == DRAWING_MODE_LOOP))
+		if(operation != FRAME_OPERATION_CROP)
 		{
-			if(im->line != NULL)
+			if((im->immediate_type == DRAWING_MODE_LINE)
+			|| (im->immediate_type == DRAWING_MODE_POLYGON)
+			|| (im->immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
+			|| (im->immediate_type == DRAWING_MODE_FREEHAND)
+			|| (im->immediate_type == DRAWING_MODE_LOOP))
 			{
-				double ux = im->line->extent_x1;
-				double uy = im->line->extent_y1;
-				double uw = im->line->extent_x2 - im->line->extent_x1;
-				double uh = im->line->extent_y2 - im->line->extent_y1;
-				resize(ux - 6, uy - 6, uw + 12, uh + 12);
-				rr = 1;
+				if(im->line != NULL)
+				{
+					double ux = im->line->extent_x1;
+					double uy = im->line->extent_y1;
+					double uw = im->line->extent_x2 - im->line->extent_x1;
+					double uh = im->line->extent_y2 - im->line->extent_y1;
+					resize(ux - 6, uy - 6, uw + 12, uh + 12);
+					rr = 1;
+				}
 			}
 		}
 	}
@@ -5496,19 +5777,22 @@ int		ResizeFrame::AdjustImmediateLinePosition(int dx, int dy)
 	Immediate *im = (Immediate *)use;
 	if(im != NULL)
 	{
-		if((im->immediate_type == DRAWING_MODE_LINE)
-		|| (im->immediate_type == DRAWING_MODE_POLYGON)
-		|| (im->immediate_type == DRAWING_MODE_POLYGON_SELECT)
-		|| (im->immediate_type == DRAWING_MODE_FREEHAND)
-		|| (im->immediate_type == DRAWING_MODE_LOOP))
+		if(operation != FRAME_OPERATION_CROP)
 		{
-			if(im->line != NULL)
+			if((im->immediate_type == DRAWING_MODE_LINE)
+			|| (im->immediate_type == DRAWING_MODE_POLYGON)
+			|| (im->immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
+			|| (im->immediate_type == DRAWING_MODE_FREEHAND)
+			|| (im->immediate_type == DRAWING_MODE_LOOP))
 			{
-				if((im->line->xx != NULL) && (im->line->yy != NULL))
+				if(im->line != NULL)
 				{
-					im->line->xx[0] -= dx;
-					im->line->yy[0] -= dy;
-					rr = 1;
+					if((im->line->xx != NULL) && (im->line->yy != NULL))
+					{
+						im->line->xx[0] -= dx;
+						im->line->yy[0] -= dy;
+						rr = 1;
+					}
 				}
 			}
 		}
@@ -5524,6 +5808,37 @@ void	ResizeFrame::Use(int in_type, Fl_Widget *in_use)
 	double uy = use->y() - 6;
 	double uw = use->w() + 12;
 	double uh = use->h() + 12;
+	if(operation == FRAME_OPERATION_CROP)
+	{
+		if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
+		{
+			Immediate *im = (Immediate *)use;
+			if(im != NULL)
+			{
+				if((im->crop_w > 0) && (im->crop_h > 0))
+				{
+					ux += im->crop_x;
+					uy += im->crop_y;
+					uw = im->crop_w;
+					uh = im->crop_h;
+				}
+			}
+		}
+		else
+		{
+			ImageWindow *iw = (ImageWindow *)use;
+			if(iw != NULL)
+			{
+				if((iw->crop_w > 0) && (iw->crop_h > 0))
+				{
+					ux += iw->crop_x;
+					uy += iw->crop_y;
+					uw = iw->crop_w;
+					uh = iw->crop_h;
+				}
+			}
+		}
+	}
 	int adjusted = 0;
 	if(object_type == FRAME_OBJECT_TYPE_IMMEDIATE)
 	{
@@ -5840,6 +6155,11 @@ char		filetype[4096];
 
 	stat(filename, &statbuf);
 	size = statbuf.st_size;
+	is_dir = 0;
+	if((statbuf.st_mode & S_IFDIR) == S_IFDIR)
+	{
+		is_dir = 1;
+	}
 	timestamp = statbuf.st_mtim.tv_sec;
 
 	strcpy(filetype, "");
@@ -5928,10 +6248,30 @@ char	cwd[4096];
 	FileSelector *fs = (FileSelector *)v;
 	if(fs->scroll->selection != NULL)
 	{
-		getcwd(cwd, 4096);
-		char *filename = (char *)fs->scroll->selection->label();
-		sprintf(fs->current_selection, "%s/%s", cwd, filename);
-		filename = fs->current_selection;
+		int use_this = 0;
+		char *filename = "";
+		if(fs->new_file == 1)
+		{
+			char *str = (char *)fs->path->value();
+			if(access(str, F_OK) != 0)
+			{
+				if(!IsDirectory(str))
+				{
+					use_this = 1;
+					filename = str;
+					sprintf(fs->current_selection, "%s", str);
+					fs->use_result = 1;
+				}
+			}
+		}
+		if(use_this == 0)
+		{
+			getcwd(cwd, 4096);
+			char *fn = (char *)fs->scroll->selection->label();
+			sprintf(fs->current_selection, "%s/%s", cwd, fn);
+			fs->use_result = 1;
+			filename = fs->current_selection;
+		}
 		int go_ahead = 1;
 		if(IsDirectory(filename))
 		{
@@ -5964,10 +6304,23 @@ char	out[4096];
 	fl_filename_expand(out, 4096, str);
 	if(fs->new_file == 1)
 	{
+		fs->accept->hide();
 		if(access(str, F_OK) != 0)
 		{
-			strcpy(fs->current_selection, str);
-			fs->accept->show();
+			char *use = strdup(str);
+			if(use != NULL)
+			{
+				char *dir_name = dirname(use);
+				if(dir_name != NULL)
+				{
+					if(access(dir_name, W_OK) == 0)
+					{
+						strcpy(fs->current_selection, str);
+						fs->accept->show();
+					}
+				}
+				free(use);
+			}
 		}
 		else
 		{
@@ -6039,12 +6392,12 @@ void	file_selector_preview_cb(Fl_Widget *w, void *v)
 	if(fs->previewing == 0)
 	{
 		fs->previewing = 1;
-		b->label("Disable Preview");
+		b->copy_label("Disable Preview");
 	}
 	else
 	{
 		fs->previewing = 0;
-		b->label("Enable Preview");
+		b->copy_label("Enable Preview");
 	}
 	fs->redraw();
 }
@@ -6057,13 +6410,13 @@ void	file_selector_view_type_cb(Fl_Widget *w, void *v)
 	{
 		fs->view_style = FILE_SELECTOR_VIEW_STYLE_ICONS;
 		fs->Update(".");
-		b->label("Enable List View");
+		b->copy_label("Enable List View");
 	}
 	else
 	{
 		fs->view_style = FILE_SELECTOR_VIEW_STYLE_DETAILS;
 		fs->Update(".");
-		b->label("Enable Grid View");
+		b->copy_label("Enable Grid View");
 	}
 	fs->redraw();
 }
@@ -6150,6 +6503,7 @@ char	cwd[4096];
 	current_selection = in_result_string;
 	strcpy(current_selection, "");
 	view_style = global_window->file_selector_layout;
+	use_result = 0;
 	file_list_cnt = 0;
 	select_dir = in_select_dir;
 	new_file = in_new_file;
@@ -6183,6 +6537,14 @@ char	cwd[4096];
 	path->labelsize(12);
 	path->textcolor(WHITE);
 	path->textsize(11);
+	if(new_file == 1)
+	{
+		path->copy_tooltip("Enter a path here to create a new file");
+	}
+	else
+	{
+		path->copy_tooltip("Enter a path here to navigate to that path");
+	}
 	path->value(cwd);
 	path->callback(file_selector_path_cb, this);
 	if(global_window->file_selector_exclude_directories == 1)
@@ -6196,7 +6558,7 @@ char	cwd[4096];
 	sort_name->labelcolor(YELLOW);
 	sort_name->labelsize(12);
 	sort_name->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	sort_name->tooltip("Sort by filename");
+	sort_name->copy_tooltip("Sort by filename");
 	sort_name->callback(file_selector_sort_cb, this);
 	xp += 300;
 
@@ -6206,7 +6568,7 @@ char	cwd[4096];
 	sort_size->labelcolor(YELLOW);
 	sort_size->labelsize(12);
 	sort_size->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	sort_size->tooltip("Sort by file size");
+	sort_size->copy_tooltip("Sort by file size");
 	sort_size->callback(file_selector_sort_cb, this);
 	xp += 110;
 
@@ -6216,7 +6578,7 @@ char	cwd[4096];
 	sort_type->labelcolor(YELLOW);
 	sort_type->labelsize(12);
 	sort_type->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	sort_type->tooltip("Sort by file size");
+	sort_type->copy_tooltip("Sort by file size");
 	sort_type->callback(file_selector_sort_cb, this);
 	xp += 200;
 
@@ -6226,7 +6588,7 @@ char	cwd[4096];
 	sort_timestamp->labelcolor(YELLOW);
 	sort_timestamp->labelsize(12);
 	sort_timestamp->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	sort_timestamp->tooltip("Sort by file size");
+	sort_timestamp->copy_tooltip("Sort by file size");
 	sort_timestamp->callback(file_selector_sort_cb, this);
 
 	scroll = new MyScroll(84, 20, 195, 58, w() - 200, h() - 112);
@@ -6243,7 +6605,7 @@ char	cwd[4096];
 		desktop->labelsize(12);
 		desktop->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		desktop->callback(file_selector_navigate_cb, this);
-		desktop->tooltip("Your desktop directory");
+		desktop->copy_tooltip("Your desktop directory");
 		yp += 22;
 		documents = new MyButton(10, yp, 120, 20, "Documents");
 		documents->box(FL_FLAT_BOX);
@@ -6252,7 +6614,7 @@ char	cwd[4096];
 		documents->labelsize(12);
 		documents->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		documents->callback(file_selector_navigate_cb, this);
-		documents->tooltip("Your documents directory");
+		documents->copy_tooltip("Your documents directory");
 		yp += 22;
 		downloads = new MyButton(10, yp, 120, 20, "Downloads");
 		downloads->box(FL_FLAT_BOX);
@@ -6261,7 +6623,7 @@ char	cwd[4096];
 		downloads->labelsize(12);
 		downloads->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		downloads->callback(file_selector_navigate_cb, this);
-		downloads->tooltip("Your downloads directory");
+		downloads->copy_tooltip("Your downloads directory");
 		yp += 22;
 		home = new MyButton(10, yp, 120, 20, "Home");
 		home->box(FL_FLAT_BOX);
@@ -6270,7 +6632,7 @@ char	cwd[4096];
 		home->labelsize(12);
 		home->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		home->callback(file_selector_navigate_cb, this);
-		home->tooltip("Your home directory");
+		home->copy_tooltip("Your home directory");
 		yp += 22;
 		music = new MyButton(10, yp, 120, 20, "Music");
 		music->box(FL_FLAT_BOX);
@@ -6279,7 +6641,7 @@ char	cwd[4096];
 		music->labelsize(12);
 		music->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		music->callback(file_selector_navigate_cb, this);
-		music->tooltip("Your music directory");
+		music->copy_tooltip("Your music directory");
 		yp += 22;
 		pictures = new MyButton(10, yp, 120, 20, "Pictures");
 		pictures->box(FL_FLAT_BOX);
@@ -6288,7 +6650,7 @@ char	cwd[4096];
 		pictures->labelsize(12);
 		pictures->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		pictures->callback(file_selector_navigate_cb, this);
-		pictures->tooltip("Your pictures directory");
+		pictures->copy_tooltip("Your pictures directory");
 		yp += 22;
 		root = new MyButton(10, yp, 120, 20, "Root");
 		root->box(FL_FLAT_BOX);
@@ -6297,7 +6659,7 @@ char	cwd[4096];
 		root->labelsize(12);
 		root->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		root->callback(file_selector_navigate_cb, this);
-		root->tooltip("Your the root directory of your system");
+		root->copy_tooltip("Your the root directory of your system");
 		yp += 22;
 		videos = new MyButton(10, yp, 120, 20, "Videos");
 		videos->box(FL_FLAT_BOX);
@@ -6306,7 +6668,7 @@ char	cwd[4096];
 		videos->labelsize(12);
 		videos->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		videos->callback(file_selector_navigate_cb, this);
-		videos->tooltip("Your videos directory");
+		videos->copy_tooltip("Your videos directory");
 		yp += 32;
 
 		initial = new MyButton(10, yp, 120, 20, "Initial");
@@ -6316,7 +6678,7 @@ char	cwd[4096];
 		initial->labelsize(12);
 		initial->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		initial->callback(file_selector_navigate_cb, this);
-		initial->tooltip("Return to the initial directory");
+		initial->copy_tooltip("Return to the initial directory");
 		yp += 22;
 		up = new MyButton(10, yp, 120, 20, "Up");
 		up->box(FL_FLAT_BOX);
@@ -6325,7 +6687,7 @@ char	cwd[4096];
 		up->labelsize(12);
 		up->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 		up->callback(file_selector_navigate_cb, this);
-		up->tooltip("Go back up the directory tree");
+		up->copy_tooltip("Go back up the directory tree");
 		yp += 22;
 	}
 	refresh = new MyButton(10, yp, 120, 20, "Refresh");
@@ -6335,7 +6697,7 @@ char	cwd[4096];
 	refresh->labelsize(12);
 	refresh->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 	refresh->callback(file_selector_navigate_cb, this);
-	refresh->tooltip("Refresh the current directory");
+	refresh->copy_tooltip("Refresh the current directory");
 	yp += 22;
 	view_type = new MyButton(10, yp, 120, 20, "Enable Grid View");
 	view_type->box(FL_FLAT_BOX);
@@ -6344,7 +6706,7 @@ char	cwd[4096];
 	view_type->labelsize(12);
 	view_type->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 	view_type->callback(file_selector_view_type_cb, this);
-	view_type->tooltip("View the files as a grid");
+	view_type->copy_tooltip("View the files as a grid");
 
 	preview = new MyButton(10, h() - 200, 180, 20, "Disable Preview");
 	preview->box(FL_FLAT_BOX);
@@ -6353,7 +6715,7 @@ char	cwd[4096];
 	preview->labelsize(12);
 	preview->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 	preview->callback(file_selector_preview_cb, this);
-	preview->tooltip("Preview the selected file");
+	preview->copy_tooltip("Preview the selected file");
 
 	accept = new MyButton(w() - 160, h() - 38, 60, 20, "Accept");
 	accept->box(FL_FLAT_BOX);
@@ -6362,7 +6724,7 @@ char	cwd[4096];
 	accept->labelsize(12);
 	accept->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
 	accept->callback(file_selector_accept_cb, this);
-	accept->tooltip("Accept the selected file");
+	accept->copy_tooltip("Accept the selected file");
 	accept->hide();
 
 	cancel = new MyButton(w() - 80, h() - 38, 60, 20, "Cancel");
@@ -6371,7 +6733,7 @@ char	cwd[4096];
 	cancel->labelcolor(WHITE);
 	cancel->labelsize(12);
 	cancel->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	cancel->tooltip("Cancel and close the dialog");
+	cancel->copy_tooltip("Cancel and close the dialog");
 	cancel->callback(file_selector_cancel_cb, this);
 	end();
 }
@@ -6418,9 +6780,19 @@ int	FileSelector::handle(int event)
 				Update(".");
 				flag = 1;
 			}
-			else if(key == FL_BackSpace)
+			else if(key == FL_Delete)
 			{
 				strcpy(hot_filter, "");
+				Update(".");
+				flag = 1;
+			}
+			else if(key == FL_BackSpace)
+			{
+				if(strlen(hot_filter) > 0)
+				{
+					char *cp = hot_filter + (strlen(hot_filter) - 1);
+					*cp = '\0';
+				}
 				Update(".");
 				flag = 1;
 			}
@@ -6525,14 +6897,14 @@ void	preview_html(char *filename, Mat& mat, int sz)
 {
 	if(global_html == 1)
 	{
-		HTML_Win *(*make_html)(char *, char *, int, char *, int, int);
-		make_html = (HTML_Win *(*)(char *, char *, int, char *, int, int))void_MakeHTMLWindow_cef;
+		HTML_Win *(*make_html)(char *, char *, int, char *, char *, char *, int, int);
+		make_html = (HTML_Win *(*)(char *, char *, int, char *, char *, char *, int, int))void_MakeHTMLWindow_cef;
 		if(make_html != NULL)
 		{
 			char *content = read_whole_text_file(filename);
 			if(content != NULL)
 			{
-				HTML_Win *html = make_html(NULL, content, global_window->html_background, NULL, 1024, 1024);
+				HTML_Win *html = make_html(NULL, content, global_window->html_background, NULL, NULL, NULL, 1024, 1024);
 				if(html != NULL)
 				{
 					int cnt = 0;
@@ -6628,6 +7000,7 @@ void	preview_text(char *filename, Mat& mat, int sz)
 			int xx = 20;
 			int yy = 0;
 			cairo_t *cairo_context = cairo_create(cairo_surface);
+			cairo_set_antialias(cairo_context, CAIRO_ANTIALIAS_BEST);
 			while((fgets(buf, 256, fp)) && (yy < 1024))
 			{
 				my_cairo_draw_text(cairo_context, 0, 64 + yy, buf, 64);
@@ -6644,12 +7017,12 @@ void	preview_text(char *filename, Mat& mat, int sz)
 
 void	preview_directory(char *filename, Mat& mat, int sz)
 {
-	mat = imread("folder.png", IMREAD_UNCHANGED);
+	mat = global_folder_mat.clone();
 	if(mat.cols > 0)
 	{
 		if(mat.channels() == 3)
 		{
-			cvtColor(mat, mat, COLOR_BGR2RGB);
+			cvtColor(mat, mat, COLOR_BGR2RGBA);
 		}
 		else
 		{
@@ -6882,41 +7255,41 @@ char	cwd[4096];
 
 void	FileSelector::UpdateSort()
 {
-	sort_name->label("");
-	sort_size->label("");
-	sort_type->label("");
-	sort_timestamp->label("");
+	sort_name->copy_label("");
+	sort_size->copy_label("");
+	sort_type->copy_label("");
+	sort_timestamp->copy_label("");
 	if(sort_style == SORT_NAME_ASCENDING)
 	{
-		sort_name->label("@#-28>");
+		sort_name->copy_label("@#-28>");
 	}
 	else if(sort_style == SORT_NAME_DESCENDING)
 	{
-		sort_name->label("@#-22>");
+		sort_name->copy_label("@#-22>");
 	}
 	else if(sort_style == SORT_SIZE_ASCENDING)
 	{
-		sort_size->label("@#-28>");
+		sort_size->copy_label("@#-28>");
 	}
 	else if(sort_style == SORT_SIZE_DESCENDING)
 	{
-		sort_size->label("@#-22>");
+		sort_size->copy_label("@#-22>");
 	}
 	else if(sort_style == SORT_TYPE_ASCENDING)
 	{
-		sort_type->label("@#-28>");
+		sort_type->copy_label("@#-28>");
 	}
 	else if(sort_style == SORT_TYPE_DESCENDING)
 	{
-		sort_type->label("@#-22>");
+		sort_type->copy_label("@#-22>");
 	}
 	else if(sort_style == SORT_TIMESTAMP_ASCENDING)
 	{
-		sort_timestamp->label("@#-28>");
+		sort_timestamp->copy_label("@#-28>");
 	}
 	else if(sort_style == SORT_TIMESTAMP_DESCENDING)
 	{
-		sort_timestamp->label("@#-22>");
+		sort_timestamp->copy_label("@#-22>");
 	}
 	sort_name->redraw();
 	sort_size->redraw();
@@ -7115,19 +7488,25 @@ char			use_filter[4096];
 				struct stat statbuf;
 				for(loop = 0;loop < file_list_cnt;loop++)
 				{
+					Fl_Color back = DARK_GRAY;
+					Fl_Color fore = WHITE;
+					if(file_list[loop]->is_dir == 1)
+					{
+						fore = GRAY;
+					}
 					int use_color = fl_darker(WHITE);
 					MyButton *path_button = new MyButton(scroll->x(), scroll->y() + yy, 300, scroll->row_height, file_list[loop]->filename);
 					path_button->box(FL_FLAT_BOX);
-					path_button->color(DARK_GRAY);
-					path_button->labelcolor(LIGHT_GRAY);
+					path_button->color(back);
+					path_button->labelcolor(fore);
 					path_button->labelsize(12);
 					path_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
-					path_button->tooltip("Select a file. Click twice to select or descend into a directory");
+					path_button->copy_tooltip("Select a file. Click twice to select or descend into a directory");
 					path_button->shortcut(' ');
 					if(scroll->selection == NULL)
 					{
-						path_button->color(LIGHT_GRAY);
-						path_button->labelcolor(DARK_GRAY);
+						path_button->color(fore);
+						path_button->labelcolor(back);
 						scroll->selection = path_button;
 					}
 					path_button->callback(file_selector_select_cb, this);
@@ -7137,32 +7516,32 @@ char			use_filter[4096];
 					sprintf(buf, "%ld", file_list[loop]->size);
 					MyBox *my_box = new MyBox(scroll->x() + 300, scroll->y() + yy, 100, scroll->row_height, buf);
 					my_box->box(FL_FLAT_BOX);
-					my_box->color(DARK_GRAY);
-					my_box->labelcolor(LIGHT_GRAY);
+					my_box->color(back);
+					my_box->labelcolor(fore);
 					my_box->labelsize(12);
 					my_box->align(FL_ALIGN_INSIDE | FL_ALIGN_RIGHT);
-					my_box->tooltip("Size of the file");
+					my_box->copy_tooltip("Size of the file");
 					scroll->add(my_box);
 
 					Fl_Box *spacer = new Fl_Box(scroll->x() + 400, scroll->y() + yy, 10, scroll->row_height);
 					spacer->box(FL_FLAT_BOX);
-					spacer->color(DARK_GRAY);
+					spacer->color(back);
 					scroll->add(spacer);
 
 					sprintf(buf, "%s", file_list[loop]->description);
 					Fl_Output *box = new Fl_Output(scroll->x() + 410, scroll->y() + yy, 200, scroll->row_height);
 					box->box(FL_FLAT_BOX);
-					box->color(DARK_GRAY);
-					box->textcolor(LIGHT_GRAY);
+					box->color(back);
+					box->textcolor(fore);
 					box->textsize(12);
 					box->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 					box->value(buf);
-					box->tooltip("Type of the file");
+					box->copy_tooltip("Type of the file");
 					scroll->add(box);
 
 					spacer = new Fl_Box(scroll->x() + 610, scroll->y() + yy, 10, scroll->row_height);
 					spacer->box(FL_FLAT_BOX);
-					spacer->color(DARK_GRAY);
+					spacer->color(back);
 					scroll->add(spacer);
 
 					struct tm *my_tm = localtime(&file_list[loop]->timestamp);
@@ -7170,12 +7549,12 @@ char			use_filter[4096];
 						my_tm->tm_hour, my_tm->tm_min, my_tm->tm_sec);
 					box = new Fl_Output(scroll->x() + 620, scroll->y() + yy, scroll->w() - 630, scroll->row_height);
 					box->box(FL_FLAT_BOX);
-					box->color(DARK_GRAY);
-					box->textcolor(LIGHT_GRAY);
+					box->color(back);
+					box->textcolor(fore);
 					box->textsize(12);
 					box->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 					box->value(buf);
-					box->tooltip("Type of the file");
+					box->copy_tooltip("Type of the file");
 					scroll->add(box);
 
 					yy += scroll->row_height;
@@ -7191,19 +7570,25 @@ char			use_filter[4096];
 				struct stat statbuf;
 				for(loop = 0;loop < file_list_cnt;loop++)
 				{
+					Fl_Color back = DARK_GRAY;
+					Fl_Color fore = WHITE;
+					if(file_list[loop]->is_dir == 1)
+					{
+						fore = GRAY;
+					}
 					int use_color = fl_darker(WHITE);
 					MyFileImageButton *path_button = new MyFileImageButton(scroll->x() + xx, scroll->y() + yy, 84, scroll->row_height, file_list[loop]->filename);
 					path_button->box(FL_FRAME_BOX);
-					path_button->color(DARK_GRAY);
-					path_button->labelcolor(LIGHT_GRAY);
+					path_button->color(back);
+					path_button->labelcolor(fore);
 					path_button->labelsize(9);
 					path_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT | FL_ALIGN_BOTTOM | FL_ALIGN_WRAP);
-					path_button->tooltip("Select a file. Click twice to select or descend into a directory");
+					path_button->copy_tooltip("Select a file. Click twice to select or descend into a directory");
 					path_button->shortcut(' ');
 					if(scroll->selection == NULL)
 					{
-						path_button->color(LIGHT_GRAY);
-						path_button->labelcolor(DARK_GRAY);
+						path_button->color(fore);
+						path_button->labelcolor(back);
 						scroll->selection = path_button;
 					}
 					path_button->callback(file_selector_select_cb, this);
@@ -7424,7 +7809,7 @@ char	path[256];
 				fprintf(fp, "%s\t%s\n", path, str);
 				fclose(fp);
 			}
-			win->button->label(strdup(str));
+			win->button->copy_label(str);
 		}
 	}
 	win->hide();
@@ -7505,7 +7890,7 @@ int	MyButton::handle(int event)
 				char *new_label = scan_paths_for_label(path);
 				if(new_label != NULL)
 				{
-					label(strdup(new_label));
+					copy_label(new_label);
 					free(new_label);
 				}
 			}
@@ -7804,7 +8189,7 @@ void	SelectButton::Add(char *str)
 		list[total] = strdup(str);
 		if(total == 0)
 		{
-			value_box->label(list[total]);
+			value_box->copy_label(list[total]);
 		}
 		total++;
 	}
@@ -7818,7 +8203,7 @@ void	SelectButton::SetCurrent(int nn)
 	{
 		if(list[nn] != NULL)
 		{
-			value_box->label(list[nn]);
+			value_box->copy_label(list[nn]);
 			current = nn;
 		}
 		value_box->redraw();
@@ -8206,8 +8591,9 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 	id->loop->labelcolor(YELLOW);
 	id->freehand->labelcolor(YELLOW);
 	id->pixelate->labelcolor(YELLOW);
-	id->select_rectangle->labelcolor(YELLOW);
-	id->select_polygon->labelcolor(YELLOW);
+	id->passthru_rectangle->labelcolor(YELLOW);
+	id->passthru_ellipse->labelcolor(YELLOW);
+	id->passthru_polygon->labelcolor(YELLOW);
 	id->delete_im->labelcolor(YELLOW);
 	id->hide_im->labelcolor(YELLOW);
 	id->hide_all->labelcolor(YELLOW);
@@ -8277,14 +8663,14 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 			id->LineSetup();
 		}
 	}
-	else if(w == id->select_polygon)
+	else if(w == id->passthru_polygon)
 	{
 		win->im_drawing_mode = 1;
-		id->select_polygon->labelcolor(CYAN);
-		id->mode = DRAWING_MODE_POLYGON_SELECT;
+		id->passthru_polygon->labelcolor(CYAN);
+		id->mode = DRAWING_MODE_POLYGON_PASSTHRU;
 		id->CloseAll();
 		id->ClearSelectedWidget();
-		id->resize(id->x(), id->y(), 120, 420);
+		id->resize(id->x(), id->y(), 120, id->orig_h);
 	}
 	else if(w == id->loop)
 	{
@@ -8382,14 +8768,23 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 			id->FreehandSetup();
 		}
 	}
-	else if(w == id->select_rectangle)
+	else if(w == id->passthru_rectangle)
 	{
 		win->im_drawing_mode = 1;
-		id->select_rectangle->labelcolor(CYAN);
-		id->mode = DRAWING_MODE_RECTANGLE_SELECT;
+		id->passthru_rectangle->labelcolor(CYAN);
+		id->mode = DRAWING_MODE_RECTANGLE_PASSTHRU;
 		id->CloseAll();
 		id->ClearSelectedWidget();
-		id->resize(id->x(), id->y(), 120, 420);
+		id->resize(id->x(), id->y(), 120, id->orig_h);
+	}
+	else if(w == id->passthru_ellipse)
+	{
+		win->im_drawing_mode = 1;
+		id->passthru_ellipse->labelcolor(CYAN);
+		id->mode = DRAWING_MODE_ELLIPSE_PASSTHRU;
+		id->CloseAll();
+		id->ClearSelectedWidget();
+		id->resize(id->x(), id->y(), 120, id->orig_h);
 	}
 	else if(w == id->delete_im)
 	{
@@ -8398,7 +8793,7 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 		id->CloseAll();
 		id->mode = DRAWING_MODE_DELETE;
 		id->ClearSelectedWidget();
-		id->resize(id->x(), id->y(), 120, 420);
+		id->resize(id->x(), id->y(), 120, id->orig_h);
 	}
 	else if(w == id->hide_im)
 	{
@@ -8407,7 +8802,7 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 		id->CloseAll();
 		id->mode = DRAWING_MODE_HIDE;
 		id->ClearSelectedWidget();
-		id->resize(id->x(), id->y(), 120, 420);
+		id->resize(id->x(), id->y(), 120, id->orig_h);
 	}
 	else if(w == id->hide_all)
 	{
@@ -8415,7 +8810,7 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 		id->CloseAll();
 		id->mode = DRAWING_MODE_HIDE_ALL;
 		id->ClearSelectedWidget();
-		id->resize(id->x(), id->y(), 120, 420);
+		id->resize(id->x(), id->y(), 120, id->orig_h);
 		Camera *cam = id->my_window->DisplayedCamera();
 		if(cam->immediate_list != NULL)
 		{
@@ -8435,7 +8830,7 @@ void	immediate_drawing_mode_cb(Fl_Widget *w, void *v)
 		id->CloseAll();
 		id->mode = DRAWING_MODE_SHOW_ALL;
 		id->ClearSelectedWidget();
-		id->resize(id->x(), id->y(), 120, 420);
+		id->resize(id->x(), id->y(), 120, id->orig_h);
 		Camera *cam = id->my_window->DisplayedCamera();
 		if(cam->immediate_list != NULL)
 		{
@@ -8461,7 +8856,7 @@ void	drawing_font_selection_cb(Fl_Widget *w, void *v)
 	{
 		idw->font_num = (int)(long int)hold->data(hold->value());
 		strcpy(idw->selected_font, str);
-		idw->font_output->label(str);
+		idw->font_output->copy_label(str);
 		idw->font_output->labelfont(idw->font_num);
 		idw->font_sample->labelfont(idw->font_num);
 		idw->font_sample->redraw();
@@ -9015,9 +9410,24 @@ void	RectangleSample::draw()
 		if((idw->image_mat.cols > 0) && (idw->image_mat.rows > 0))
 		{
 			Mat local_mat;
-			cv::resize(idw->image_mat, local_mat, cv::Size(w(), h()));
-			Fl_RGB_Image image(local_mat.ptr(), w(), h(), local_mat.channels());
-			image.draw(x(), y(), w(), h());
+			double scale = 1.0;
+			int newWidth = w();
+			int newHeight = h();
+			if(idw->image_mat.cols > idw->image_mat.rows)
+			{
+				newWidth = w();
+				newHeight = idw->image_mat.rows * newWidth / idw->image_mat.cols; 
+			}
+			else
+			{
+				newHeight = h();
+				newWidth = idw->image_mat.cols * newHeight / idw->image_mat.rows; 
+			}
+			cv::resize(idw->image_mat, local_mat, cv::Size(newWidth, newHeight));
+			fl_color(color());
+			fl_rectf(x(), y(), w(), h());
+			Fl_RGB_Image image(local_mat.ptr(), newWidth, newHeight, local_mat.channels());
+			image.draw(x(), y(), newWidth, newHeight);
 		}
 	}
 	fl_pop_clip();
@@ -9517,7 +9927,7 @@ char	buf[256];
 	char *font_str = (char *)win->font_browser->text(nn);
 	if(font_str != NULL)
 	{
-		win->font_output->label(win->font_browser->text(nn));
+		win->font_output->copy_label(win->font_browser->text(nn));
 	}
 	if(win->my_misc != NULL)
 	{
@@ -9594,7 +10004,7 @@ int	loop;
 		if(str != NULL)
 		{
 			strcpy(selected_font, str);
-			font_output->label(str);
+			font_output->copy_label(str);
 			font_output->redraw();
 		}
 	}
@@ -9813,7 +10223,7 @@ int		ii;
 	general->box(FL_FLAT_BOX);
 	general->clear_visible_focus();
 	general->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	text = new MyButton(10, yp, 100, 20, "Text");
 	text->labelsize(9);
 	text->labelcolor(YELLOW);
@@ -9821,7 +10231,7 @@ int		ii;
 	text->box(FL_FLAT_BOX);
 	text->clear_visible_focus();
 	text->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	line = new MyButton(10, yp, 100, 20, "Line");
 	line->labelsize(9);
 	line->labelcolor(YELLOW);
@@ -9829,7 +10239,7 @@ int		ii;
 	line->box(FL_FLAT_BOX);
 	line->clear_visible_focus();
 	line->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	rectangle = new MyButton(10, yp, 100, 20, "Rectangle");
 	rectangle->labelsize(9);
 	rectangle->labelcolor(YELLOW);
@@ -9837,7 +10247,7 @@ int		ii;
 	rectangle->box(FL_FLAT_BOX);
 	rectangle->clear_visible_focus();
 	rectangle->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	ellipse = new MyButton(10, yp, 100, 20, "Ellipse");
 	ellipse->labelsize(9);
 	ellipse->labelcolor(YELLOW);
@@ -9845,7 +10255,7 @@ int		ii;
 	ellipse->box(FL_FLAT_BOX);
 	ellipse->clear_visible_focus();
 	ellipse->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	image_im = new MyButton(10, yp, 100, 20, "Image");
 	image_im->labelsize(9);
 	image_im->labelcolor(YELLOW);
@@ -9853,7 +10263,7 @@ int		ii;
 	image_im->box(FL_FLAT_BOX);
 	image_im->clear_visible_focus();
 	image_im->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	polygon = new MyButton(10, yp, 100, 20, "Polygon");
 	polygon->labelsize(9);
 	polygon->labelcolor(YELLOW);
@@ -9861,7 +10271,7 @@ int		ii;
 	polygon->box(FL_FLAT_BOX);
 	polygon->clear_visible_focus();
 	polygon->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	loop = new MyButton(10, yp, 100, 20, "Loop");
 	loop->labelsize(9);
 	loop->labelcolor(YELLOW);
@@ -9869,7 +10279,7 @@ int		ii;
 	loop->box(FL_FLAT_BOX);
 	loop->clear_visible_focus();
 	loop->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	freehand = new MyButton(10, yp, 100, 20, "Freehand");
 	freehand->labelsize(9);
 	freehand->labelcolor(YELLOW);
@@ -9877,7 +10287,7 @@ int		ii;
 	freehand->box(FL_FLAT_BOX);
 	freehand->clear_visible_focus();
 	freehand->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	pixelate = new MyButton(10, yp, 100, 20, "Pixelate/Blur");
 	pixelate->labelsize(9);
 	pixelate->labelcolor(YELLOW);
@@ -9885,23 +10295,31 @@ int		ii;
 	pixelate->box(FL_FLAT_BOX);
 	pixelate->clear_visible_focus();
 	pixelate->callback(immediate_drawing_mode_cb, this);
-	yp += (32);
-	select_rectangle = new MyButton(10, yp, 100, 20, "Passthru Rect");
-	select_rectangle->labelsize(9);
-	select_rectangle->labelcolor(YELLOW);
-	select_rectangle->color(DARK_GRAY);
-	select_rectangle->box(FL_FLAT_BOX);
-	select_rectangle->clear_visible_focus();
-	select_rectangle->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
-	select_polygon = new MyButton(10, yp, 100, 20, "Passthru Poly");
-	select_polygon->labelsize(9);
-	select_polygon->labelcolor(YELLOW);
-	select_polygon->color(DARK_GRAY);
-	select_polygon->box(FL_FLAT_BOX);
-	select_polygon->clear_visible_focus();
-	select_polygon->callback(immediate_drawing_mode_cb, this);
-	yp += (32);
+	yp += 32;
+	passthru_rectangle = new MyButton(10, yp, 100, 20, "Passthru Rect");
+	passthru_rectangle->labelsize(9);
+	passthru_rectangle->labelcolor(YELLOW);
+	passthru_rectangle->color(DARK_GRAY);
+	passthru_rectangle->box(FL_FLAT_BOX);
+	passthru_rectangle->clear_visible_focus();
+	passthru_rectangle->callback(immediate_drawing_mode_cb, this);
+	yp += 22;
+	passthru_ellipse = new MyButton(10, yp, 100, 20, "Passthru Ellipse");
+	passthru_ellipse->labelsize(9);
+	passthru_ellipse->labelcolor(YELLOW);
+	passthru_ellipse->color(DARK_GRAY);
+	passthru_ellipse->box(FL_FLAT_BOX);
+	passthru_ellipse->clear_visible_focus();
+	passthru_ellipse->callback(immediate_drawing_mode_cb, this);
+	yp += 22;
+	passthru_polygon = new MyButton(10, yp, 100, 20, "Passthru Poly");
+	passthru_polygon->labelsize(9);
+	passthru_polygon->labelcolor(YELLOW);
+	passthru_polygon->color(DARK_GRAY);
+	passthru_polygon->box(FL_FLAT_BOX);
+	passthru_polygon->clear_visible_focus();
+	passthru_polygon->callback(immediate_drawing_mode_cb, this);
+	yp += 32;
 	delete_im = new MyButton(10, yp, 100, 20, "Delete");
 	delete_im->labelsize(9);
 	delete_im->labelcolor(YELLOW);
@@ -9909,7 +10327,7 @@ int		ii;
 	delete_im->box(FL_FLAT_BOX);
 	delete_im->clear_visible_focus();
 	delete_im->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	hide_im = new MyButton(10, yp, 100, 20, "Hide");
 	hide_im->labelsize(9);
 	hide_im->labelcolor(YELLOW);
@@ -9917,7 +10335,7 @@ int		ii;
 	hide_im->box(FL_FLAT_BOX);
 	hide_im->clear_visible_focus();
 	hide_im->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	hide_all = new MyButton(10, yp, 100, 20, "Hide All");
 	hide_all->labelsize(9);
 	hide_all->labelcolor(YELLOW);
@@ -9925,7 +10343,7 @@ int		ii;
 	hide_all->box(FL_FLAT_BOX);
 	hide_all->clear_visible_focus();
 	hide_all->callback(immediate_drawing_mode_cb, this);
-	yp += (22);
+	yp += 22;
 	show_all = new MyButton(10, yp, 100, 20, "Show All");
 	show_all->labelsize(9);
 	show_all->labelcolor(YELLOW);
@@ -9933,7 +10351,7 @@ int		ii;
 	show_all->box(FL_FLAT_BOX);
 	show_all->clear_visible_focus();
 	show_all->callback(immediate_drawing_mode_cb, this);
-	yp += (29);
+	yp += 29;
 
 	MyButton *done = new MyButton(10, yp, 100, 20, "Done");
 	done->labelsize(11);
@@ -9942,12 +10360,12 @@ int		ii;
 	done->box(FL_FLAT_BOX);
 	done->clear_visible_focus();
 	done->callback(hide_immediate_window_cb, this);
-	yp += (22);
+	yp += 22;
 
 	general_group = new MyGroup(120, 0, 1920, 1080);
 	general_group->box(FL_NO_BOX);
 	general_group->color(DARK_GRAY);
-		yp = (18);
+		yp = 18;
 		grid_size_slider = new Fl_Hor_Slider(180, yp, 100, 10, "Grid Size");
 		grid_size_slider->color(BLACK);
 		grid_size_slider->box(FL_FRAME_BOX);
@@ -10935,7 +11353,7 @@ int		ii;
 		pixelate_size_output->textsize(9);
 		pixelate_size_output->value(" 10");
 
-		yp += (32);
+		yp += 32;
 		pixelate_pixelate_button = new MyToggleButton(150, yp, 60, 16, "Pixelate");
 		pixelate_pixelate_button->labelsize(9);
 		pixelate_pixelate_button->labelcolor(WHITE);
@@ -10955,7 +11373,7 @@ int		ii;
 		pixelate_blur_button->type(FL_RADIO_BUTTON);
 		pixelate_blur_button->value(0);
 		pixelate_blur_button->callback(drawing_pixelate_mode_cb, this);
-		yp += (18);
+		yp += 18;
 	pixelate_group->end();
 	pixelate_group->hide();
 	end();
@@ -11002,6 +11420,8 @@ void	ImmediateDrawingWindow::CloseAll()
 	freehand_group->hide();
 	rectangle_group->hide();
 	image_group->hide();
+	pixelate_group->hide();
+
 	resize(x(), y(), orig_w, orig_h);
 }
 
@@ -11062,7 +11482,7 @@ void	ImmediateDrawingWindow::GeneralSetup()
 int	loop;
 
 	general_group->show();
-	resize(x(), y(), 352, 430);
+	resize(x(), y(), 352, orig_h);
 }
 
 void	ImmediateDrawingWindow::TextSetup()
@@ -11088,12 +11508,12 @@ int	loop;
 		if(str != NULL)
 		{
 			strcpy(selected_font, str);
-			font_output->label(str);
+			font_output->copy_label(str);
 			font_output->redraw();
 		}
 	}
 	text_group->show();
-	resize(x(), y(), 430, 620);
+	resize(x(), y(), 430, orig_h);
 }
 
 void	ImmediateDrawingWindow::LineSetup()
@@ -11109,31 +11529,31 @@ void	ImmediateDrawingWindow::LineSetup()
 		line_style_arrow_button->hide();
 		line_style_erase_button->show();
 	}
-	resize(x(), y(), 430, 430);
+	resize(x(), y(), 430, orig_h);
 }
 
 void	ImmediateDrawingWindow::RectangleSetup()
 {
 	rectangle_group->show();
-	resize(x(), y(), 430, 430);
+	resize(x(), y(), 430, orig_h);
 }
 
 void	ImmediateDrawingWindow::PixelateSetup()
 {
 	pixelate_group->show();
-	resize(x(), y(), 320, 430);
+	resize(x(), y(), 320, orig_h);
 }
 
 void	ImmediateDrawingWindow::ImageSetup()
 {
 	image_group->show();
-	resize(x(), y(), 460, 430);
+	resize(x(), y(), 460, orig_h);
 }
 
 void	ImmediateDrawingWindow::FreehandSetup()
 {
 	freehand_group->show();
-	resize(x(), y(), 430, 430);
+	resize(x(), y(), 430, orig_h);
 }
 
 // SECTION *********************************** COLOR WINDOW *******************************************
@@ -11531,6 +11951,8 @@ int		loop;
 	initial_timer = 0;
 	military_clock = 0;
 	timer_format = 1;
+	analog = 0;
+	analog_size = -1;
 	slideshow_fp = NULL;
 	slideshow_list_cnt = 0;
 	slideshow_current = 0;
@@ -11571,6 +11993,7 @@ int		loop;
 	ndi_capture = 0;
 	ndi_ptz = 0;
 	prefer_ndi = 0;
+	prefer_v4l = 0;
 
 	strcpy(pseudo_camera_name, "PSEUDO CAMERA");
 	plugin_camera = NULL;
@@ -11622,7 +12045,12 @@ int		loop;
 	motion_threshold = 100;
 	recognition_threshold = 0.5;
 	recognize_interval = 10;
+	extra_url = NULL;
 	extra_css = NULL;
+	extra_js_once = NULL;
+	extra_js_always = NULL;
+
+	v4l_capable = 0;
 
 	zoom_box_display = 0;
 	zoom_box_x = -1;
@@ -12223,6 +12651,24 @@ int		loop;
 					{
 						cp++;
 						timer_format = atoi(cp);
+						while(*cp != '\0')
+						{
+							if(*cp == ':')
+							{
+								cp++;
+								analog = atoi(cp);
+								while(*cp != '\0')
+								{
+									if(*cp == ':')
+									{
+										cp++;
+										analog_size = atoi(cp);
+									}
+									cp++;
+								}
+							}
+							cp++;
+						}
 					}
 					cp++;
 				}
@@ -12264,26 +12710,27 @@ int		loop;
 			if(global_html == 1)
 			{
 				char *cp = source + strlen("html://");
-				if(strlen(cp) > 0)
+				if((strlen(cp) > 0) && (strlen(cp) < 32768))
 				{
+					extra_url = NULL;
 					extra_css = NULL;
-					char *cp2 = cp;
-					while((*cp2 != '\0') && (*cp2 != 10) && (*cp2 != 13))
-					{
-						cp2++;
-					}
-					if((*cp2 == 10) || (*cp2 == 13))
-					{
-						*cp2 = '\0';
-						cp2++;
-						extra_css = cp2;
-						char_replace(extra_css, 10, ' ');
-					}
-					HTML_Win *(*make_html)(char *, char *, int, char *, int, int);
-					make_html = (HTML_Win *(*)(char *, char *, int, char *, int, int))void_MakeHTMLWindow_cef;
+					extra_js_once = NULL;
+					extra_js_always = NULL;
+
+					char url[32768];
+					char css[32768];
+					char js_once[32768];
+					char js_always[32768];
+					find_url_css_js(cp, url, css, js_once, js_always);
+					if(strlen(url) > 0) extra_url = strdup(url);
+					if(strlen(css) > 0) extra_css = strdup(css);
+					if(strlen(js_once) > 0) extra_js_once = strdup(js_once);
+					if(strlen(js_always) > 0) extra_js_always = strdup(js_always);
+					HTML_Win *(*make_html)(char *, char *, int, char *, char *, char *, int, int);
+					make_html = (HTML_Win *(*)(char *, char *, int, char *, char *, char *, int, int))void_MakeHTMLWindow_cef;
 					if(make_html != NULL)
 					{
-						html = make_html(cp, NULL, my_window->html_background, extra_css, width, height);
+						html = make_html(extra_url, NULL, my_window->html_background, extra_css, extra_js_once, extra_js_always, width, height);
 						while(html->raw == NULL)
 						{
 							Fl::check();
@@ -12306,30 +12753,33 @@ int		loop;
 		{
 			if(global_html == 1)
 			{
-				extra_css = NULL;
-				char *cp2 = source;
-				while((*cp2 != '\0') && (*cp2 != 10) && (*cp2 != 13))
+				if((strlen(source) > 0) && (strlen(source) < 32768))
 				{
-					cp2++;
-				}
-				if((*cp2 == 10) || (*cp2 == 13))
-				{
-					*cp2 = '\0';
-					cp2++;
-					extra_css = cp2;
-					char_replace(extra_css, 10, ' ');
-				}
-				HTML_Win *(*make_html)(char *, char *, int, char *, int, int);
-				make_html = (HTML_Win *(*)(char *, char *, int, char *, int, int))void_MakeHTMLWindow_cef;
-				if(make_html != NULL)
-				{
-					make_html = (HTML_Win *(*)(char *, char *, int, char *, int, int))void_MakeHTMLWindow_cef;
-					html = make_html(source, NULL, my_window->html_background, extra_css, width, height);
-					while(html->raw == NULL)
+					extra_url = NULL;
+					extra_css = NULL;
+					extra_js_once = NULL;
+					extra_js_always = NULL;
+					char url[32768];
+					char css[32768];
+					char js_once[32768];
+					char js_always[32768];
+					find_url_css_js(source, url, css, js_once, js_always);
+					if(strlen(url) > 0) extra_url = strdup(url);
+					if(strlen(css) > 0) extra_css = strdup(css);
+					if(strlen(js_once) > 0) extra_js_once = strdup(js_once);
+					if(strlen(js_always) > 0) extra_js_always = strdup(js_always);
+					HTML_Win *(*make_html)(char *, char *, int, char *, char *, char *, int, int);
+					make_html = (HTML_Win *(*)(char *, char *, int, char *, char *, char *, int, int))void_MakeHTMLWindow_cef;
+					if(make_html != NULL)
 					{
-						Fl::check();
+						make_html = (HTML_Win *(*)(char *, char *, int, char *, char *, char *, int, int))void_MakeHTMLWindow_cef;
+						html = make_html(extra_url, NULL, my_window->html_background, extra_css, extra_js_once, extra_js_always, width, height);
+						while(html->raw == NULL)
+						{
+							Fl::check();
+						}
+						type = CAMERA_TYPE_HTML;
 					}
-					type = CAMERA_TYPE_HTML;
 				}
 			}
 			else
@@ -12344,11 +12794,11 @@ int		loop;
 				char *cp = source + strlen("html source://");
 				if(strlen(cp) > 0)
 				{
-					HTML_Win *(*make_html)(char *, char *, int, char *, int, int);
-					make_html = (HTML_Win *(*)(char *, char *, int, char *, int, int))void_MakeHTMLWindow_cef;
+					HTML_Win *(*make_html)(char *, char *, int, char *, char *, char *, int, int);
+					make_html = (HTML_Win *(*)(char *, char *, int, char *, char *, char *, int, int))void_MakeHTMLWindow_cef;
 					if(make_html != NULL)
 					{
-						html = make_html(NULL, cp, my_window->html_background, extra_css, width, height);
+						html = make_html(NULL, cp, my_window->html_background, NULL, NULL, NULL, width, height);
 						while(html->raw == NULL)
 						{
 							Fl::check();
@@ -12627,6 +13077,7 @@ int		loop;
 		if(cairo_surface != NULL)
 		{
 			cairo_context = cairo_create(cairo_surface);
+			cairo_set_antialias(cairo_context, CAIRO_ANTIALIAS_BEST);
 		}
 	}
 	if(progress_thumb == 1)
@@ -12874,6 +13325,26 @@ int	loop;
 			free(split_source[loop]);
 		}
 	}
+	if(extra_url != NULL)
+	{
+		free(extra_url);
+		extra_url = NULL;
+	}
+	if(extra_css != NULL)
+	{
+		free(extra_css);
+		extra_css = NULL;
+	}
+	if(extra_js_once != NULL)
+	{
+		free(extra_js_once);
+		extra_js_once = NULL;
+	}
+	if(extra_js_always != NULL)
+	{
+		free(extra_js_always);
+		extra_js_always = NULL;
+	}
 }
 
 Immediate	*Camera::EventInImmediate()
@@ -12923,8 +13394,8 @@ int	inner;
 
 	if(bound_mic_cnt > -1)
 	{
-		my_window->audio_bind_to_camera_button->label("Unbind Camera");
-		my_window->audio_bind_to_camera_button->tooltip("Remove audio source binding from displayed camera.");
+		my_window->audio_bind_to_camera_button->copy_label("Unbind Camera");
+		my_window->audio_bind_to_camera_button->copy_tooltip("Remove audio source binding from displayed camera.");
 		for(loop = 0;loop < my_window->audio_thumbnail_cnt;loop++)
 		{
 			if(my_window->audio_thumbnail[loop] != NULL)
@@ -12959,8 +13430,8 @@ int	inner;
 	}
 	else
 	{
-		my_window->audio_bind_to_camera_button->label("Bind to Camera");
-		my_window->audio_bind_to_camera_button->tooltip("Bind currently selected audio sources to displayed camera.");
+		my_window->audio_bind_to_camera_button->copy_label("Bind to Camera");
+		my_window->audio_bind_to_camera_button->copy_tooltip("Bind currently selected audio sources to displayed camera.");
 	}
 }
 
@@ -13043,6 +13514,14 @@ int	inner;
 	fprintf(fp, "\t\"timer format\": %d,\n", timer_format);
 	fprintf(fp, "\t\"military clock\": %d,\n", military_clock);
 	fprintf(fp, "\t\"format code\": \"%s\",\n", format_code);
+	if(extra_url != NULL)
+	{
+		fprintf(fp, "\t\"extra url\": \"%s\",\n", extra_url);
+	}
+	else
+	{
+		fprintf(fp, "\t\"extra url\": \"%s\",\n", "");
+	}
 	if(extra_css != NULL)
 	{
 		fprintf(fp, "\t\"extra css\": \"%s\",\n", extra_css);
@@ -13050,6 +13529,22 @@ int	inner;
 	else
 	{
 		fprintf(fp, "\t\"extra css\": \"%s\",\n", "");
+	}
+	if(extra_js_once != NULL)
+	{
+		fprintf(fp, "\t\"extra js once\": \"%s\",\n", extra_js_once);
+	}
+	else
+	{
+		fprintf(fp, "\t\"extra js once\": \"%s\",\n", "");
+	}
+	if(extra_js_always != NULL)
+	{
+		fprintf(fp, "\t\"extra js always\": \"%s\",\n", extra_js_always);
+	}
+	else
+	{
+		fprintf(fp, "\t\"extra js always\": \"%s\",\n", "");
 	}
 	fprintf(fp, "\t\"ndi capture\": %d,\n", ndi_capture);
 	fprintf(fp, "\t\"immediate cnt\": %d,\n", immediate_cnt);
@@ -13066,8 +13561,9 @@ int	inner;
 				if(im->text != NULL) use_default = (ImDefault *)im->text;
 				if(im->line != NULL) use_default = (ImDefault *)im->line;
 				if(im->rectangle != NULL) use_default = (ImDefault *)im->rectangle;
-				if(im->rectangle_select != NULL) use_default = (ImDefault *)im->rectangle_select;
+				if(im->rectangle_passthru != NULL) use_default = (ImDefault *)im->rectangle_passthru;
 				if(im->ellipse != NULL) use_default = (ImDefault *)im->ellipse;
+				if(im->ellipse_passthru != NULL) use_default = (ImDefault *)im->ellipse_passthru;
 				if(im->freehand != NULL) use_default = (ImDefault *)im->freehand;
 				if(im->pixelate != NULL) use_default = (ImDefault *)im->pixelate;
 				if(im->image_im != NULL) use_default = (ImDefault *)im->image_im;
@@ -13084,6 +13580,7 @@ int	inner;
 				fprintf(fp, "\t\t\t\"initial y\": %d,\n", im->initial_y);
 				fprintf(fp, "\t\t\t\"layer\": %d,\n", im->layer);
 				fprintf(fp, "\t\t\t\"overall alpha\": %f,\n", im->overall_alpha);
+				fprintf(fp, "\t\t\t\"use as mask\": %d,\n", im->use_as_mask);
 				if(use_default == im->text)
 				{
 					fprintf(fp, "\t\t\t\"text value\": \"%s\",\n", im->text->value());
@@ -13393,6 +13890,7 @@ int	inner;
 				fprintf(fp, "\t\t\t\"trim x\": %d,\n", image_window[loop]->trim_x);
 				fprintf(fp, "\t\t\t\"trim y\": %d,\n", image_window[loop]->trim_y);
 				fprintf(fp, "\t\t\t\"overall alpha\": %f,\n", image_window[loop]->overall_alpha);
+				fprintf(fp, "\t\t\t\"use as mask\": %d,\n", image_window[loop]->use_as_mask);
 				fprintf(fp, "\t\t\t\"angle\": %f,\n", image_window[loop]->angle);
 				fprintf(fp, "\t\t\t\"frame\": %d,\n", image_window[loop]->frame);
 				fprintf(fp, "\t\t\t\"flip horizontal\": %d,\n", image_window[loop]->flip_horizontal);
@@ -13488,6 +13986,36 @@ int	inner;
 			}
 		}
 	}
+	int local_object_cnt = 0;
+	for(loop = 0;loop < my_window->recognize_class_cnt;loop++)
+	{
+		if(object_index[loop] == 1)
+		{
+			local_object_cnt++;
+		}
+	}
+	if((my_window->recognize_class_cnt > 0) && (local_object_cnt > 0))
+	{
+		int nn = local_object_cnt - 1;
+		int cnt = 0;
+		fprintf(fp, "\t\"recognize object\": [");
+		for(loop = 0;loop < my_window->recognize_class_cnt;loop++)
+		{
+			if(object_index[loop] == 1)
+			{
+				fprintf(fp, "\"%s\"", my_window->recognize_class_name[loop]);
+				if(cnt != nn)
+				{
+					fprintf(fp, ",");
+				}
+				else
+				{
+					fprintf(fp, "],\n");
+				}
+				cnt++;
+			}
+		}
+	}
 	fprintf(fp, "\t\"snapshot filename format\": \"%s\",\n", snapshot_filename_format);
 	fprintf(fp, "\t\"snapshot initial delay\": %d,\n", snapshot_initial_delay);
 	fprintf(fp, "\t\"snapshot repeat delay\": %d,\n", snapshot_repeat_delay);
@@ -13505,7 +14033,7 @@ NDIlib_video_frame_v2_t video_frame;
 
 	if(NDILib != NULL)
 	{
-		int nn = NDILib->NDIlib_recv_capture_v2(ndi_recv, &video_frame, NULL, NULL, 1000);
+		int nn = NDILib->NDIlib_recv_capture_v3(ndi_recv, &video_frame, NULL, NULL, 1000);
 		switch(nn)
 		{
 			// No data
@@ -13609,6 +14137,9 @@ NDIlib_video_frame_v2_t video_frame;
 
 void	Camera::CaptureLoop()
 {
+static double cow_total = 0.0;
+static int cow_cnt = 0;
+
 	time_t start = precise_time();
 	int frames = 0;
 	hot_fps = 0;
@@ -13651,6 +14182,7 @@ void	Camera::CaptureLoop()
 						if(surface != NULL)
 						{
 							cairo_t *cr = cairo_create(surface);
+							cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
 							cairo_font_slant_t slant = CAIRO_FONT_SLANT_NORMAL;
 							cairo_font_weight_t bold = CAIRO_FONT_WEIGHT_NORMAL;
 							my_cairo_set_source_rgba(cr, 255, 255, 255, 255);
@@ -14225,6 +14757,7 @@ void	Camera::SetCairo()
 			if(cairo_surface != NULL)
 			{
 				cairo_context = cairo_create(cairo_surface);
+				cairo_set_antialias(cairo_context, CAIRO_ANTIALIAS_BEST);
 			}
 		}
 	}
@@ -14238,6 +14771,7 @@ void	Camera::SetCairo()
 		if(cairo_surface != NULL)
 		{
 			cairo_context = cairo_create(cairo_surface);
+			cairo_set_antialias(cairo_context, CAIRO_ANTIALIAS_BEST);
 		}
 	}
 }
@@ -14298,7 +14832,7 @@ int		loop;
 					else if(strcmp(filter_name[loop], "Saturation") == 0)
 					{
 						double val0 = filter_dialog[loop]->number[0];
-						mat = change_saturation(mat, saturation);
+						mat = change_saturation(mat, val0);
 					}
 					else if(strcmp(filter_name[loop], "Hue") == 0)
 					{
@@ -14690,31 +15224,34 @@ void	Camera::ReadVectorFile(Mat& mat, char *filename)
 	int width = my_window->requested_w;
 	int height = my_window->requested_h;
 
-	Fl_SVG_Image *svg = new Fl_SVG_Image(filename);
-	if(!svg->fail())
+	auto document = lunasvg::Document::loadFromFile(filename);
+	if(document != nullptr)
 	{
-		Fl_Offscreen oscr = fl_create_offscreen(width, height);
-		fl_begin_offscreen(oscr);
-		fl_color(BLACK);
-		fl_rectf(0, 0, width, height);
-		svg->draw(0, 0);
-		fl_end_offscreen();
-
-		XImage *image = x11_create_shared_image(&shminfo, width, height);
-		XShmGetImage(fl_display, oscr, image, 0, 0, AllPlanes);
-
-		int depth = 4;
-		unsigned char *use_data = (unsigned char *)image->data;
-		int cv_flag = CV_8UC4;
-		Mat frame(cv::Size(width, height), cv_flag, use_data);
-
-		cvtColor(frame, frame, COLOR_BGRA2RGBA);
-
-		cv::resize(frame, frame, cv::Size(my_window->output_width, my_window->output_height));
-		frame.copyTo(mat);
-
-		fl_delete_offscreen(oscr);
+		auto bitmap = document->renderToBitmap(width, height);
+		if(!bitmap.isNull())
+		{
+			bitmap.convertToRGBA();
+			uint8_t *use_data = bitmap.data();
+			if(use_data != NULL)
+			{
+				width = bitmap.width();
+				height = bitmap.height();
+				int cv_flag = CV_8UC4;
+				Mat frame(cv::Size(width, height), cv_flag, use_data);
+				cv::resize(frame, frame, cv::Size(my_window->output_width, my_window->output_height));
+				frame.copyTo(mat);
+			}
+		}
 	}
+}
+
+void	Camera::TestObjectDetection()
+{
+	int tcx = -1;
+	int tcy = -1;
+	int second_cx = -1;
+	int second_cy = -1;
+	int rr = DetectObjects(&tcx, &tcy, &second_cx, &second_cy);
 }
 
 void	Camera::Capture(int test_only)
@@ -14877,10 +15414,20 @@ int				inner;
 					{
 						sprintf(buf, "%02d:%02d%s", hour, tm->tm_min, tag);
 					}
-					RenderTextToMat(buf, &literal_mat);
+					if(analog == 1)
+					{
+						if(cairo_context != NULL)
+						{
+							CairoClock(literal_mat, timer_format, -1, -1, analog_size, analog_size, -1, -1, -1);
+						}
+					}
+					else
+					{
+						RenderTextToMat(buf, &literal_mat);
+						static_initialized = 1;
+					}
 					mat = literal_mat.clone();
 					reserve_mat = mat.clone();
-					static_initialized = 1;
 				}
 				else if(type == CAMERA_TYPE_TIMER)
 				{
@@ -15485,58 +16032,65 @@ int				inner;
 			if(capture_effects == 1)
 			{
 				RunFilters();
-				if((width > 0) && (height > 0))
+			}
+			if((width > 0) && (height > 0))
+			{
+				if((my_window->frame_scaling != 1)
+				&& (my_window->crop_scaling != 1))
 				{
-					if((my_window->frame_scaling != 1)
-					&& (my_window->crop_scaling != 1))
+					if((width != mat.cols) || (height != mat.rows))
 					{
-						if((width != mat.cols) || (height != mat.rows))
-						{
-							cv::resize(mat, mat, cv::Size(width, height));
-						}
+						cv::resize(mat, mat, cv::Size(width, height));
 					}
 				}
-				if(capture_scaling != 1.0)
-				{
-					int scaled_x = (int)((double)mat.cols * capture_scaling);
-					int scaled_y = (int)((double)mat.rows * capture_scaling);
-					cv::resize(mat, mat, cv::Size(scaled_x, scaled_y));
-				}
-				if((my_window->frame_scaling == 1)
-				|| (my_window->crop_scaling == 1))
-				{
-					orig_width = mat.cols;
-					orig_height = mat.rows;
-					my_window->FrameImage(this, mat, mat, forced_aspect_x, forced_aspect_y);
-				}
+			}
+			if(capture_scaling != 1.0)
+			{
+				int scaled_x = (int)((double)mat.cols * capture_scaling);
+				int scaled_y = (int)((double)mat.rows * capture_scaling);
+				cv::resize(mat, mat, cv::Size(scaled_x, scaled_y));
+			}
+			if((my_window->frame_scaling == 1)
+			|| (my_window->crop_scaling == 1))
+			{
+				orig_width = mat.cols;
+				orig_height = mat.rows;
+				my_window->FrameImage(this, mat, mat, forced_aspect_x, forced_aspect_y);
+			}
+			if((my_window->test_recognition == 1) && ((true_total_frames % recognize_interval) == 0))
+			{
+				TestObjectDetection();
+			}
+			if(capture_effects == 1)
+			{
 				if(!mat.empty())
 				{
 					VideoEffects();
 					SetCairo();
 					int moving_element = 0;
 					int someone_is_dragging = 0;
-					PaintRecognizedObjects();
+					PaintRecognizedObjects(my_window->test_recognition);
 					ShowImmediateList();
 					ColorIt();
 					MiscCopyCommands();
 					DrawShapes();
-					if(my_window->timestamp == 1)
-					{
-						SetCairo();
-						TimestampFrame();
-					}
-					if(snapshot_trigger_condition == SNAPSHOT_TRIGGER_CONTINUOUS)
-					{
-						snapshot_initial_delay = 0.0;
-						snapshot_repeat_delay = 0.0;
-						TriggerSnapshot();
-					}
-					if(snapshot_trigger_condition == SNAPSHOT_TRIGGER_START)
-					{
-						TriggerSnapshot();
-						snapshot_trigger_condition = SNAPSHOT_TRIGGER_BUTTON;
-					}
 				}
+			}
+			if(my_window->timestamp == 1)
+			{
+				SetCairo();
+				TimestampFrame();
+			}
+			if(snapshot_trigger_condition == SNAPSHOT_TRIGGER_CONTINUOUS)
+			{
+				snapshot_initial_delay = 0.0;
+				snapshot_repeat_delay = 0.0;
+				TriggerSnapshot();
+			}
+			if(snapshot_trigger_condition == SNAPSHOT_TRIGGER_START)
+			{
+				TriggerSnapshot();
+				snapshot_trigger_condition = SNAPSHOT_TRIGGER_BUTTON;
 			}
 		}
 	}
@@ -15794,6 +16348,141 @@ int	inner;
 						rectangle(mat, Point(0, (use_y + use_h)), Point((mat.cols - 1), (mat.rows - 1)), Scalar(0, 0, 0), FILLED);
 					}
 				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_REVERSE)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+						Mat out;
+						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
+						bitwise_not(out, out);
+						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_BRIGHTEN)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+    					cairo_save(cairo_context);
+    					cairo_rectangle(cairo_context, use_x, use_y, use_w, use_h);
+    					cairo_clip(cairo_context);
+    					cairo_set_source_rgba(cairo_context, 1.0, 1.0, 1.0, 0.1);
+    					cairo_paint(cairo_context);
+    					cairo_restore(cairo_context);
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_VIDEO_SETTINGS)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+						Mat out;
+						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
+						if(win->misc_copy[loop]->saturation != 1.0)
+						{
+							out = change_saturation(out, win->misc_copy[loop]->saturation);
+						}
+						if(win->misc_copy[loop]->hue != 1.0)
+						{
+							out = change_hue(out, win->misc_copy[loop]->hue);
+						}
+						if(win->misc_copy[loop]->intensity != 1.0)
+						{
+							out = change_intensity(out, win->misc_copy[loop]->intensity);
+						}
+						if(win->misc_copy[loop]->contrast != 0.5)
+						{
+							contrast_mat(out, win->misc_copy[loop]->contrast);
+						}
+						if(win->misc_copy[loop]->brightness != 0.5)
+						{
+							brightness_mat(out, win->misc_copy[loop]->brightness);
+						}
+						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_DARKEN)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+    					cairo_save(cairo_context);
+    					cairo_rectangle(cairo_context, use_x, use_y, use_w, use_h);
+    					cairo_clip(cairo_context);
+    					cairo_set_source_rgba(cairo_context, 0.0, 0.0, 0.0, 0.1);
+    					cairo_paint(cairo_context);
+    					cairo_restore(cairo_context);
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_HFLIP)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+						Mat out;
+						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
+						flip(out, out, 1);
+						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_SATURATE)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+						Mat out;
+						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
+						change_saturation(out, 1.25);
+						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_DESATURATE)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+						Mat out;
+						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
+						change_saturation(out, 0.75);
+						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+					}
+				}
+				else if(win->misc_copy[loop]->type == MISC_COPY_VFLIP)
+				{
+					if(win->misc_copy[loop]->source == this)
+					{
+						int use_x = win->misc_copy[loop]->xx;
+						int use_y = win->misc_copy[loop]->yy;
+						int use_w = win->misc_copy[loop]->ww;
+						int use_h = win->misc_copy[loop]->hh;
+						Mat out;
+						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
+						flip(out, out, 0);
+						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+					}
+				}
 			}
 		}
 	}
@@ -15906,19 +16595,22 @@ vector<Rect> boxes;
 vector<String> getOutputsNames(const Net& net)
 {
 	static vector<String> names;
-	if(names.empty())
+	if(!net.empty()) 
 	{
-		// Get the indices of the output layers, i.e. the layers with unconnected outputs
-		vector<int> outLayers = net.getUnconnectedOutLayers();
-		
-		// Get the names of all the layers in the network
-		vector<String> layersNames = net.getLayerNames();
-		
-		// Get the names of the output layers in names
-		names.resize(outLayers.size());
-		for(size_t i = 0; i < outLayers.size(); ++i)
+		if(names.empty())
 		{
-			names[i] = layersNames[outLayers[i] - 1];
+			// Get the indices of the output layers, i.e. the layers with unconnected outputs
+			vector<int> outLayers = net.getUnconnectedOutLayers();
+			
+			// Get the names of all the layers in the network
+			vector<String> layersNames = net.getLayerNames();
+			
+			// Get the names of the output layers in names
+			names.resize(outLayers.size());
+			for(size_t i = 0; i < outLayers.size(); ++i)
+			{
+				names[i] = layersNames[outLayers[i] - 1];
+			}
 		}
 	}
 	return(names);
@@ -15928,16 +16620,18 @@ int	Camera::DetectObjects(int *out_x, int *out_y, int *second_x, int *second_y)
 {
 Mat	blob;
 
-	Mat use = mat.clone();
-	cvtColor(use, use, COLOR_RGBA2BGR);
 	int found = 0;
-	blob = blobFromImage(use, 1 / 255.0, cv::Size(416, 416), Scalar(0, 0, 0), true, false);
-	net.setInput(blob);
-
-	vector<Mat> outs;
-	net.forward(outs, getOutputsNames(net));
-	found = PostProcessRecognition(mat, outs, out_x, out_y, second_x, second_y);
-
+	if(!net.empty()) 
+	{
+		Mat use = mat.clone();
+		cvtColor(use, use, COLOR_RGBA2BGR);
+		blob = blobFromImage(use, 1 / 255.0, cv::Size(416, 416), Scalar(0, 0, 0), true, false);
+		net.setInput(blob);
+	
+		vector<Mat> outs;
+		net.forward(outs, getOutputsNames(net));
+		found = PostProcessRecognition(mat, outs, out_x, out_y, second_x, second_y);
+	}
 	return(found);
 }
 
@@ -16990,6 +17684,132 @@ static int first = 0;
 	}
 }
 
+void	Camera::CairoClock(Mat& mat, int show_digits, int xx, int yy, int ww, int hh, int in_hour, int in_min, int in_sec)
+{
+void	my_cairo_push_matrix(cairo_t *cr);
+void	my_cairo_pop_matrix(cairo_t *cr);
+void	my_cairo_draw_text(cairo_t *cr, int in_xx, int in_yy, char *text, int sz);
+int		loop;
+char	buf[256];
+
+	cairo_surface_t *surface = cairo_image_surface_create_for_data(mat.ptr(), CAIRO_FORMAT_ARGB32, mat.cols, mat.rows, mat.step);
+	if(surface != NULL)
+	{
+		if((xx == -1) || (yy == -1))
+		{
+			xx = 10;
+			yy = 10;
+		}
+		if((ww == -1) || (hh == -1))
+		{
+			ww = height - 20;
+			hh = height - 20;
+		}
+		cairo_t *cr = cairo_create(surface);
+		cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+		my_cairo_set_source_rgba(cr, red, green, blue, alpha);
+		cairo_rectangle(cr, 0, 0, mat.cols, mat.rows);
+		cairo_fill(cr);
+
+		my_cairo_set_source_rgba(cr, text_red, text_green, text_blue, text_alpha);
+		cairo_save(cr);
+
+		cairo_translate(cr, xx + (ww / 2), yy + (hh / 2));
+		cairo_set_line_width(cr, 5);
+		cairo_arc(cr, 0, 0, ww / 2.0, 0.0, 2 * M_PI);
+		cairo_stroke(cr);
+		cairo_set_line_width(cr, 3);
+		cairo_arc(cr, 0, 0, (ww / 2.0) - 7, 0.0, 2 * M_PI);
+		cairo_stroke(cr);
+		cairo_set_line_width(cr, 2);
+		for(loop = 0;loop < 60;loop++)
+		{
+			int ext = -7;
+			cairo_set_line_width(cr, 2);
+			if((loop % 5) == 0)
+			{
+				cairo_set_line_width(cr, 4);
+				ext = -11;
+			}
+			double nn = (M_PI * 2.0) / 60.0;
+			double n1 = (nn * (double)loop);
+			double x1 = (cos(n1) * (ww / 2));
+			double y1 = (sin(n1) * (ww / 2));
+			double x2 = (cos(n1) * ((ww / 2) + ext));
+			double y2 = (sin(n1) * ((ww / 2) + ext));
+			cairo_move_to(cr, x1, y1);
+			cairo_line_to(cr, x2, y2);
+			cairo_stroke(cr);
+		}
+		int sec = 0;
+		int min = 0;
+		int hour = 0;
+		int pm = 0;
+		if((in_hour > -1) && (in_min > -1) && (in_sec > -1))
+		{
+			sec = in_sec;
+			min = in_min;
+			hour = in_hour;
+		}
+		else
+		{
+			time_t tt = time(0);
+			struct tm *now = localtime(&tt);
+			sec = now->tm_sec;
+			min = now->tm_min;
+			hour = now->tm_hour;
+		}
+		// seconds
+		if((show_digits == 0) || (show_digits == 1))
+		{
+			double nn = (M_PI * 2.0) / 60.0;
+			double n1 = (nn * (double)sec);
+			my_cairo_push_matrix(cr);
+			cairo_set_line_width(cr, 3);
+			cairo_rotate(cr, n1);
+			cairo_move_to(cr, 0, 0);
+			cairo_line_to(cr, 0, -((hh / 2) * 0.95));
+			cairo_stroke(cr);
+			my_cairo_pop_matrix(cr);
+		}
+		// minutes
+		{
+			double nn = (M_PI * 2.0) / 60.0;
+			double n1 = nn * (double)min;
+			my_cairo_push_matrix(cr);
+			cairo_set_line_width(cr, 5);
+			cairo_rotate(cr, n1);
+			cairo_move_to(cr, 0, 0);
+			cairo_line_to(cr, 0, -((hh / 2) * 0.8));
+			cairo_stroke(cr);
+			cairo_set_line_width(cr, 1);
+			my_cairo_pop_matrix(cr);
+		}
+		// hours
+		{
+			if(hour > 12)
+			{
+				hour -= 12;
+				pm = 1;
+			}
+			int precise = (hour * 60) + min;
+			double nn = (M_PI * 2.0) / (12.0 * 60.0);
+			double n1 = nn * (double)precise;
+			my_cairo_push_matrix(cr);
+			cairo_set_line_width(cr, 9);
+			cairo_rotate(cr, n1);
+			cairo_move_to(cr, 0, 0);
+			cairo_line_to(cr, 0, -((hh / 2) * 0.6));
+			cairo_stroke(cr);
+			cairo_set_line_width(cr, 1);
+			my_cairo_pop_matrix(cr);
+		}
+		cairo_restore(cr);
+		cairo_destroy(cr);
+		cairo_surface_destroy(surface);
+	}
+}
+
 void	Camera::RenderTextToMat(char *lit, Mat *mat)
 {
 char	buf[1024];
@@ -16999,6 +17819,7 @@ int		loop;
 	if(surface != NULL)
 	{
 		cairo_t *context = cairo_create(surface);
+		cairo_set_antialias(context, CAIRO_ANTIALIAS_BEST);
 		my_cairo_set_source_rgba(context, red, green, blue, alpha);
 		cairo_rectangle(context, 0, 0, mat->cols, mat->rows);
 		cairo_fill(context);
@@ -17028,7 +17849,7 @@ int		loop;
 void	MyWin::StreamToNDI(Camera *cam, int which)
 {
 int	loop;
-	
+
 	if(NDILib != NULL)
 	{
 		if(((time(0) - ndi_initialized) > 5) && (ndi_initialized > 0))
@@ -17048,7 +17869,6 @@ int	loop;
 				NDI_send_create_desc.p_ndi_name = "CowCam NDI";
 			}
 			ndi_send = NDILib->NDIlib_send_create(&NDI_send_create_desc);
-
 			ndi_video_frame.xres = output_width;
 			ndi_video_frame.yres = output_height;
 			if(ndi_send_video_format == NDI_SEND_VIDEO_FORMAT_BGRX)
@@ -17087,6 +17907,7 @@ int	loop;
 			}
 			else if(cam != NULL)
 			{
+				void *result = NULL;
 				Mat local_mat;
 				if(ndi_send_video_format == NDI_SEND_VIDEO_FORMAT_BGRX)
 				{
@@ -17105,11 +17926,10 @@ int	loop;
 				}
 				else if(ndi_send_video_format == NDI_SEND_VIDEO_FORMAT_UYVA)
 				{
-					void *result = BGRA_UYVA(cam->mat, output_width, output_height);
+					result = BGRA_UYVA(cam->mat, output_width, output_height);
 					if(result != NULL)
 					{
 						ndi_video_frame.p_data = (unsigned char *)result;
-						free(result);
 					}
 				}
 				else if(ndi_send_video_format == NDI_SEND_VIDEO_FORMAT_UYVY)
@@ -17120,6 +17940,10 @@ int	loop;
 				}
 				NDILib->NDIlib_send_send_video_v2(ndi_send, &ndi_video_frame);
 				ndi_initialized = time(0);
+				if(result != NULL)
+				{
+					free(result);
+				}
 			}
 			pthread_mutex_unlock(&ndi_send_mutex);
 		}
@@ -17226,6 +18050,7 @@ static Mat local_mat;
 									pthread_mutex_unlock(&my_window->muxer_mutex);
 									record_error = 1;
 									record = 0;
+									my_window->SetErrorMessage("Encoding Error: Not recording.");
 								}
 								else
 								{
@@ -17264,6 +18089,7 @@ static Mat local_mat;
 									pthread_mutex_unlock(&my_window->muxer_mutex);
 									record_error = 1;
 									record = 0;
+									my_window->SetErrorMessage("Encoding Error: Not recording.");
 								}
 								else
 								{
@@ -17368,6 +18194,7 @@ static Mat local_mat;
 											pthread_mutex_unlock(&my_window->muxer_mutex);
 											record_error = 1;
 											record = 0;
+											my_window->SetErrorMessage("Encoding Error: Not recording.");
 										}
 										else
 										{
@@ -17406,6 +18233,7 @@ static Mat local_mat;
 											pthread_mutex_unlock(&my_window->muxer_mutex);
 											record_error = 1;
 											record = 0;
+											my_window->SetErrorMessage("Encoding Error: Not recording.");
 										}
 										else
 										{
@@ -17543,62 +18371,65 @@ void	Camera::V4L_Motion(int direction)
 {
 struct v4l2_control ctrl;
 
-	int fd = open(path, O_WRONLY);
-	if(fd > -1)
+	if(v4l_capable == 1)
 	{
-		if((direction & V4L_RIGHT) == V4L_RIGHT)
+		int fd = open(path, O_WRONLY);
+		if(fd > -1)
 		{
-			ctrl.id = V4L2_CID_PAN_SPEED;
-			ctrl.value = 1;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			if((direction & V4L_RIGHT) == V4L_RIGHT)
+			{
+				ctrl.id = V4L2_CID_PAN_SPEED;
+				ctrl.value = 1;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			if((direction & V4L_LEFT) == V4L_LEFT)
+			{
+				ctrl.id = V4L2_CID_PAN_SPEED;
+				ctrl.value = -1;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			if((direction & V4L_UP) == V4L_UP)
+			{
+				ctrl.id = V4L2_CID_TILT_SPEED;
+				ctrl.value = 1;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			if((direction & V4L_DOWN) == V4L_DOWN)
+			{
+				ctrl.id = V4L2_CID_TILT_SPEED;
+				ctrl.value = -1;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			if((direction & V4L_ZOOM_IN) == V4L_ZOOM_IN)
+			{
+				ctrl.id = V4L2_CID_ZOOM_CONTINUOUS;
+				ctrl.value = 1;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			if((direction & V4L_ZOOM_OUT) == V4L_ZOOM_OUT)
+			{
+				ctrl.id = V4L2_CID_ZOOM_CONTINUOUS;
+				ctrl.value = -1;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			if(direction == V4L_STOP)
+			{
+				ctrl.id = V4L2_CID_PAN_SPEED;
+				ctrl.value = 0;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+				ctrl.id = V4L2_CID_TILT_SPEED;
+				ctrl.value = 0;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+				ctrl.id = V4L2_CID_ZOOM_CONTINUOUS;
+				ctrl.value = 0;
+				xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			}
+			close(fd);
 		}
-		if((direction & V4L_LEFT) == V4L_LEFT)
+		else
 		{
-			ctrl.id = V4L2_CID_PAN_SPEED;
-			ctrl.value = -1;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
+			fprintf(stderr, "Error: Camera at [%s] failed to open for V4L commands.\n", path);
 		}
-		if((direction & V4L_UP) == V4L_UP)
-		{
-			ctrl.id = V4L2_CID_TILT_SPEED;
-			ctrl.value = 1;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-		}
-		if((direction & V4L_DOWN) == V4L_DOWN)
-		{
-			ctrl.id = V4L2_CID_TILT_SPEED;
-			ctrl.value = -1;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-		}
-		if((direction & V4L_ZOOM_IN) == V4L_ZOOM_IN)
-		{
-			ctrl.id = V4L2_CID_ZOOM_CONTINUOUS;
-			ctrl.value = 1;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-		}
-		if((direction & V4L_ZOOM_OUT) == V4L_ZOOM_OUT)
-		{
-			ctrl.id = V4L2_CID_ZOOM_CONTINUOUS;
-			ctrl.value = -1;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-		}
-		if(direction == V4L_STOP)
-		{
-			ctrl.id = V4L2_CID_PAN_SPEED;
-			ctrl.value = 0;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-			ctrl.id = V4L2_CID_TILT_SPEED;
-			ctrl.value = 0;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-			ctrl.id = V4L2_CID_ZOOM_CONTINUOUS;
-			ctrl.value = 0;
-			xioctl(fd, VIDIOC_S_CTRL, &ctrl);
-		}
-		close(fd);
-	}
-	else
-	{
-		fprintf(stderr, "Error: Camera at [%s] failed to open for V4L commands.\n", path);
 	}
 }
 
@@ -17633,17 +18464,23 @@ struct v4l2_capability video_cap;
 void	v4l_repeat_command(void *v)
 {
 	Camera *cam = (Camera *)v;
-	if(cam->v4l_pending_command != 0)
+	if(cam->v4l_capable == 1)
 	{
-		cam->V4L_Command(cam->v4l_pending_command);
-		Fl::repeat_timeout(0.01, v4l_repeat_command, cam);
+		if(cam->v4l_pending_command != 0)
+		{
+			cam->V4L_Command(cam->v4l_pending_command);
+			Fl::repeat_timeout(0.01, v4l_repeat_command, cam);
+		}
 	}
 }
 
 void	Camera::V4L_RepeatCommand(int command)
 {
-	v4l_pending_command = command;
-	Fl::add_timeout(0.01, v4l_repeat_command, this);
+	if(v4l_capable == 1)
+	{
+		v4l_pending_command = command;
+		Fl::add_timeout(0.01, v4l_repeat_command, this);
+	}
 }
 
 void	Camera::V4L_Command(int command)
@@ -17668,59 +18505,62 @@ void	Camera::V4L_Command(int command)
 //			  pan_speed 0x009a0920 (int)	: min=-1 max=1 step=1 default=1 value=0
 //			 tilt_speed 0x009a0921 (int)	: min=-1 max=1 step=1 default=1 value=0
 
-	if(command == V4L_RIGHT)
+	if(v4l_capable == 1)
 	{
-		V4L_Motion(V4L_RIGHT);
-	}
-	else if(command == V4L_LEFT)
-	{
-		V4L_Motion(V4L_LEFT);
-	}
-	else if(command == V4L_DOWN)
-	{
-		V4L_Motion(V4L_DOWN);
-	}
-	else if(command == V4L_UP)
-	{
-		V4L_Motion(V4L_UP);
-	}
-	else if(command == V4L_ZOOM_OUT)
-	{
-		int nn = cap->get(CAP_PROP_ZOOM);
-		cap->set(CAP_PROP_ZOOM, nn - 1);
-	}
-	else if(command == V4L_ZOOM_IN)
-	{
-		int nn = cap->get(CAP_PROP_ZOOM);
-		cap->set(CAP_PROP_ZOOM, nn + 1);
-	}
-	else if(command == V4L_FOCUS_FAR)
-	{
-		cap->set(CAP_PROP_AUTOFOCUS, 0);
-		int nn = cap->get(CAP_PROP_FOCUS);
-		cap->set(CAP_PROP_FOCUS, nn - 1);
-	}
-	else if(command == V4L_FOCUS_NEAR)
-	{
-		cap->set(CAP_PROP_AUTOFOCUS, 0);
-		int nn = cap->get(CAP_PROP_FOCUS);
-		cap->set(CAP_PROP_FOCUS, nn + 1);
-	}
-	else if(command == V4L_AUTOFOCUS)
-	{
-		int nn = cap->get(CAP_PROP_AUTOFOCUS);
-		if(nn == 0)
+		if(command == V4L_RIGHT)
 		{
-			cap->set(CAP_PROP_AUTOFOCUS, 1);
+			V4L_Motion(V4L_RIGHT);
 		}
-		else
+		else if(command == V4L_LEFT)
+		{
+			V4L_Motion(V4L_LEFT);
+		}
+		else if(command == V4L_DOWN)
+		{
+			V4L_Motion(V4L_DOWN);
+		}
+		else if(command == V4L_UP)
+		{
+			V4L_Motion(V4L_UP);
+		}
+		else if(command == V4L_ZOOM_OUT)
+		{
+			int nn = cap->get(CAP_PROP_ZOOM);
+			cap->set(CAP_PROP_ZOOM, nn - 1);
+		}
+		else if(command == V4L_ZOOM_IN)
+		{
+			int nn = cap->get(CAP_PROP_ZOOM);
+			cap->set(CAP_PROP_ZOOM, nn + 1);
+		}
+		else if(command == V4L_FOCUS_FAR)
 		{
 			cap->set(CAP_PROP_AUTOFOCUS, 0);
+			int nn = cap->get(CAP_PROP_FOCUS);
+			cap->set(CAP_PROP_FOCUS, nn - 1);
 		}
-	}
-	else if(command == V4L_STOP)
-	{
-		V4L_Motion(V4L_STOP);
+		else if(command == V4L_FOCUS_NEAR)
+		{
+			cap->set(CAP_PROP_AUTOFOCUS, 0);
+			int nn = cap->get(CAP_PROP_FOCUS);
+			cap->set(CAP_PROP_FOCUS, nn + 1);
+		}
+		else if(command == V4L_AUTOFOCUS)
+		{
+			int nn = cap->get(CAP_PROP_AUTOFOCUS);
+			if(nn == 0)
+			{
+				cap->set(CAP_PROP_AUTOFOCUS, 1);
+			}
+			else
+			{
+				cap->set(CAP_PROP_AUTOFOCUS, 0);
+			}
+		}
+		else if(command == V4L_STOP)
+		{
+			V4L_Motion(V4L_STOP);
+		}
 	}
 }
 
@@ -18120,6 +18960,10 @@ int	outer;
 			}
 		}
 	}
+	if(my_window->DisplayedCamera() != this)
+	{
+		HideImmediateList();
+	}
 }
 
 void	Camera::HideImmediateList()
@@ -18518,11 +19362,11 @@ void	Camera::GrabThisWindow()
 	GrabWindowImage(x_id, mat);
 }
 
-void	Camera::PaintRecognizedObjects()
+void	Camera::PaintRecognizedObjects(int test_run)
 {
 int	loop;
 
-	if((record_trigger & ON_DETECT_OBJECT) == ON_DETECT_OBJECT)
+	if(((record_trigger & ON_DETECT_OBJECT) == ON_DETECT_OBJECT) || (test_run == 1))
 	{
 		fl_color(YELLOW);
 		for(loop = 0;loop < detected_object_cnt;loop++)
@@ -19131,14 +19975,16 @@ int	loop;
 	layer = im->layer;
 	drag_mode = im->drag_mode;
 	overall_alpha = im->overall_alpha;
+	use_as_mask = im->use_as_mask;
 	mw_mode = im->mw_mode;
 
 	ImDefault *use_default = NULL;
 	if(im->text != NULL) use_default = (ImDefault *)im->text;
 	if(im->line != NULL) use_default = (ImDefault *)im->line;
 	if(im->rectangle != NULL) use_default = (ImDefault *)im->rectangle;
-	if(im->rectangle_select != NULL) use_default = (ImDefault *)im->rectangle_select;
+	if(im->rectangle_passthru != NULL) use_default = (ImDefault *)im->rectangle_passthru;
 	if(im->ellipse != NULL) use_default = (ImDefault *)im->ellipse;
+	if(im->ellipse_passthru != NULL) use_default = (ImDefault *)im->ellipse_passthru;
 	if(im->freehand != NULL) use_default = (ImDefault *)im->freehand;
 	if(im->pixelate != NULL) use_default = (ImDefault *)im->pixelate;
 	if(im->image_im != NULL) use_default = (ImDefault *)im->image_im;
@@ -19200,6 +20046,7 @@ int	loop;
 	im->layer = layer;
 	im->drag_mode = drag_mode;
 	im->overall_alpha = overall_alpha;
+	im->use_as_mask = use_as_mask;
 	im->mw_mode = mw_mode;
 
 	ImDefault *def = NULL;
@@ -19215,10 +20062,10 @@ int	loop;
 		im->add(im->pixelate);
 		def = (ImDefault *)im->pixelate;
 	}
-	else if(im_type == IM_RECTANGLE_SELECT)
+	else if(im_type == IM_RECTANGLE_PASSTHRU)
 	{
-		im->rectangle_select = new ImRectangleSelect(win, im, sx, sy, sw, sh);
-		im->add(im->rectangle_select);
+		im->rectangle_passthru = new ImRectanglePassThru(win, im, sx, sy, sw, sh);
+		im->add(im->rectangle_passthru);
 		def = (ImDefault *)im->pixelate;
 	}
 	else if(im_type == IM_IMAGE)
@@ -19232,6 +20079,12 @@ int	loop;
 		im->ellipse = new ImEllipse(win, im, sx, sy, sw, sh);
 		im->add(im->ellipse);
 		def = (ImDefault *)im->ellipse;
+	}
+	else if(im_type == IM_ELLIPSE_PASSTHRU)
+	{
+		im->ellipse_passthru = new ImEllipsePassThru(win, im, sx, sy, sw, sh);
+		im->add(im->ellipse_passthru);
+		def = (ImDefault *)im->ellipse_passthru;
 	}
 	else if(im_type == IM_FREEHAND)
 	{
@@ -19488,7 +20341,7 @@ int	loop;
 	limit = 0;
 
 	my_box = new Fl_Box(0, 0, w(), h());
-	my_box->label(lbl);
+	my_box->copy_label(lbl);
 	my_box->labelsize(8);
 	my_box->align(FL_ALIGN_INSIDE | FL_ALIGN_TOP | FL_ALIGN_CENTER);
 	my_box->labelcolor(WHITE);
@@ -21619,7 +22472,7 @@ AliasWindow::AliasWindow(MyWin *in_win) : DragWindow(260, 300, 490, 70, "Aliases
 	alias->box(FL_FRAME_BOX);
 	alias->align(FL_ALIGN_LEFT);
 	alias->when(FL_WHEN_ENTER_KEY);
-	alias->tooltip("Set the alias for the displayed camera.");
+	alias->copy_tooltip("Set the alias for the displayed camera.");
 	alias->callback(alias_cb, this);
 	yp += 28;
 
@@ -21629,7 +22482,7 @@ AliasWindow::AliasWindow(MyWin *in_win) : DragWindow(260, 300, 490, 70, "Aliases
 	accept->labelsize(11);
 	accept->color(BLACK);
 	accept->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	accept->tooltip("Accept the alias specified above.");
+	accept->copy_tooltip("Accept the alias specified above.");
 	accept->callback(alias_cb, this);
 	accept->show();
 
@@ -21639,7 +22492,7 @@ AliasWindow::AliasWindow(MyWin *in_win) : DragWindow(260, 300, 490, 70, "Aliases
 	cancel->labelsize(11);
 	cancel->color(BLACK);
 	cancel->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	cancel->tooltip("Close the dialog without accepting the edited alias.");
+	cancel->copy_tooltip("Close the dialog without accepting the edited alias.");
 	cancel->callback(hide_window_cb, this);
 	cancel->show();
 
@@ -21827,7 +22680,7 @@ char	buf[32768];
 				}
 				if(strlen(css_string) > 0)
 				{
-					sprintf(buf, "html://%s\n%s", url_string, css_string);
+					sprintf(buf, "html://%s\ncss://%s", url_string, css_string);
 				}
 				else
 				{
@@ -21961,6 +22814,118 @@ int	SourceMultiline::handle(int event)
 	return(flag);
 }
 
+// SECTION *********************************** SELECT X11 WINDOW  *******************************************
+
+SelectX11Window::SelectX11Window(MyWin *in_win) : DragWindow(200, 800)
+{
+void			select_window_to_monitor_cb(Fl_Widget *w, void *v);
+char			*window_list[128];
+int				loop;
+char			buf[4096];
+
+	my_window = in_win;
+	int cnt = x11_iterate_windows2(fl_display, window_list);
+	if(cnt > 0)
+	{
+		int xx = Fl::event_x();
+		int yy = Fl::event_y();
+		MyButton *close_button = new MyButton(150, 2, 50, 18, "Close");
+		close_button->box(FL_FLAT_BOX);
+		close_button->labelcolor(YELLOW);
+		close_button->labelsize(11);
+		close_button->color(BLACK);
+		close_button->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
+		close_button->callback(hide_window_cb, this);
+
+		Fl_Scroll *scroll = new Fl_Scroll(0, 20, 200, 780);
+		int ay = 4;
+		int max_w = -1000;
+		fl_font(FL_HELVETICA, 9);
+		for(loop = 0;loop < cnt;loop++)
+		{
+			int mw = 0;
+			int mh = 0;
+			fl_measure(window_list[loop], mw, mh);
+			if(mw > max_w) max_w = mw;
+		}
+		if(max_w < 170) max_w = 170;
+		for(loop = 0;loop < cnt;loop++)
+		{
+			unsigned long int window_id = (unsigned long int)atol(window_list[loop]);
+			char *cp = window_list[loop];
+			while((*cp != '\0') && (*cp != ':')) cp++;
+			while((*cp != '\0') && (*cp == ':')) cp++;
+			
+			char *str = strdup(cp);
+			cp = str;
+			while(*cp != '\0')
+			{
+				if(*cp == '@')
+				{
+					*cp = '_';
+				}
+				cp++;
+			}
+			int im_w = 0;
+			int im_h = 0;
+			int im_d = 0;
+			unsigned char *image_data = x11_grab_window_image(NULL, window_id, &im_w, &im_h, &im_d);
+			if(image_data != NULL)
+			{
+				Fl_RGB_Image image(image_data, im_w, im_h, im_d);
+				if(im_w <= 0) im_w = 1;
+				double proportion = (double)max_w / (double)im_w;
+				int set_h = (int)((double)im_h * proportion);
+				Fl_RGB_Image *n_image = (Fl_RGB_Image *)image.copy(max_w, set_h);
+
+				MyToggleButton *window_button = new MyToggleButton(4, ay, n_image->w(), n_image->h());
+				window_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+				window_button->box(FL_FLAT_BOX);
+				window_button->color(BLACK);
+				window_button->down_color(GRAY);
+				window_button->type(FL_RADIO_BUTTON);
+				window_button->clear_visible_focus();
+				window_button->image(n_image);
+				window_button->callback(select_window_to_monitor_cb, (void *)window_id);
+				ay += n_image->h();
+				Fl_Box *window_label = new Fl_Box(4, ay, n_image->w(), 20, str);
+				window_label->box(FL_FLAT_BOX);
+				window_label->color(BLACK);
+				window_label->labelcolor(YELLOW);
+				window_label->labelsize(9);
+				window_label->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+				ay += 20;
+			}
+		}
+		scroll->end();
+		scroll->box(FL_FRAME_BOX);
+		scroll->color(BLACK);
+		scroll->type(Fl_Scroll::VERTICAL);
+		scroll->hscrollbar.hide();
+		end();
+		int sz = 800;
+		if(ay < 800) sz = ay + 20;
+		resize(x(), y(), max_w + 32, sz);
+		scroll->resize(0, 20, max_w + 32, sz - 20);
+		close_button->resize(150, 2, 50, 18);
+		color(BLACK);
+		set_non_modal();
+		show();
+		for(loop = 0;loop < cnt;loop++)
+		{
+			free(window_list[loop]);
+		}
+	}
+}
+
+SelectX11Window::~SelectX11Window()
+{
+	if(my_window->new_source_window->select_x11_window == this)
+	{
+		my_window->new_source_window->select_x11_window = NULL;
+	}
+}
+
 // SECTION *********************************** NEW SOURCE WINDOW  *******************************************
 
 void	cancel_new_source_cb(Fl_Widget *w, void *v)
@@ -21970,6 +22935,30 @@ void	cancel_new_source_cb(Fl_Widget *w, void *v)
 	my_win->pseudo_camera_window->hide();
 	my_win->new_source_window->hide();
 	my_win->cursor(FL_CURSOR_DEFAULT);
+}
+
+void	reset_new_source_cb(Fl_Widget *w, void *v)
+{
+char	buf[4096];
+
+	MyWin *my_win = (MyWin *)v;
+	NewSourceWindow *nsw = my_win->new_source_window;
+	nsw->source->value("");
+	nsw->alias->value("");
+	sprintf(buf, "%d", my_win->requested_w);
+	nsw->width->value(buf);
+	sprintf(buf, "%d", my_win->requested_h);
+	nsw->height->value(buf);
+	nsw->font_sz->value("32");
+	nsw->red->value(0);
+	nsw->green->value(0);
+	nsw->blue->value(0);
+	nsw->alpha->value(0);
+	nsw->text_red->value(255);
+	nsw->text_green->value(255);
+	nsw->text_blue->value(255);
+	nsw->text_alpha->value(255);
+	nsw->font_browser->select(1);
 }
 
 void	new_source_cb(Fl_Widget *w, void *v)
@@ -22218,8 +23207,14 @@ char buf[4096];
 	}
 	if(no_go == 0)
 	{
-		SelectCameraWindow *scw = new SelectCameraWindow(win);
-		scw->show();
+		if(win->new_source_window->select_camera_window != NULL)
+		{
+			win->new_source_window->select_camera_window->hide();
+			Fl::delete_widget(win->new_source_window->select_camera_window);
+			win->new_source_window->select_camera_window = NULL;
+		}
+		win->new_source_window->select_camera_window = new SelectCameraWindow(win);
+		win->new_source_window->select_camera_window->show();
 	}
 }
 
@@ -22251,8 +23246,14 @@ void	new_source_audio_select_cb(Fl_Widget *w, void *v)
 	}
 	else
 	{
-		SelectAudioWindow *scw = new SelectAudioWindow(win);
-		scw->show();
+		if(win->new_source_window->select_audio_window != NULL)
+		{
+			win->new_source_window->select_audio_window->hide();
+			Fl::delete_widget(win->new_source_window->select_audio_window);
+			win->new_source_window->select_audio_window = NULL;
+		}
+		win->new_source_window->select_audio_window = new SelectAudioWindow(win);
+		win->new_source_window->select_audio_window->show();
 	}
 }
 
@@ -22755,6 +23756,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	my_window = in_win;
 	new_source_window = NULL;
 	strcpy(monitor_file, "");
+	set_non_modal();
 
 	Fl_Box *title = new Fl_Box(2, 2, w() - 4, 24, "Alert Settings");
 	title->box(FL_FLAT_BOX);
@@ -22772,7 +23774,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_file_path->labelsize(9);
 	alert_file_path->box(FL_FRAME_BOX);
 	alert_file_path->align(FL_ALIGN_LEFT);
-	alert_file_path->tooltip("The path to a file to be monitored");
+	alert_file_path->copy_tooltip("The path to a file to be monitored");
 	alert_file_path->value(monitor_file);
 
 	alert_file_button = new MyButton(480, y_pos, 20, 20, "@fileopen");
@@ -22782,7 +23784,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_file_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	alert_file_button->callback(alert_file_select_cb, this);
 	alert_file_button->box(FL_FLAT_BOX);
-	alert_file_button->tooltip("Select a file using the file browser");
+	alert_file_button->copy_tooltip("Select a file using the file browser");
 	alert_file_button->down_box(FL_FLAT_BOX);
 	y_pos += 22;
 
@@ -22795,7 +23797,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_audio_file->labelsize(9);
 	alert_audio_file->box(FL_FRAME_BOX);
 	alert_audio_file->align(FL_ALIGN_LEFT);
-	alert_audio_file->tooltip("The path to a file to be monitored");
+	alert_audio_file->copy_tooltip("The path to a file to be monitored");
 	alert_audio_file->value(monitor_file);
 
 	alert_audio_file_button = new MyButton(480, y_pos, 20, 20, "@fileopen");
@@ -22805,7 +23807,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_audio_file_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	alert_audio_file_button->callback(alert_audio_file_select_cb, this);
 	alert_audio_file_button->box(FL_FLAT_BOX);
-	alert_audio_file_button->tooltip("Select a file using the file browser");
+	alert_audio_file_button->copy_tooltip("Select a file using the file browser");
 	alert_audio_file_button->down_box(FL_FLAT_BOX);
 	y_pos += 50;
 	
@@ -22826,7 +23828,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_trigger_changed->box(FL_NO_BOX);
 	alert_trigger_changed->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 	alert_trigger_changed->type(FL_RADIO_BUTTON);
-	alert_trigger_changed->tooltip("Trigger the alert when the file changes");
+	alert_trigger_changed->copy_tooltip("Trigger the alert when the file changes");
 	alert_trigger_changed->value(1);
 	y_pos += 20;
 
@@ -22838,7 +23840,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_trigger_created->box(FL_NO_BOX);
 	alert_trigger_created->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 	alert_trigger_created->type(FL_RADIO_BUTTON);
-	alert_trigger_created->tooltip("Trigger the alert when the file is created");
+	alert_trigger_created->copy_tooltip("Trigger the alert when the file is created");
 	y_pos += 20;
 	grp->end();
 
@@ -22859,7 +23861,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_display_all->box(FL_NO_BOX);
 	alert_display_all->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 	alert_display_all->type(FL_RADIO_BUTTON);
-	alert_display_all->tooltip("Display the entire file");
+	alert_display_all->copy_tooltip("Display the entire file");
 	alert_display_all->value(1);
 	y_pos += 20;
 
@@ -22871,7 +23873,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_display_last_line->box(FL_NO_BOX);
 	alert_display_last_line->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 	alert_display_last_line->type(FL_RADIO_BUTTON);
-	alert_display_last_line->tooltip("Display only the last line");
+	alert_display_last_line->copy_tooltip("Display only the last line");
 	y_pos += 20;
 
 	alert_display_first_line = new MyLightButton(230, y_pos, 120, 20, "First Line");
@@ -22882,7 +23884,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_display_first_line->box(FL_NO_BOX);
 	alert_display_first_line->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 	alert_display_first_line->type(FL_RADIO_BUTTON);
-	alert_display_first_line->tooltip("Display only the first line");
+	alert_display_first_line->copy_tooltip("Display only the first line");
 	y_pos += 20;
 	grp2->end();
 
@@ -22897,7 +23899,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_duration->box(FL_FRAME_BOX);
 	alert_duration->align(FL_ALIGN_LEFT);
 	alert_duration->value("10");
-	alert_duration->tooltip("How long the alert will remain on screen in seconds. Use -1 for permanent.");
+	alert_duration->copy_tooltip("How long the alert will remain on screen in seconds. Use -1 for permanent.");
 	use_y += 20;
 
 	alert_opaque = new MyLightButton(440, use_y, 120, 20, "Opaque");
@@ -22907,7 +23909,7 @@ AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Al
 	alert_opaque->labelsize(9);
 	alert_opaque->box(FL_NO_BOX);
 	alert_opaque->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	alert_opaque->tooltip("Make the background opaque");
+	alert_opaque->copy_tooltip("Make the background opaque");
 	y_pos += 20;
 
 	y_pos += 20;
@@ -22945,12 +23947,13 @@ char	buf[256];
 	TimerWindow *tw = (TimerWindow *)v;
 	if(tw->new_source_window != NULL)
 	{
+		if(tw->format0->value()) tw->analog = 1;
 		if(tw->format1->value()) tw->format = 0;
 		else if(tw->format2->value()) tw->format = 1;
 		else if(tw->format3->value()) tw->format = 2;
 		if(tw->use_clock->value())
 		{
-			sprintf(buf, "clock://%d:%d", tw->use_military->value(), tw->format);
+			sprintf(buf, "clock://%d:%d:%d", tw->use_military->value(), tw->format, tw->analog);
 		}
 		else if(tw->use_timer->value())
 		{
@@ -22971,6 +23974,7 @@ void	timer_window_use_clock_cb(Fl_Widget *w, void *v)
 	tw->stop_label->hide();
 	tw->stop->hide();
 	tw->format1->hide();
+	tw->format0->value(0);
 	tw->format1->value(0);
 	tw->format2->value(1);
 	tw->format2->value(0);
@@ -22984,6 +23988,7 @@ void	timer_window_use_timer_cb(Fl_Widget *w, void *v)
 	tw->start->show();
 	tw->stop_label->show();
 	tw->stop->show();
+	tw->format0->value(0);
 	tw->format1->show();
 	tw->format1->value(1);
 	tw->format2->value(0);
@@ -23001,11 +24006,13 @@ void	timer_window_times_cb(Fl_Widget *w, void *v)
 
 TimerWindow::TimerWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Timer Setup")
 {
+	set_non_modal();
 	my_window = in_win;
 	new_source_window = NULL;
 	start_seconds = 0;
 	stop_seconds = 0;
 	format = 1;
+	analog = 0;
 
 	int y_pos = 10;
 	Fl_Group *grp = new Fl_Group(10, y_pos, 100, 44);
@@ -23063,6 +24070,20 @@ TimerWindow::TimerWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Ti
 	pack->labelsize(10);
 	pack->labelcolor(WHITE);
 	y_pos += 1;
+	format0 = new MyToggleButton(10, y_pos, 210, 20, "Analog");
+	format0->color(BLACK);
+	format0->labelcolor(YELLOW);
+	format0->labelsize(9);
+	format0->type(FL_TOGGLE_BUTTON);
+	format0->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+	if(my_window->transparent_interface == 0)
+	{
+		format0->box(FL_FLAT_BOX);
+	}
+	else
+	{
+		format0->box(FL_NO_BOX);
+	}
 	format1 = new MyToggleButton(10, y_pos, 210, 20, "days:hours:minutes:seconds");
 	format1->color(BLACK);
 	format1->labelcolor(YELLOW);
@@ -23735,89 +24756,13 @@ char			buf[4096];
 	}
 	if(found == 0)
 	{
-		int cnt = x11_iterate_windows2(fl_display, window_list);
-		if(cnt > 0)
+		if(win->new_source_window->select_x11_window != NULL)
 		{
-			int xx = Fl::event_x();
-			int yy = Fl::event_y();
-			Fl_Window *new_win = new DragWindow(xx, yy, 200, 800);
-			Fl_Scroll *scroll = new Fl_Scroll(0, 0, 200, 800);
-			int ay = 4;
-			int max_w = -1000;
-			fl_font(FL_HELVETICA, 9);
-			for(loop = 0;loop < cnt;loop++)
-			{
-				int mw = 0;
-				int mh = 0;
-				fl_measure(window_list[loop], mw, mh);
-				if(mw > max_w) max_w = mw;
-			}
-			for(loop = 0;loop < cnt;loop++)
-			{
-				unsigned long int window_id = (unsigned long int)atol(window_list[loop]);
-				char *cp = window_list[loop];
-				while((*cp != '\0') && (*cp != ':')) cp++;
-				while((*cp != '\0') && (*cp == ':')) cp++;
-				
-				char *str = strdup(cp);
-				cp = str;
-				while(*cp != '\0')
-				{
-					if(*cp == '@')
-					{
-						*cp = '_';
-					}
-					cp++;
-				}
-				int im_w = 0;
-				int im_h = 0;
-				int im_d = 0;
-				unsigned char *image_data = x11_grab_window_image(NULL, window_id, &im_w, &im_h, &im_d);
-				if(image_data != NULL)
-				{
-					Fl_RGB_Image image(image_data, im_w, im_h, im_d);
-					if(im_w <= 0) im_w = 1;
-					double proportion = (double)max_w / (double)im_w;
-					int set_h = (int)((double)im_h * proportion);
-					Fl_RGB_Image *n_image = (Fl_RGB_Image *)image.copy(max_w, set_h);
-
-					MyToggleButton *window_button = new MyToggleButton(4, ay, n_image->w(), n_image->h());
-					window_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-					window_button->box(FL_FLAT_BOX);
-					window_button->color(BLACK);
-					window_button->down_color(GRAY);
-					window_button->type(FL_RADIO_BUTTON);
-					window_button->clear_visible_focus();
-					window_button->image(n_image);
-					window_button->callback(select_window_to_monitor_cb, (void *)window_id);
-					ay += n_image->h();
-					Fl_Box *window_label = new Fl_Box(4, ay, n_image->w(), 20, str);
-					window_label->box(FL_FLAT_BOX);
-					window_label->color(BLACK);
-					window_label->labelcolor(YELLOW);
-					window_label->labelsize(9);
-					window_label->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-					ay += 20;
-				}
-			}
-			scroll->end();
-			scroll->box(FL_FRAME_BOX);
-			scroll->color(BLACK);
-			scroll->type(Fl_Scroll::VERTICAL);
-			scroll->hscrollbar.hide();
-			new_win->end();
-			int sz = 800;
-			if(ay < 800) sz = ay + 20;
-			new_win->resize(new_win->x(), new_win->y(), max_w + 32, sz);
-			scroll->resize(0, 0, max_w + 32, 800);
-			new_win->color(BLACK);
-			new_win->set_non_modal();
-			new_win->show();
-			for(loop = 0;loop < cnt;loop++)
-			{
-				free(window_list[loop]);
-			}
+			win->new_source_window->select_x11_window->hide();
+			Fl::delete_widget(win->new_source_window->select_x11_window);
+			win->new_source_window->select_x11_window = NULL;
 		}
+		win->new_source_window->select_x11_window = new SelectX11Window(win);
 		win->pseudo_camera_window->hide();
 	}
 }
@@ -23849,6 +24794,9 @@ int		loop;
 
 	my_window = in_win;
 	edit_mode = 0;
+	select_camera_window = NULL;
+	select_x11_window = NULL;
+	select_audio_window = NULL;
 
 	source = new SourceMultiline(20, 20, 560, 140, "Source:");
 	source->color(BLACK);
@@ -23859,7 +24807,7 @@ int		loop;
 	source->labelsize(9);
 	source->box(FL_FRAME_BOX);
 	source->align(FL_ALIGN_TOP | FL_ALIGN_LEFT);
-	source->tooltip("Source schemes are specified here. A single digit can be used to specify a camera number. If the text is not recognized as either one of the schemes or a single digit, it becoames a text source. Leaving this blank and selecting 'Create' will make a blank source.");
+	source->copy_tooltip("Source schemes are specified here. A single digit can be used to specify a camera number. If the text is not recognized as either one of the schemes or a single digit, it becoames a text source. Leaving this blank and selecting 'Create' will make a blank source.");
 
 	alias = new Fl_Input(60, 167, 520, 22, "Alias:");
 	alias->color(BLACK);
@@ -23870,10 +24818,10 @@ int		loop;
 	alias->labelsize(9);
 	alias->box(FL_FRAME_BOX);
 	alias->align(FL_ALIGN_LEFT);
-	alias->tooltip("An alias for the source. The alias takes the place of the source path, and should be unique and easily readible.");
+	alias->copy_tooltip("An alias for the source. The alias takes the place of the source path, and should be unique and easily readible.");
 
 	int cx = 60;
-	width = new Fl_Float_Input(cx, 200, 60, 20, "Width:");
+	width = new Fl_Float_Input(cx, 200, 50, 20, "Width:");
 	width->color(BLACK);
 	width->textcolor(WHITE);
 	width->cursor_color(WHITE);
@@ -23884,9 +24832,9 @@ int		loop;
 	width->when(FL_WHEN_ENTER_KEY | FL_WHEN_NOT_CHANGED);
 	sprintf(buf, "%d", my_window->requested_w);
 	width->value(buf);
-	width->tooltip("The width resolution of the source.");
-	cx += 110;
-	height = new Fl_Float_Input(cx, 200, 60, 20, "Height:");
+	width->copy_tooltip("The width resolution of the source.");
+	cx += 100;
+	height = new Fl_Float_Input(cx, 200, 50, 20, "Height:");
 	height->color(BLACK);
 	height->textcolor(WHITE);
 	height->cursor_color(WHITE);
@@ -23897,9 +24845,9 @@ int		loop;
 	height->when(FL_WHEN_ENTER_KEY | FL_WHEN_NOT_CHANGED);
 	sprintf(buf, "%d", my_window->requested_h);
 	height->value(buf);
-	height->tooltip("The height resolution of the source.");
-	cx += 120;
-	font_sz = new Fl_Int_Input(cx, 200, 60, 20, "Font Size:");
+	height->copy_tooltip("The height resolution of the source.");
+	cx += 110;
+	font_sz = new Fl_Int_Input(cx, 200, 50, 20, "Font Size:");
 	font_sz->color(BLACK);
 	font_sz->textcolor(WHITE);
 	font_sz->cursor_color(WHITE);
@@ -23910,49 +24858,49 @@ int		loop;
 	font_sz->when(FL_WHEN_ENTER_KEY | FL_WHEN_NOT_CHANGED);
 	sprintf(buf, "%d", 32);
 	font_sz->value(buf);
-	font_sz->tooltip("The font size for text-based sources.");
-	cx += 160;
+	font_sz->copy_tooltip("The font size for text-based sources.");
+	cx += 110;
 
 	int y_pos = 240;
 	red = new ColorSlider(60, y_pos, 300, 18, 0, "Red");
 	red->labelcolor(YELLOW);
 	red->callback(new_source_adj_color_cb, this);
-	red->tooltip("The red value for the background of the source, if applicable.");
+	red->copy_tooltip("The red value for the background of the source, if applicable.");
 	y_pos += 20;
 	green = new ColorSlider(60, y_pos, 300, 18, 0, "Green");
 	green->labelcolor(YELLOW);
 	green->callback(new_source_adj_color_cb, this);
-	green->tooltip("The green value for the background of the source, if applicable.");
+	green->copy_tooltip("The green value for the background of the source, if applicable.");
 	y_pos += 20;
 	blue = new ColorSlider(60, y_pos, 300, 18, 0, "Blue");
 	blue->labelcolor(YELLOW);
 	blue->callback(new_source_adj_color_cb, this);
-	blue->tooltip("The blue value for the background of the source, if applicable.");
+	blue->copy_tooltip("The blue value for the background of the source, if applicable.");
 	y_pos += 20;
 	alpha = new ColorSlider(60, y_pos, 300, 18, 0, "Alpha");
 	alpha->labelcolor(YELLOW);
-	alpha->tooltip("The alpha value for the background of the source, if applicable.");
+	alpha->copy_tooltip("The alpha value for the background of the source, if applicable.");
 	y_pos += 22;
 
 	int start_y = y_pos;
 	text_red = new ColorSlider(60, y_pos, 300, 18, 255, "Text Red");
 	text_red->labelcolor(YELLOW);
 	text_red->callback(new_source_adj_text_color_cb, this);
-	text_red->tooltip("The red value for the text appearing in the source, if applicable.");
+	text_red->copy_tooltip("The red value for the text appearing in the source, if applicable.");
 	y_pos += 20;
 	text_green = new ColorSlider(60, y_pos, 300, 18, 255, "Text Green");
 	text_green->labelcolor(YELLOW);
 	text_green->callback(new_source_adj_text_color_cb, this);
-	text_green->tooltip("The green value for the text appearing in the source, if applicable.");
+	text_green->copy_tooltip("The green value for the text appearing in the source, if applicable.");
 	y_pos += 20;
 	text_blue = new ColorSlider(60, y_pos, 300, 18, 255, "Text Blue");
 	text_blue->labelcolor(YELLOW);
 	text_blue->callback(new_source_adj_text_color_cb, this);
-	text_blue->tooltip("The blue value for the text appearing in the source, if applicable.");
+	text_blue->copy_tooltip("The blue value for the text appearing in the source, if applicable.");
 	y_pos += 20;
 	text_alpha = new ColorSlider(60, y_pos, 300, 18, 255, "Text Alpha");
 	text_alpha->labelcolor(YELLOW);
-	text_alpha->tooltip("The alpha value for the text appearing in the source, if applicable.");
+	text_alpha->copy_tooltip("The alpha value for the text appearing in the source, if applicable.");
 	y_pos += 20;
 
 	color_box = new Fl_Box(370, 240, 75, 75);
@@ -23973,7 +24921,7 @@ int		loop;
 	font_browser->selection_color(YELLOW);
 	font_browser->scrollbar.color(BLACK);
 	font_browser->align(FL_ALIGN_LEFT_TOP);
-	font_browser->tooltip("The font for text appearing in the source, if applicable.");
+	font_browser->copy_tooltip("The font for text appearing in the source, if applicable.");
 	int nn = my_window->number_of_fonts;
 	for(loop = 1;loop < nn;loop++)
 	{
@@ -23988,7 +24936,16 @@ int		loop;
 	create->labelsize(9);
 	create->box(FL_FRAME_BOX);
 	create->callback(new_source_cb, my_window);
-	create->tooltip("Creates a new source based on specified values in this dialog.");
+	create->copy_tooltip("Creates a new source based on specified values in this dialog.");
+	cx += 70;
+
+	reset = new MyButton(cx, 200, 60, 20, "Reset");
+	reset->color(DARK_GRAY);
+	reset->labelcolor(YELLOW);
+	reset->labelsize(9);
+	reset->box(FL_FRAME_BOX);
+	reset->callback(reset_new_source_cb, my_window);
+	reset->copy_tooltip("Resets fields to default values.");
 	cx += 70;
 
 	cancel = new MyButton(cx, 200, 60, 20, "Cancel");
@@ -23997,7 +24954,7 @@ int		loop;
 	cancel->labelsize(9);
 	cancel->box(FL_FRAME_BOX);
 	cancel->callback(cancel_new_source_cb, my_window);
-	cancel->tooltip("Closes the dialog without creating a new source.");
+	cancel->copy_tooltip("Closes the dialog without creating a new source.");
 	
 	int yp = 20;
 	camera_select = new MyButton(590, yp, 80, 20, "Camera");
@@ -24006,7 +24963,7 @@ int		loop;
 	camera_select->labelsize(9);
 	camera_select->box(FL_FRAME_BOX);
 	camera_select->callback(new_source_camera_select_cb, my_window);
-	camera_select->tooltip("Create a new source from one of the others.");
+	camera_select->copy_tooltip("Create a new source from one of the others.");
 	yp += 24;
 
 	audio_select = new MyButton(590, yp, 80, 20, "Audio");
@@ -24015,7 +24972,7 @@ int		loop;
 	audio_select->labelsize(9);
 	audio_select->box(FL_FRAME_BOX);
 	audio_select->callback(new_source_audio_select_cb, my_window);
-	audio_select->tooltip("Create a new audio source.");
+	audio_select->copy_tooltip("Create a new audio source.");
 	yp += 24;
 
 	box_select = new MyButton(590, yp, 80, 20, "Box Select");
@@ -24024,7 +24981,7 @@ int		loop;
 	box_select->labelsize(9);
 	box_select->box(FL_FRAME_BOX);
 	box_select->callback(new_source_box_select_cb, my_window);
-	box_select->tooltip("Use a mouse-drag rubberband select to create a new source from a portion of the screen.");
+	box_select->copy_tooltip("Use a mouse-drag rubberband select to create a new source from a portion of the screen.");
 	yp += 24;
 
 	window_select = new MyButton(590, yp, 80, 20, "Window Select");
@@ -24033,7 +24990,7 @@ int		loop;
 	window_select->labelsize(9);
 	window_select->box(FL_FRAME_BOX);
 	window_select->callback(new_source_window_select_cb, my_window);
-	window_select->tooltip("Create a new source from an existing window.");
+	window_select->copy_tooltip("Create a new source from an existing window.");
 	yp += 24;
 
 	desktop_select = new MyButton(590, yp, 80, 20, "Desktop Select");
@@ -24042,7 +24999,7 @@ int		loop;
 	desktop_select->labelsize(9);
 	desktop_select->box(FL_FRAME_BOX);
 	desktop_select->callback(new_source_desktop_select_cb, my_window);
-	desktop_select->tooltip("Create a new source from the desktop.");
+	desktop_select->copy_tooltip("Create a new source from the desktop.");
 	yp += 24;
 
 	image_file_select = new MyButton(590, yp, 80, 20, "Image File");
@@ -24051,7 +25008,7 @@ int		loop;
 	image_file_select->labelsize(9);
 	image_file_select->box(FL_FRAME_BOX);
 	image_file_select->callback(new_source_image_file_select_cb, my_window);
-	image_file_select->tooltip("Create a new source from an image file.");
+	image_file_select->copy_tooltip("Create a new source from an image file.");
 	yp += 24;
 
 	av_file_select = new MyButton(590, yp, 80, 20, "AV File");
@@ -24060,7 +25017,7 @@ int		loop;
 	av_file_select->labelsize(9);
 	av_file_select->box(FL_FRAME_BOX);
 	av_file_select->callback(new_source_av_file_select_cb, my_window);
-	av_file_select->tooltip("Create a new source from an audio/video file.");
+	av_file_select->copy_tooltip("Create a new source from an audio/video file.");
 	yp += 24;
 
 	vector_file_select = new MyButton(590, yp, 80, 20, "Vector File");
@@ -24069,7 +25026,7 @@ int		loop;
 	vector_file_select->labelsize(9);
 	vector_file_select->box(FL_FRAME_BOX);
 	vector_file_select->callback(new_source_vector_file_select_cb, my_window);
-	vector_file_select->tooltip("Create a new source from a vector graphics file.");
+	vector_file_select->copy_tooltip("Create a new source from a vector graphics file.");
 	yp += 24;
 
 	html_select = NULL;
@@ -24082,7 +25039,7 @@ int		loop;
 		html_select->labelsize(9);
 		html_select->box(FL_FRAME_BOX);
 		html_select->callback(new_source_html_select_cb, my_window);
-		html_select->tooltip("Create a new source a URL.");
+		html_select->copy_tooltip("Create a new source from a URL.");
 		yp += 24;
 
 		html_source_select = new MyButton(590, yp, 80, 20, "HTML");
@@ -24091,7 +25048,7 @@ int		loop;
 		html_source_select->labelsize(9);
 		html_source_select->box(FL_FRAME_BOX);
 		html_source_select->callback(new_source_html_source_select_cb, my_window);
-		html_source_select->tooltip("Create a new source from HTML specified in this dialog.");
+		html_source_select->copy_tooltip("Create a new source from HTML specified in this dialog.");
 		yp += 24;
 	}
 	if(NDILib != NULL)
@@ -24102,7 +25059,7 @@ int		loop;
 		ndi_source_select->labelsize(9);
 		ndi_source_select->box(FL_FRAME_BOX);
 		ndi_source_select->callback(new_source_ndi_select_cb, my_window);
-		ndi_source_select->tooltip("Create a new source from a NDI stream on the network.");
+		ndi_source_select->copy_tooltip("Create a new source from a NDI stream on the network.");
 		yp += 24;
 	}
 	irc_source_select = new MyButton(590, yp, 80, 20, "IRC");
@@ -24111,7 +25068,7 @@ int		loop;
 	irc_source_select->labelsize(9);
 	irc_source_select->box(FL_FRAME_BOX);
 	irc_source_select->callback(new_source_irc_select_cb, my_window);
-	irc_source_select->tooltip("Create a new source from an IRC stream on the network.");
+	irc_source_select->copy_tooltip("Create a new source from an IRC stream on the network.");
 	yp += 24;
 
 	sourced_select = new MyButton(590, yp, 80, 20, "Source Camera");
@@ -24120,7 +25077,7 @@ int		loop;
 	sourced_select->labelsize(9);
 	sourced_select->box(FL_FRAME_BOX);
 	sourced_select->callback(new_sourced_select_cb, my_window);
-	sourced_select->tooltip("Create a new source linked to the currently displayed source.");
+	sourced_select->copy_tooltip("Create a new source linked to the currently displayed source.");
 	yp += 24;
 	edge_detect_select = new MyButton(590, yp, 80, 20, "Edge Detect");
 	edge_detect_select->color(DARK_GRAY);
@@ -24128,7 +25085,7 @@ int		loop;
 	edge_detect_select->labelsize(9);
 	edge_detect_select->box(FL_FRAME_BOX);
 	edge_detect_select->callback(new_edge_detect_select_cb, my_window);
-	edge_detect_select->tooltip("Create a new source from one of the others and highlight found edges.");
+	edge_detect_select->copy_tooltip("Create a new source from one of the others and highlight found edges.");
 	yp += 24;
 	chromakey_green_select = new MyButton(590, yp, 80, 20, "Green Key");
 	chromakey_green_select->color(DARK_GRAY);
@@ -24136,7 +25093,7 @@ int		loop;
 	chromakey_green_select->labelsize(9);
 	chromakey_green_select->box(FL_FRAME_BOX);
 	chromakey_green_select->callback(new_chromakey_select_cb, my_window);
-	chromakey_green_select->tooltip("Create a new source from one of the others and mask the green content.");
+	chromakey_green_select->copy_tooltip("Create a new source from one of the others and mask the green content.");
 	yp += 24;
 	chromakey_blue_select = new MyButton(590, yp, 80, 20, "Blue Key");
 	chromakey_blue_select->color(DARK_GRAY);
@@ -24144,7 +25101,7 @@ int		loop;
 	chromakey_blue_select->labelsize(9);
 	chromakey_blue_select->box(FL_FRAME_BOX);
 	chromakey_blue_select->callback(new_chromakey_select_cb, my_window);
-	chromakey_blue_select->tooltip("Create a new source from one of the others and mask the blue content.");
+	chromakey_blue_select->copy_tooltip("Create a new source from one of the others and mask the blue content.");
 	yp += 24;
 	alternating_select = new MyButton(590, yp, 80, 20, "Alternating");
 	alternating_select->color(DARK_GRAY);
@@ -24152,7 +25109,7 @@ int		loop;
 	alternating_select->labelsize(9);
 	alternating_select->box(FL_FRAME_BOX);
 	alternating_select->callback(new_alternating_source_select_cb, my_window);
-	alternating_select->tooltip("Create a new source from all of the others and slowly alternate between them.");
+	alternating_select->copy_tooltip("Create a new source from all of the others and slowly alternate between them.");
 	yp += 24;
 	all_select = new MyButton(590, yp, 80, 20, "All");
 	all_select->color(DARK_GRAY);
@@ -24160,7 +25117,7 @@ int		loop;
 	all_select->labelsize(9);
 	all_select->box(FL_FRAME_BOX);
 	all_select->callback(new_all_source_select_cb, my_window);
-	all_select->tooltip("Create a new source from all of the others and arrange them on a split screen.");
+	all_select->copy_tooltip("Create a new source from all of the others and arrange them on a split screen.");
 	yp += 24;
 	split_select = new MyButton(590, yp, 80, 20, "Split");
 	split_select->color(DARK_GRAY);
@@ -24168,7 +25125,7 @@ int		loop;
 	split_select->labelsize(9);
 	split_select->box(FL_FRAME_BOX);
 	split_select->callback(new_split_source_select_cb, my_window);
-	split_select->tooltip("Create a new source on a split screen allowing selection of number of splits and sources within each.");
+	split_select->copy_tooltip("Create a new source on a split screen allowing selection of number of splits and sources within each.");
 	yp += 24;
 	pipe_select = new MyButton(590, yp, 80, 20, "Pipe");
 	pipe_select->color(DARK_GRAY);
@@ -24176,7 +25133,7 @@ int		loop;
 	pipe_select->labelsize(9);
 	pipe_select->box(FL_FRAME_BOX);
 	pipe_select->callback(new_source_pipe_select_cb, my_window);
-	pipe_select->tooltip("Create a new source by collecting text arriving from a pipe of another program.");
+	pipe_select->copy_tooltip("Create a new source by collecting text arriving from a pipe of another program.");
 	yp += 24;
 	single_frame_file_select = new MyButton(590, yp, 80, 20, "Frame File");
 	single_frame_file_select->color(DARK_GRAY);
@@ -24184,7 +25141,7 @@ int		loop;
 	single_frame_file_select->labelsize(9);
 	single_frame_file_select->box(FL_FRAME_BOX);
 	single_frame_file_select->callback(new_source_frame_file_select_cb, my_window);
-	single_frame_file_select->tooltip("Create a new source from a file that is a collection of still frames.");
+	single_frame_file_select->copy_tooltip("Create a new source from a file that is a collection of still frames.");
 	yp += 24;
 	clock_timer_select = new MyButton(590, yp, 80, 20, "Clock / Timer");
 	clock_timer_select->color(DARK_GRAY);
@@ -24192,7 +25149,7 @@ int		loop;
 	clock_timer_select->labelsize(9);
 	clock_timer_select->box(FL_FRAME_BOX);
 	clock_timer_select->callback(new_source_clock_timer_select_cb, my_window);
-	clock_timer_select->tooltip("Create a new source that is the text representation of a clock or timer.");
+	clock_timer_select->copy_tooltip("Create a new source that is the text representation of a clock or timer.");
 	yp += 24;
 	dynamic_text_select = new MyButton(590, yp, 80, 20, "Dynamic Text");
 	dynamic_text_select->color(DARK_GRAY);
@@ -24200,7 +25157,7 @@ int		loop;
 	dynamic_text_select->labelsize(9);
 	dynamic_text_select->box(FL_FRAME_BOX);
 	dynamic_text_select->callback(new_source_dynamic_text_select_cb, my_window);
-	dynamic_text_select->tooltip("Create a new text source that updates dynamically.");
+	dynamic_text_select->copy_tooltip("Create a new text source that updates dynamically.");
 	yp += 24;
 	alert_select = new MyButton(590, yp, 80, 20, "Alert");
 	alert_select->color(DARK_GRAY);
@@ -24208,7 +25165,7 @@ int		loop;
 	alert_select->labelsize(9);
 	alert_select->box(FL_FRAME_BOX);
 	alert_select->callback(new_source_alert_select_cb, my_window);
-	alert_select->tooltip("Create a new source that can be triggered by external conditions.");
+	alert_select->copy_tooltip("Create a new source that can be triggered by external conditions.");
 	yp += 24;
 	slideshow_select = new MyButton(590, yp, 80, 20, "Slideshow");
 	slideshow_select->color(DARK_GRAY);
@@ -24216,7 +25173,7 @@ int		loop;
 	slideshow_select->labelsize(9);
 	slideshow_select->box(FL_FRAME_BOX);
 	slideshow_select->callback(new_source_slideshow_select_cb, my_window);
-	slideshow_select->tooltip("Create a new source using a list of image files as a slideshow.");
+	slideshow_select->copy_tooltip("Create a new source using a list of image files as a slideshow.");
 	yp += 24;
 	slideshow_directory_select = new MyButton(590, yp, 80, 20, "Dir Slideshow");
 	slideshow_directory_select->color(DARK_GRAY);
@@ -24224,7 +25181,7 @@ int		loop;
 	slideshow_directory_select->labelsize(9);
 	slideshow_directory_select->box(FL_FRAME_BOX);
 	slideshow_directory_select->callback(new_source_directory_slideshow_select_cb, my_window);
-	slideshow_directory_select->tooltip("Create a new source using a directory of image files as a slideshow.");
+	slideshow_directory_select->copy_tooltip("Create a new source using a directory of image files as a slideshow.");
 	yp += 24;
 	if(global_osg_enabled == 1)
 	{
@@ -24234,7 +25191,7 @@ int		loop;
 		osg_select->labelsize(9);
 		osg_select->box(FL_FRAME_BOX);
 		osg_select->callback(new_source_osg_select_cb, my_window);
-		osg_select->tooltip("Create a new source by rendering an OSG 3D file.");
+		osg_select->copy_tooltip("Create a new source by rendering an OSG 3D file.");
 		yp += 24;
 	}
 	pseudo_camera_select = NULL;
@@ -24246,7 +25203,7 @@ int		loop;
 		pseudo_camera_select->labelsize(9);
 		pseudo_camera_select->box(FL_FRAME_BOX);
 		pseudo_camera_select->callback(new_source_pseudo_camera_select_cb, my_window);
-		pseudo_camera_select->tooltip("Create a new source with the frames coming in from another program.");
+		pseudo_camera_select->copy_tooltip("Create a new source with the frames coming in from another program.");
 		yp += 24;
 	}
 	plugin_camera_select = NULL;
@@ -24258,7 +25215,7 @@ int		loop;
 		plugin_camera_select->labelsize(9);
 		plugin_camera_select->box(FL_FRAME_BOX);
 		plugin_camera_select->callback(new_source_plugin_camera_select_cb, my_window);
-		plugin_camera_select->tooltip("Create a new source with the frames coming in a plug-in in a shared library.");
+		plugin_camera_select->copy_tooltip("Create a new source with the frames coming in a plug-in in a shared library.");
 		yp += 24;
 	}
 	end();
@@ -24267,6 +25224,28 @@ int		loop;
 
 NewSourceWindow::~NewSourceWindow()
 {
+	if(select_camera_window != NULL)
+	{
+		select_camera_window->hide();
+		Fl::delete_widget(select_camera_window);
+		select_camera_window = NULL;
+	}
+	if(select_x11_window != NULL)
+	{
+		select_x11_window->hide();
+		Fl::delete_widget(select_x11_window);
+		select_x11_window = NULL;
+	}
+	if(select_audio_window != NULL)
+	{
+		select_audio_window->hide();
+		Fl::delete_widget(select_audio_window);
+		select_audio_window = NULL;
+	}
+	if(my_window->specify_url_window != NULL)
+	{
+		my_window->specify_url_window->hide();
+	}
 }
 
 void	NewSourceWindow::Show(int e_mode)
@@ -24278,7 +25257,7 @@ int	loop;
 	{
 		if(create != NULL) 
 		{
-			create->label("Accept");
+			create->copy_label("Accept");
 			create->callback(edit_source_cb, my_window);
 		}
 		if(camera_select != NULL) camera_select->hide();
@@ -24336,7 +25315,7 @@ int	loop;
 	{
 		if(create != NULL) 
 		{
-			create->label("Create");
+			create->copy_label("Create");
 			create->callback(new_source_cb, my_window);
 		}
 		if(camera_select != NULL) camera_select->show();
@@ -24356,9 +25335,58 @@ int	loop;
 		if(all_select != NULL) all_select->show();
 		if(pseudo_camera_select != NULL) pseudo_camera_select->show();
 		if(plugin_camera_select != NULL) plugin_camera_select->show();
+		width->value(my_window->requested_w);
+		height->value(my_window->requested_h);
 		show();
 		resize(x(), y(), 690, h());
 	}
+}
+
+void	NewSourceWindow::hide()
+{
+	if(select_camera_window != NULL)
+	{
+		select_camera_window->hide();
+		Fl::delete_widget(select_camera_window);
+		select_camera_window = NULL;
+	}
+	if(select_x11_window != NULL)
+	{
+		select_x11_window->hide();
+		Fl::delete_widget(select_x11_window);
+		select_x11_window = NULL;
+	}
+	if(select_audio_window != NULL)
+	{
+		select_audio_window->hide();
+		Fl::delete_widget(select_audio_window);
+		select_audio_window = NULL;
+	}
+	if(my_window->ndi_source_window != NULL)
+	{
+		my_window->ndi_source_window->hide();
+	}
+	if(my_window->specify_irc_window != NULL)
+	{
+		my_window->specify_irc_window->hide();
+	}
+	if(my_window->specify_url_window != NULL)
+	{
+		my_window->specify_url_window->hide();
+	}
+	if(my_window->timer_window != NULL)
+	{
+		my_window->timer_window->hide();
+	}
+	if(my_window->alert_window != NULL)
+	{
+		my_window->alert_window->hide();
+	}
+	if(my_window->pseudo_camera_window != NULL)
+	{
+		my_window->pseudo_camera_window->hide();
+	}
+	DragWindow::hide();
 }
 
 int	NewSourceWindow::handle(int event)
@@ -24381,6 +25409,27 @@ int	NewSourceWindow::handle(int event)
 }
 
 // SECTION *********************************** SELECT OBJECTS *******************************************
+
+void	Camera::SetObjectInAllOtherCameras()
+{
+int	loop;
+int	inner;
+
+	for(loop = 0;loop < my_window->source_cnt;loop++)
+	{
+		if(my_window->camera[loop] != NULL)
+		{
+			Camera *cam = my_window->camera[loop];
+			if(cam->type == CAMERA_TYPE_CAMERA)
+			{
+				for(inner = 0;inner < my_window->recognize_class_cnt;inner++)
+				{
+					cam->object_index[inner] = object_index[inner];
+				}
+			}
+		}
+	}
+}
 
 void	select_objects_cb(Fl_Widget *w, void *v)
 {
@@ -24457,6 +25506,19 @@ int	loop;
 	}
 }
 
+void	apply_all_select_objects_cb(Fl_Widget *w, void *v)
+{
+	MyWin *win = (MyWin *)v;
+	if(win != NULL)
+	{
+		Camera *cam = win->DisplayedCamera();
+		if(cam != NULL)
+		{
+			cam->SetObjectInAllOtherCameras();
+		}
+	}
+}
+
 void	done_select_objects_cb(Fl_Widget *w, void *v)
 {
 int	loop;
@@ -24465,7 +25527,7 @@ int	loop;
 	if(win != NULL)
 	{
 		win->HideObjects();
-		win->toggle_objects_button->label("Select Objects");
+		win->toggle_objects_button->copy_label("Select Objects");
 	}
 }
 
@@ -25065,6 +26127,7 @@ int	loop;
 	if(ch < 2) ch = 2;
 	int sz = FRAMES_PER_BUFFER * sizeof(SAMPLE) * ch;
 	buffer = (SAMPLE *)malloc(sz);
+	memset(buffer, 0, sz);
 	sample_ready_cb = pulse_grab_sample;
 	strcpy(name, dev_name);
 	filter_plugin_cnt = 0;
@@ -25751,7 +26814,7 @@ void	pulse_audio_edit_alias(Fl_Widget *w, void *v)
 	if(str != NULL)
 	{
 		b->alias = strdup(str);
-		b->alias_button->label(b->alias);
+		b->alias_button->copy_label(b->alias);
 	}
 	b->alias_in->hide();
 	b->alias_button->show();
@@ -26019,8 +27082,11 @@ void	v4l_zoom_out_cb(void *v)
 		if(main_win != NULL)
 		{
 			Camera *cam = main_win->camera[b->my_win->index];
-			cam->V4L_Command(V4L_ZOOM_OUT);
-			Fl::repeat_timeout(0.01, v4l_zoom_out_cb, b);
+			if(cam->v4l_capable == 1)
+			{
+				cam->V4L_Command(V4L_ZOOM_OUT);
+				Fl::repeat_timeout(0.01, v4l_zoom_out_cb, b);
+			}
 		}
 	}
 }
@@ -26034,8 +27100,11 @@ void	v4l_zoom_in_cb(void *v)
 		if(main_win != NULL)
 		{
 			Camera *cam = main_win->camera[b->my_win->index];
-			cam->V4L_Command(V4L_ZOOM_IN);
-			Fl::repeat_timeout(0.01, v4l_zoom_in_cb, b);
+			if(cam->v4l_capable == 1)
+			{
+				cam->V4L_Command(V4L_ZOOM_IN);
+				Fl::repeat_timeout(0.01, v4l_zoom_in_cb, b);
+			}
 		}
 	}
 }
@@ -26049,8 +27118,11 @@ void	v4l_focus_far_cb(void *v)
 		if(main_win != NULL)
 		{
 			Camera *cam = main_win->camera[b->my_win->index];
-			cam->V4L_Command(V4L_FOCUS_FAR);
-			Fl::repeat_timeout(0.01, v4l_focus_far_cb, b);
+			if(cam->v4l_capable == 1)
+			{
+				cam->V4L_Command(V4L_FOCUS_FAR);
+				Fl::repeat_timeout(0.01, v4l_focus_far_cb, b);
+			}
 		}
 	}
 }
@@ -26064,8 +27136,11 @@ void	v4l_focus_near_cb(void *v)
 		if(main_win != NULL)
 		{
 			Camera *cam = main_win->camera[b->my_win->index];
-			cam->V4L_Command(V4L_FOCUS_NEAR);
-			Fl::repeat_timeout(0.01, v4l_focus_near_cb, b);
+			if(cam->v4l_capable == 1)
+			{
+				cam->V4L_Command(V4L_FOCUS_NEAR);
+				Fl::repeat_timeout(0.01, v4l_focus_near_cb, b);
+			}
 		}
 	}
 }
@@ -26092,57 +27167,60 @@ int	V4L_Button::handle(int event)
 			if(main_win != NULL)
 			{
 				Camera *cam = main_win->camera[my_win->index];
-				if(this == my_win->up_left)
+				if(cam->v4l_capable == 1)
 				{
-					cam->V4L_Motion(V4L_UP | V4L_LEFT);
-				}
-				else if(this == my_win->up)
-				{
-					cam->V4L_Motion(V4L_UP);
-				}
-				else if(this == my_win->up_right)
-				{
-					cam->V4L_Motion(V4L_UP | V4L_RIGHT);
-				}
-				else if(this == my_win->left)
-				{
-					cam->V4L_Motion(V4L_LEFT);
-				}
-				else if(this == my_win->right)
-				{
-					cam->V4L_Motion(V4L_RIGHT);
-				}
-				else if(this == my_win->down_left)
-				{
-					cam->V4L_Motion(V4L_DOWN | V4L_LEFT);
-				}
-				else if(this == my_win->down)
-				{
-					cam->V4L_Motion(V4L_DOWN);
-				}
-				else if(this == my_win->down_right)
-				{
-					cam->V4L_Motion(V4L_DOWN | V4L_RIGHT);
-				}
-				else if(this == my_win->zoom_out)
-				{
-					zooming = 1;
-					Fl::add_timeout(0.01, v4l_zoom_out_cb, this);
-				}
-				else if(this == my_win->zoom_in)
-				{
-					zooming = 1;
-					Fl::add_timeout(0.01, v4l_zoom_in_cb, this);
-				}
-				else if(this == my_win->focus_far)
-				{
-					focusing = 1;
-					Fl::add_timeout(0.01, v4l_focus_far_cb, this);
-				}
-				else if(this == my_win->focus_near)
-				{
-					focusing = 1;
-					Fl::add_timeout(0.01, v4l_focus_near_cb, this);
+					if(this == my_win->up_left)
+					{
+						cam->V4L_Motion(V4L_UP | V4L_LEFT);
+					}
+					else if(this == my_win->up)
+					{
+						cam->V4L_Motion(V4L_UP);
+					}
+					else if(this == my_win->up_right)
+					{
+						cam->V4L_Motion(V4L_UP | V4L_RIGHT);
+					}
+					else if(this == my_win->left)
+					{
+						cam->V4L_Motion(V4L_LEFT);
+					}
+					else if(this == my_win->right)
+					{
+						cam->V4L_Motion(V4L_RIGHT);
+					}
+					else if(this == my_win->down_left)
+					{
+						cam->V4L_Motion(V4L_DOWN | V4L_LEFT);
+					}
+					else if(this == my_win->down)
+					{
+						cam->V4L_Motion(V4L_DOWN);
+					}
+					else if(this == my_win->down_right)
+					{
+						cam->V4L_Motion(V4L_DOWN | V4L_RIGHT);
+					}
+					else if(this == my_win->zoom_out)
+					{
+						zooming = 1;
+						Fl::add_timeout(0.01, v4l_zoom_out_cb, this);
+					}
+					else if(this == my_win->zoom_in)
+					{
+						zooming = 1;
+						Fl::add_timeout(0.01, v4l_zoom_in_cb, this);
+					}
+					else if(this == my_win->focus_far)
+					{
+						focusing = 1;
+						Fl::add_timeout(0.01, v4l_focus_far_cb, this);
+					}
+					else if(this == my_win->focus_near)
+					{
+						focusing = 1;
+						Fl::add_timeout(0.01, v4l_focus_near_cb, this);
+					}
 				}
 			}
 		}
@@ -26152,21 +27230,24 @@ int	V4L_Button::handle(int event)
 			if(main_win != NULL)
 			{
 				Camera *cam = main_win->camera[my_win->index];
-				if((this == my_win->up_left)
-				|| (this == my_win->up)
-				|| (this == my_win->up_right)
-				|| (this == my_win->left)
-				|| (this == my_win->right)
-				|| (this == my_win->down_left)
-				|| (this == my_win->down)
-				|| (this == my_win->down_right)
-				|| (this == my_win->zoom_in)
-				|| (this == my_win->zoom_out))
+				if(cam->v4l_capable == 1)
 				{
-					cam->V4L_Motion(V4L_STOP);
+					if((this == my_win->up_left)
+					|| (this == my_win->up)
+					|| (this == my_win->up_right)
+					|| (this == my_win->left)
+					|| (this == my_win->right)
+					|| (this == my_win->down_left)
+					|| (this == my_win->down)
+					|| (this == my_win->down_right)
+					|| (this == my_win->zoom_in)
+					|| (this == my_win->zoom_out))
+					{
+						cam->V4L_Motion(V4L_STOP);
+					}
+					zooming = 0;
+					focusing = 0;
 				}
-				zooming = 0;
-				focusing = 0;
 			}
 		}
 		flag = MyButton::handle(event);
@@ -26281,19 +27362,26 @@ int	inner;
 		}
 	}
 	int nn = win->ptz_interface_button->current;
-	win->ptz_interface_index = nn;
-	win->ptz_current_interface = &my_win->iface[nn];
-	win->ptz_current_device_path = my_win->ptz_device_path[nn];
-	int cam_idx = win->ptz_remember_camera[win->ptz_interface_index];
-	if(cam_idx > -1)
+	if(my_win->ptz_interface_type[nn] != VISCA_INTERFACE_TYPE_ERROR)
 	{
-		win->ptz_current_camera_idx = cam_idx;
-		win->ptz_current_camera = &my_win->visca_camera[cam_idx];
-		win->ptz_camera_select_button[cam_idx]->box(FL_THIN_DOWN_BOX);
-		win->ptz_camera_select_button[cam_idx]->redraw();
+		win->ptz_interface_index = nn;
+		win->ptz_current_interface = &my_win->iface[nn];
+		win->ptz_current_device_path = my_win->ptz_device_path[nn];
+		int cam_idx = win->ptz_remember_camera[win->ptz_interface_index];
+		if(cam_idx > -1)
+		{
+			win->ptz_current_camera_idx = cam_idx;
+			win->ptz_current_camera = &my_win->visca_camera[cam_idx];
+			win->ptz_camera_select_button[cam_idx]->box(FL_THIN_DOWN_BOX);
+			win->ptz_camera_select_button[cam_idx]->redraw();
+		}
+		win->UpdatePresets();
+		win->UpdatePTZButtons();
 	}
-	win->UpdatePresets();
-	win->UpdatePTZButtons();
+	else
+	{
+		win->ptz_current_interface = NULL;
+	}
 	win->redraw();
 }
 
@@ -26818,12 +27906,12 @@ int	loop;
 	if(win->ptz_pin_button->value())
 	{
 		win->pinned = 1;
-		win->ptz_pin_button->label("Unpin");
+		win->ptz_pin_button->copy_label("Unpin");
 	}
 	else
 	{
 		win->pinned = 0;
-		win->ptz_pin_button->label("Pin");
+		win->ptz_pin_button->copy_label("Pin");
 	}
 }
 
@@ -26920,10 +28008,19 @@ void	ptz_follow_cb(Fl_Widget *w, void *v)
 
 void	ptz_show_joystick_cb(Fl_Widget *w, void *v)
 {
+int	loop;
+
 	MyWin *win = (MyWin *)v;
 	MyLightButton *b = (MyLightButton *)w;
 	int val = b->value();
 	win->ptz_joystick = val;
+	for(loop = 0;loop < PTZ_WINDOW_LIMIT;loop++)
+	{
+		if(win->ptz_window[loop] != NULL)
+		{
+			win->ptz_window[loop]->ptz_joystick_button->value(val);
+		}
+	}
 }
 
 void	ptz_soft_memory_cb(Fl_Widget *w, void *v)
@@ -27003,12 +28100,12 @@ void	ptz_bind_camera_cb(Fl_Widget *w, void *v)
 			win->bound_camera = cam;
 			win->ptz_bound_name_box->value(cam->alias);
 			win->bound_camera->prefer_ndi = win->prefer_ndi;
+			win->bound_camera->prefer_v4l = win->prefer_v4l;
 		}
 		else
 		{
-			win->bound_camera = NULL;
 			win->ptz_bound_name_box->value("");
-			win->bound_camera->prefer_ndi = 0;
+			win->bound_camera = NULL;
 		}
 	}
 }
@@ -27020,6 +28117,25 @@ void	ptz_zoom_speed_adjust_cb(Fl_Widget *w, void *v)
 	win->ptz_adjust_speed_for_zoom = b->value();
 }
 
+void	ptz_alias_input_cb(Fl_Widget *w, void *v)
+{
+	PTZ_Window *win = (PTZ_Window *)v;
+	char *str = (char *)win->ptz_alias_input->value();
+	if(str != NULL)
+	{
+		strncpy(win->alias, str, 4096);
+		win->ptz_alias_button->copy_label(str);
+	}
+	win->ptz_alias_input->hide();
+}
+
+void	ptz_alias_button_cb(Fl_Widget *w, void *v)
+{
+	PTZ_Window *win = (PTZ_Window *)v;
+	win->ptz_alias_input->show();
+	win->ptz_alias_input->take_focus();
+}
+
 void	ptz_contract_cb(Fl_Widget *w, void *v)
 {
 	PTZ_Window *win = (PTZ_Window *)v;
@@ -27029,14 +28145,22 @@ void	ptz_contract_cb(Fl_Widget *w, void *v)
 		win->resize(win->x(), win->my_window->h() - 24, win->w(), 24);
 		win->ptz_alias_button->resize(win->x() + 2, win->y() + 2, win->w() - 24, 20);
 		win->ptz_contract_button->resize(win->x() + (win->w() - 20), win->y() + 2, 20, 20);
-		win->ptz_contract_button->label("@8>");
+		win->ptz_contract_button->copy_label("@8>");
+		win->ptz_contract_button->copy_tooltip("Expand this window");
+		win->ptz_alias_button->callback(ptz_contract_cb, win);
+		win->ptz_alias_button->copy_tooltip("Expand this window");
+		win->ptz_alias_input->hide();
 		win->contracted = 1;
 	}
 	else
 	{
 		win->ptz_contract_group->show();
 		win->resize(win->x(), win->my_window->h() - 330, win->w(), 330);
-		win->ptz_contract_button->label("@2>");
+		win->ptz_contract_button->copy_label("@2>");
+		win->ptz_contract_button->copy_tooltip("Contract this window");
+		win->ptz_alias_button->callback(ptz_alias_button_cb, win);
+		win->ptz_alias_button->copy_tooltip("Set the PTZ alias");
+		win->ptz_alias_input->hide();
 		win->contracted = 0;
 	}
 	win->redraw();
@@ -27105,8 +28229,22 @@ int	aa, ab, ac;
 	ptz_alias_button->color(BLACK);
 	ptz_alias_button->labelcolor(WHITE);
 	ptz_alias_button->labelsize(11);
-	ptz_alias_button->tooltip("Set the PTZ alias");
-	ptz_alias_button->callback(ptz_contract_cb, this);
+	ptz_alias_button->copy_tooltip("Set the PTZ alias");
+	ptz_alias_button->callback(ptz_alias_button_cb, this);
+
+	ptz_alias_input = new MyInput(40, 2, w() - 64, 20, "Alias");
+	ptz_alias_input->align(FL_ALIGN_LEFT);
+	ptz_alias_input->box(FL_FRAME_BOX);
+	ptz_alias_input->color(BLACK);
+	ptz_alias_input->labelcolor(YELLOW);
+	ptz_alias_input->labelsize(11);
+	ptz_alias_input->textcolor(WHITE);
+	ptz_alias_input->textsize(11);
+	ptz_alias_input->value(alias);
+	ptz_alias_input->copy_tooltip("Set the PTZ alias");
+	ptz_alias_input->when(FL_WHEN_RELEASE | FL_WHEN_ENTER_KEY | FL_WHEN_NOT_CHANGED);
+	ptz_alias_input->callback(ptz_alias_input_cb, this);
+	ptz_alias_input->hide();
 
 	ptz_contract_button = new MyButton(w() - 20, 2, 20, 20, "@2>");
 	ptz_contract_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
@@ -27114,7 +28252,7 @@ int	aa, ab, ac;
 	ptz_contract_button->color(BLACK);
 	ptz_contract_button->labelcolor(WHITE);
 	ptz_contract_button->labelsize(8);
-	ptz_contract_button->tooltip("Contract this window");
+	ptz_contract_button->copy_tooltip("Contract this window");
 	ptz_contract_button->callback(ptz_contract_cb, this);
 
 	start_y += 34;
@@ -27175,7 +28313,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_lock_to_camera_button->labelsize(8);
 	ptz_lock_to_camera_button->box(FL_NO_BOX);
 	ptz_lock_to_camera_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_lock_to_camera_button->tooltip("Lock these controls to currently selected camera");
+	ptz_lock_to_camera_button->copy_tooltip("Lock these controls to currently selected camera");
 	ptz_lock_to_camera_button->callback(ptz_lock_camera_cb, this);
 
 	ptz_bind_camera_button = new MyLightButton((40 - 25), yy + 114, 70, 14, "Bind Camera");
@@ -27185,7 +28323,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_bind_camera_button->labelsize(8);
 	ptz_bind_camera_button->box(FL_NO_BOX);
 	ptz_bind_camera_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_bind_camera_button->tooltip("Display the currenly selected camera when these controls are in use");
+	ptz_bind_camera_button->copy_tooltip("Display the currenly selected camera when these controls are in use");
 	ptz_bind_camera_button->callback(ptz_bind_camera_cb, this);
 
 	ptz_auto_focus = new MyLightButton(((40 - 25) + 80), yy + 80, 60, 15, "Auto Focus");
@@ -27195,7 +28333,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_auto_focus->labelsize(8);
 	ptz_auto_focus->box(FL_NO_BOX);
 	ptz_auto_focus->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_auto_focus->tooltip("Toggle autofocus");
+	ptz_auto_focus->copy_tooltip("Toggle autofocus");
 	ptz_auto_focus->callback(ptz_auto_focus_cb, this);
 
 	ptz_auto_exp = new MyLightButton(((40 - 25) + 80), yy + 95, 60, 15, "Auto Exp");
@@ -27205,7 +28343,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_auto_exp->labelsize(8);
 	ptz_auto_exp->box(FL_NO_BOX);
 	ptz_auto_exp->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_auto_exp->tooltip("Toggle autoexposure");
+	ptz_auto_exp->copy_tooltip("Toggle autoexposure");
 	ptz_auto_exp->value(1);
 	ptz_auto_exp->callback(ptz_auto_exp_cb, this);
 
@@ -27216,7 +28354,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_backlight->labelsize(8);
 	ptz_backlight->box(FL_NO_BOX);
 	ptz_backlight->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_backlight->tooltip("Toggle backlight compensation");
+	ptz_backlight->copy_tooltip("Toggle backlight compensation");
 	ptz_backlight->value(0);
 	ptz_backlight->callback(ptz_backlight_cb, this);
 
@@ -27227,9 +28365,9 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_follow_button->labelsize(8);
 	ptz_follow_button->box(FL_NO_BOX);
 	ptz_follow_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_follow_button->tooltip("Toggle PTZ object following");
+	ptz_follow_button->copy_tooltip("Toggle PTZ object following");
 	ptz_follow_button->value(my_window->ptz_follow);
-	ptz_follow_button->callback(ptz_follow_cb, this);
+	ptz_follow_button->callback(ptz_follow_cb, my_window);
 
 	ptz_dzoom_button = new MyLightButton(((40 - 25) + 80), yy + 110, 60, 15, "Digital Zoom");
 	ptz_dzoom_button->box(FL_FLAT_BOX);
@@ -27238,7 +28376,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_dzoom_button->labelsize(8);
 	ptz_dzoom_button->box(FL_NO_BOX);
 	ptz_dzoom_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_dzoom_button->tooltip("Toggle digital zoom within the camera");
+	ptz_dzoom_button->copy_tooltip("Toggle digital zoom within the camera");
 	ptz_dzoom_button->value(0);
 	ptz_dzoom_button->callback(ptz_dzoom_cb, this);
 
@@ -27249,7 +28387,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_tour_button->labelsize(8);
 	ptz_tour_button->box(FL_NO_BOX);
 	ptz_tour_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_tour_button->tooltip("Toggle touring between PTZ preset positions");
+	ptz_tour_button->copy_tooltip("Toggle touring between PTZ preset positions");
 	ptz_tour_button->value(0);
 	ptz_tour_button->callback(ptz_tour_cb, this);
 
@@ -27260,9 +28398,9 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_reverse_horizontal_button->labelsize(8);
 	ptz_reverse_horizontal_button->box(FL_NO_BOX);
 	ptz_reverse_horizontal_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_reverse_horizontal_button->tooltip("Toggle horizontal video reversal");
+	ptz_reverse_horizontal_button->copy_tooltip("Toggle horizontal video reversal");
 	ptz_reverse_horizontal_button->value(0);
-	ptz_reverse_horizontal_button->callback(ptz_reverse_horizontal_cb, this);
+	ptz_reverse_horizontal_button->callback(ptz_reverse_horizontal_cb, my_window);
 
 	ptz_reverse_vertical_button = new MyLightButton(((40 - 25) + 80 + 60), yy + 125, 60, 15, "Rev Vert");
 	ptz_reverse_vertical_button->box(FL_FLAT_BOX);
@@ -27271,9 +28409,9 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_reverse_vertical_button->labelsize(8);
 	ptz_reverse_vertical_button->box(FL_NO_BOX);
 	ptz_reverse_vertical_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_reverse_vertical_button->tooltip("Toggle vertical video reversal");
+	ptz_reverse_vertical_button->copy_tooltip("Toggle vertical video reversal");
 	ptz_reverse_vertical_button->value(0);
-	ptz_reverse_vertical_button->callback(ptz_reverse_vertical_cb, this);
+	ptz_reverse_vertical_button->callback(ptz_reverse_vertical_cb, my_window);
 
 	ptz_joystick_button = new MyLightButton(((40 - 25) + 80), yy + 140, 60, 15, "Joystick");
 	ptz_joystick_button->box(FL_FLAT_BOX);
@@ -27282,10 +28420,10 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_joystick_button->labelsize(8);
 	ptz_joystick_button->box(FL_NO_BOX);
 	ptz_joystick_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_joystick_button->tooltip("Toggle joystick mode for motion");
-	ptz_joystick_button->value(0);
+	ptz_joystick_button->copy_tooltip("Toggle joystick mode for motion");
+	ptz_joystick_button->value(my_window->ptz_joystick);
 	ptz_joystick_button->shortcut("j");
-	ptz_joystick_button->callback(ptz_show_joystick_cb, this);
+	ptz_joystick_button->callback(ptz_show_joystick_cb, my_window);
 
 	ptz_soft_memory_button = new MyLightButton(((40 - 25) + 80 + 60), yy + 140, 60, 15, "Soft Memory");
 	ptz_soft_memory_button->box(FL_FLAT_BOX);
@@ -27293,7 +28431,7 @@ int	PTZ_Window::AddCameraControlButtons(int start_x, int start_y)
 	ptz_soft_memory_button->labelcolor(YELLOW);
 	ptz_soft_memory_button->labelsize(8);
 	ptz_soft_memory_button->box(FL_NO_BOX);
-	ptz_soft_memory_button->tooltip("Toggle whether presents are stored locally or in the camera's memory");
+	ptz_soft_memory_button->copy_tooltip("Toggle whether presents are stored locally or in the camera's memory");
 	ptz_soft_memory_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 	ptz_soft_memory_button->value(0);
 	ptz_soft_memory_button->callback(ptz_soft_memory_cb, this);
@@ -27315,7 +28453,7 @@ int	PTZ_Window::AddZoomFocusAperture(int start_x, int start_y)
 	ptz_zoom_in_button->color(DARK_BLUE);
 	ptz_zoom_in_button->labelcolor(YELLOW);
 	ptz_zoom_in_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_zoom_in_button->tooltip("Zoom in using VISCA or V4L");
+	ptz_zoom_in_button->copy_tooltip("Zoom in using VISCA or V4L");
 	ptz_zoom_in_button->user_data((void *)PTZ_ZOOM_IN);
 
 	ptz_zoom_out_button = new PTZ_Button(this, start_x + 40, yy + 40, 20, 20, "@#2>");
@@ -27323,7 +28461,7 @@ int	PTZ_Window::AddZoomFocusAperture(int start_x, int start_y)
 	ptz_zoom_out_button->color(DARK_BLUE);
 	ptz_zoom_out_button->labelcolor(YELLOW);
 	ptz_zoom_out_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_zoom_out_button->tooltip("Zoom out using VISCA or V4L");
+	ptz_zoom_out_button->copy_tooltip("Zoom out using VISCA or V4L");
 	ptz_zoom_out_button->user_data((void *)PTZ_ZOOM_OUT);
 
 	ptz_zoom_value_label = new Fl_Box(start_x + 40, yy + 61, 20, 10, "zoom");
@@ -27346,7 +28484,7 @@ int	PTZ_Window::AddZoomFocusAperture(int start_x, int start_y)
 	ptz_focus_far_button->color(DARK_BLUE);
 	ptz_focus_far_button->labelcolor(YELLOW);
 	ptz_focus_far_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_focus_far_button->tooltip("Focus far using VISCA or V4L");
+	ptz_focus_far_button->copy_tooltip("Focus far using VISCA or V4L");
 	ptz_focus_far_button->user_data((void *)PTZ_FOCUS_FAR);
 
 	ptz_focus_near_button = new PTZ_Button(this, start_x + 28, yy + 40, 20, 20, "@#2>");
@@ -27354,7 +28492,7 @@ int	PTZ_Window::AddZoomFocusAperture(int start_x, int start_y)
 	ptz_focus_near_button->color(DARK_BLUE);
 	ptz_focus_near_button->labelcolor(YELLOW);
 	ptz_focus_near_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_focus_near_button->tooltip("Focus near using VISCA or V4L");
+	ptz_focus_near_button->copy_tooltip("Focus near using VISCA or V4L");
 	ptz_focus_near_button->user_data((void *)PTZ_FOCUS_NEAR);
 
 	ptz_focus_value_label = new Fl_Box(start_x + 28, yy + 61, 20, 10, "focus");
@@ -27377,7 +28515,7 @@ int	PTZ_Window::AddZoomFocusAperture(int start_x, int start_y)
 	ptz_aperture_open_button->color(DARK_BLUE);
 	ptz_aperture_open_button->labelcolor(YELLOW);
 	ptz_aperture_open_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_aperture_open_button->tooltip("Open the aperture using VISCA or V4L");
+	ptz_aperture_open_button->copy_tooltip("Open the aperture using VISCA or V4L");
 	ptz_aperture_open_button->user_data((void *)PTZ_APERTURE_OPEN);
 
 	ptz_aperture_close_button = new PTZ_Button(this, start_x + 30, yy + 40, 20, 20, "@#2>");
@@ -27385,7 +28523,7 @@ int	PTZ_Window::AddZoomFocusAperture(int start_x, int start_y)
 	ptz_aperture_close_button->color(DARK_BLUE);
 	ptz_aperture_close_button->labelcolor(YELLOW);
 	ptz_aperture_close_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_aperture_close_button->tooltip("Close the aperture using VISCA or V4L");
+	ptz_aperture_close_button->copy_tooltip("Close the aperture using VISCA or V4L");
 	ptz_aperture_close_button->user_data((void *)PTZ_APERTURE_CLOSE);
 	start_y = yy + 100;
 	return(start_y);
@@ -27401,7 +28539,7 @@ int	PTZ_Window::AddWindowControls(int start_x, int start_y)
 	ptz_spawn_another_button->labelsize(9);
 	ptz_spawn_another_button->box(FL_NO_BOX);
 	ptz_spawn_another_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_spawn_another_button->tooltip("Reveal and addition PTZ / VISCA control dialog");
+	ptz_spawn_another_button->copy_tooltip("Reveal and addition PTZ / VISCA control dialog");
 	ptz_spawn_another_button->value(0);
 	ptz_spawn_another_button->callback(ptz_spawn_another_cb, this);
 	yy += 16;
@@ -27413,7 +28551,7 @@ int	PTZ_Window::AddWindowControls(int start_x, int start_y)
 	ptz_hide_button->labelsize(9);
 	ptz_hide_button->box(FL_NO_BOX);
 	ptz_hide_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_hide_button->tooltip("Hide this PTZ / VISCA dialog");
+	ptz_hide_button->copy_tooltip("Hide this PTZ / VISCA dialog");
 	ptz_hide_button->value(0);
 	ptz_hide_button->callback(ptz_hide_cb, this);
 	if(instance == 0)
@@ -27428,7 +28566,7 @@ int	PTZ_Window::AddWindowControls(int start_x, int start_y)
 	ptz_pin_button->labelsize(9);
 	ptz_pin_button->box(FL_NO_BOX);
 	ptz_pin_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	ptz_pin_button->tooltip("Pin this dialog open");
+	ptz_pin_button->copy_tooltip("Pin this dialog open");
 	ptz_pin_button->value(0);
 	ptz_pin_button->callback(ptz_pin_cb, this);
 	yy += 16;
@@ -27441,7 +28579,7 @@ int	PTZ_Window::AddWindowControls(int start_x, int start_y)
 	ptz_bound_name_box->textsize(9);
 	ptz_bound_name_box->labelcolor(WHITE);
 	ptz_bound_name_box->labelsize(9);
-	ptz_bound_name_box->tooltip("The camera to which the PTZ control is bound");
+	ptz_bound_name_box->copy_tooltip("The camera to which the PTZ control is bound");
 	ptz_bound_name_box->value("");
 	if(bound_camera != NULL)
 	{
@@ -27464,7 +28602,7 @@ int	PTZ_Window::AddSpeedSlider(int start_x, int start_y)
 	ptz_speed_slider->align(FL_ALIGN_CENTER | FL_ALIGN_TOP);
 	ptz_speed_slider->value(0.5);
 	ptz_speed_slider->bounds(0.01, 1.0);
-	ptz_speed_slider->tooltip("Set the PTZ speed");
+	ptz_speed_slider->copy_tooltip("Set the PTZ speed");
 	ptz_speed_slider->callback(ptz_set_speed_cb, this);
 
 	ptz_zoom_speed_adjust_button = new MyToggleButton(start_x + 60, yy, 10, 10, "Z");
@@ -27473,7 +28611,7 @@ int	PTZ_Window::AddSpeedSlider(int start_x, int start_y)
 	ptz_zoom_speed_adjust_button->labelcolor(YELLOW);
 	ptz_zoom_speed_adjust_button->labelsize(8);
 	ptz_zoom_speed_adjust_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	ptz_zoom_speed_adjust_button->tooltip("Toggle between motion and zoom speed control");
+	ptz_zoom_speed_adjust_button->copy_tooltip("Toggle between motion and zoom speed control");
 	ptz_zoom_speed_adjust_button->value(0);
 	ptz_zoom_speed_adjust_button->callback(ptz_zoom_speed_adjust_cb, this);
 
@@ -27508,7 +28646,7 @@ int	PTZ_Window::AddPanTiltButtons(int start_x, int start_y)
 	pt_label->labelcolor(YELLOW);
 	pt_label->labelsize(9);
 	pt_label->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	pt_label->tooltip("Select between joystick and button interfaces for pan/zoom/tilt");
+	pt_label->copy_tooltip("Select between joystick and button interfaces for pan/zoom/tilt");
 	pt_label->callback(change_pan_tilt_style_cb, this);
 	yy += 21;
 	int other_yy = PTZ_Window::AddPanTiltButtonPanel(start_x, yy);
@@ -27526,7 +28664,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_up_button->box(FL_FRAME);
 	ptz_up_button->color(YELLOW);
 	ptz_up_button->labelcolor(YELLOW);
-	ptz_up_button->tooltip("Move camera up using VISCA or V4L");
+	ptz_up_button->copy_tooltip("Move camera up using VISCA or V4L");
 	ptz_up_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_up_button->user_data((void *)PTZ_UP);
 
@@ -27534,7 +28672,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_up_right_button->box(FL_FRAME);
 	ptz_up_right_button->color(YELLOW);
 	ptz_up_right_button->labelcolor(YELLOW);
-	ptz_up_right_button->tooltip("Move camera up and right using VISCA or V4L");
+	ptz_up_right_button->copy_tooltip("Move camera up and right using VISCA or V4L");
 	ptz_up_right_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_up_right_button->user_data((void *)PTZ_UP_RIGHT);
 
@@ -27542,7 +28680,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_up_left_button->box(FL_FRAME);
 	ptz_up_left_button->color(YELLOW);
 	ptz_up_left_button->labelcolor(YELLOW);
-	ptz_up_left_button->tooltip("Move camera up and left using VISCA or V4L");
+	ptz_up_left_button->copy_tooltip("Move camera up and left using VISCA or V4L");
 	ptz_up_left_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_up_left_button->user_data((void *)PTZ_UP_LEFT);
 
@@ -27550,7 +28688,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_down_button->box(FL_FRAME);
 	ptz_down_button->color(DARK_BLUE);
 	ptz_down_button->labelcolor(YELLOW);
-	ptz_down_button->tooltip("Move camera down using VISCA or V4L");
+	ptz_down_button->copy_tooltip("Move camera down using VISCA or V4L");
 	ptz_down_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_down_button->user_data((void *)PTZ_DOWN);
 
@@ -27558,7 +28696,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_down_right_button->box(FL_FRAME);
 	ptz_down_right_button->color(DARK_BLUE);
 	ptz_down_right_button->labelcolor(YELLOW);
-	ptz_down_right_button->tooltip("Move camera down and right using VISCA or V4L");
+	ptz_down_right_button->copy_tooltip("Move camera down and right using VISCA or V4L");
 	ptz_down_right_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_down_right_button->user_data((void *)PTZ_DOWN_RIGHT);
 
@@ -27566,7 +28704,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_down_left_button->box(FL_FRAME);
 	ptz_down_left_button->color(DARK_BLUE);
 	ptz_down_left_button->labelcolor(YELLOW);
-	ptz_down_left_button->tooltip("Move camera down and left using VISCA or V4L");
+	ptz_down_left_button->copy_tooltip("Move camera down and left using VISCA or V4L");
 	ptz_down_left_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_down_left_button->user_data((void *)PTZ_DOWN_LEFT);
 
@@ -27574,7 +28712,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_left_button->box(FL_FRAME);
 	ptz_left_button->color(DARK_BLUE);
 	ptz_left_button->labelcolor(YELLOW);
-	ptz_left_button->tooltip("Move camera left using VISCA or V4L");
+	ptz_left_button->copy_tooltip("Move camera left using VISCA or V4L");
 	ptz_left_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_left_button->user_data((void *)PTZ_LEFT);
 
@@ -27582,7 +28720,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_home_button->box(FL_FRAME);
 	ptz_home_button->color(DARK_BLUE);
 	ptz_home_button->labelcolor(YELLOW);
-	ptz_home_button->tooltip("Move to the camera to home position using VISCA or V4L");
+	ptz_home_button->copy_tooltip("Move to the camera to home position using VISCA or V4L");
 	ptz_home_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_home_button->user_data((void *)PTZ_HOME);
 
@@ -27590,7 +28728,7 @@ int	PTZ_Window::AddPanTiltButtonPanel(int start_x, int yy)
 	ptz_right_button->box(FL_FRAME);
 	ptz_right_button->color(DARK_BLUE);
 	ptz_right_button->labelcolor(YELLOW);
-	ptz_right_button->tooltip("Move the camera right using VISCA or V4L");
+	ptz_right_button->copy_tooltip("Move the camera right using VISCA or V4L");
 	ptz_right_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_right_button->user_data((void *)PTZ_RIGHT);
 
@@ -27774,7 +28912,7 @@ int	loop;
 		ptz_camera_select_button[loop]->labelcolor(YELLOW);
 		ptz_camera_select_button[loop]->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 		ptz_camera_select_button[loop]->labelsize(11);
-		ptz_camera_select_button[loop]->tooltip("Select the VISCA camera controlled by this dialog");
+		ptz_camera_select_button[loop]->copy_tooltip("Select the VISCA camera controlled by this dialog");
 		ptz_camera_select_button[loop]->callback(ptz_select_camera_cb, this);
 	}
 	yy += 40;
@@ -27794,7 +28932,7 @@ int	loop;
 	ptz_camera_preset_page_back_button->labelcolor(YELLOW);
 	ptz_camera_preset_page_back_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_camera_preset_page_back_button->labelsize(11);
-	ptz_camera_preset_page_back_button->tooltip("Page back through camera numbers");
+	ptz_camera_preset_page_back_button->copy_tooltip("Page back through camera numbers");
 	ptz_camera_preset_page_back_button->callback(ptz_preset_page_back_cb, this);
 	int cnt = 0;
 	for(loop = 0;loop < NUMBER_OF_PRESETS;loop++)
@@ -27808,7 +28946,7 @@ int	loop;
 		ptz_camera_preset_button[loop]->labelcolor(YELLOW);
 		ptz_camera_preset_button[loop]->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 		ptz_camera_preset_button[loop]->labelsize(11);
-		ptz_camera_preset_button[loop]->tooltip("Select a preset position for a VISCA camera");
+		ptz_camera_preset_button[loop]->copy_tooltip("Select a preset position for a VISCA camera");
 		ptz_camera_preset_button[loop]->callback(ptz_select_preset_cb, this);
 		if(loop > 6)
 		{
@@ -27821,7 +28959,7 @@ int	loop;
 		ptz_camera_set_button[loop]->labelcolor(YELLOW);
 		ptz_camera_set_button[loop]->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 		ptz_camera_set_button[loop]->labelsize(11);
-		ptz_camera_set_button[loop]->tooltip("Set a preset position for a VISCA camera");
+		ptz_camera_set_button[loop]->copy_tooltip("Set a preset position for a VISCA camera");
 		ptz_camera_set_button[loop]->callback(ptz_set_preset_cb, this);
 		if(loop > 6)
 		{
@@ -27840,7 +28978,7 @@ int	loop;
 	ptz_camera_preset_page_forward_button->labelcolor(YELLOW);
 	ptz_camera_preset_page_forward_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	ptz_camera_preset_page_forward_button->labelsize(11);
-	ptz_camera_preset_page_forward_button->tooltip("Page forward through VISCA camera numbers");
+	ptz_camera_preset_page_forward_button->copy_tooltip("Page forward through VISCA camera numbers");
 	ptz_camera_preset_page_forward_button->callback(ptz_preset_page_forward_cb, this);
 	yy += 32;
 	start_y = yy;
@@ -27862,8 +29000,11 @@ int	OpenInterface(VISCAInterface_t *iface, char *path, int *interface_type)
 			while((*cp != ':') && (*cp != '\0')) cp++;
 			if(*cp == ':') *cp = '\0';
 			err = VISCA_open_tcp(iface, host, port);
-			is_network = 1;
-			*interface_type = VISCA_INTERFACE_TYPE_TCP;
+			if(err == 0)
+			{
+				is_network = 1;
+				*interface_type = VISCA_INTERFACE_TYPE_TCP;
+			}
 		}
 	}
 	else if(strncmp(path, "udp://", strlen("udp://")) == 0)
@@ -27876,21 +29017,31 @@ int	OpenInterface(VISCAInterface_t *iface, char *path, int *interface_type)
 			char *cp = host;
 			while((*cp != ':') && (*cp != '\0')) cp++;
 			if(*cp == ':') *cp = '\0';
-			err = VISCA_open_udp4(iface, host, port, "192.168.0.144");
-			is_network = 1;
-			*interface_type = VISCA_INTERFACE_TYPE_UDP;
+			err = VISCA_open_udp(iface, host, port);
+			if(err == 0)
+			{
+				is_network = 1;
+				*interface_type = VISCA_INTERFACE_TYPE_UDP;
+			}
 		}
 	}
 	else
 	{
 		err = VISCA_open_serial(iface, path);
-		*interface_type = VISCA_INTERFACE_TYPE_SERIAL;
+		if(err == 0)
+		{
+			*interface_type = VISCA_INTERFACE_TYPE_SERIAL;
+		}
 	}
 	iface->broadcast = 0;
 	if((is_network == 0) && (err == 0))
 	{
 		int assigned = 0;
 		err = VISCA_set_address(iface, &assigned);
+	}
+	else if(err != 0)
+	{
+		*interface_type = VISCA_INTERFACE_TYPE_ERROR;
 	}
 	return(err);
 }
@@ -27924,7 +29075,7 @@ int	inner;
 	ptz_interface_button->labelsize(9);
 	ptz_interface_button->box(FL_NO_BOX);
 	ptz_interface_button->align(FL_ALIGN_CENTER | FL_ALIGN_TOP);
-	ptz_interface_button->tooltip("Select the VISCA interface controlled by this dialog");
+	ptz_interface_button->copy_tooltip("Select the VISCA interface controlled by this dialog");
 	ptz_interface_button->callback(ptz_select_interface_cb, this);
 	start_y += 18;
 
@@ -27957,6 +29108,7 @@ int	inner;
 			else
 			{
 				err = -1;
+				my_window->ptz_interface_type[loop] = VISCA_INTERFACE_TYPE_ERROR;
 			}
 		}
 		if(err == 0)
@@ -28002,6 +29154,7 @@ int	inner;
 								{
 									bound_camera = cam;
 									cam->prefer_ndi = my_window->ptz_prefer_ndi[instance];
+									cam->prefer_v4l = my_window->ptz_prefer_v4l[instance];
 								}
 							}
 						}
@@ -28100,7 +29253,17 @@ int	loop;
 	{
 		flag = 1;
 	}
-	if(event == FL_PUSH)
+	else if(event == FL_SHOW)
+	{
+		if(bound_camera != NULL)
+		{
+			if(bound_camera->ptz_lock_interface > -1)
+			{
+				ptz_interface_button->SetCurrent(bound_camera->ptz_lock_interface);
+			}
+		}
+	}
+	else if(event == FL_PUSH)
 	{
 		if(bound_camera != NULL)
 		{
@@ -28437,36 +29600,43 @@ int		PTZ_Window::AutoFocusStatus()
 {
 	int rr = 0;
 	uint8_t auto_val = 0;
-	int nn = VISCA_get_focus_auto(ptz_current_interface, ptz_current_camera, &auto_val);
-	if(nn == VISCA_SUCCESS)
+	if(ptz_current_interface != NULL)
 	{
-		if(auto_val == VISCA_FOCUS_AUTO_ON)
+		int nn = VISCA_get_focus_auto(ptz_current_interface, ptz_current_camera, &auto_val);
+		if(nn == VISCA_SUCCESS)
 		{
-			rr = 1;
-		}
-		else if(auto_val == VISCA_FOCUS_AUTO_OFF)
-		{
-			rr = 0;
-		}
-	}
-	else
-	{
-		Camera *cam = my_window->DisplayedCamera();
-		if(cam != NULL)
-		{
-			if((cam->ptz_lock_interface == ptz_interface_index) 
-			&& ((cam->ptz_lock_camera == ptz_current_camera_idx) || (cam->ptz_lock_camera == -1)))
+			if(auto_val == VISCA_FOCUS_AUTO_ON)
 			{
-				if(cam->cap != NULL)
+				rr = 1;
+			}
+			else if(auto_val == VISCA_FOCUS_AUTO_OFF)
+			{
+				rr = 0;
+			}
+		}
+		else
+		{
+			Camera *cam = my_window->DisplayedCamera();
+			if(cam != NULL)
+			{
+				if((cam->ptz_lock_interface == ptz_interface_index) 
+				&& ((cam->ptz_lock_camera == ptz_current_camera_idx) || (cam->ptz_lock_camera == -1)))
 				{
-					int val = cam->cap->get(CAP_PROP_AUTOFOCUS);
-					if(val != 0)
+					if(cam->cap != NULL)
 					{
-						rr = 1;
+						int val = cam->cap->get(CAP_PROP_AUTOFOCUS);
+						if(val != 0)
+						{
+							rr = 1;
+						}
+						else
+						{
+							rr = 0;
+						}
 					}
 					else
 					{
-						rr = 0;
+						rr = -1;
 					}
 				}
 				else
@@ -28479,10 +29649,10 @@ int		PTZ_Window::AutoFocusStatus()
 				rr = -1;
 			}
 		}
-		else
-		{
-			rr = -1;
-		}
+	}
+	else
+	{
+		rr = -1;
 	}
 	return(rr);
 }
@@ -28491,36 +29661,43 @@ int		PTZ_Window::AutoExposureStatus()
 {
 	int rr = 0;
 	uint8_t auto_val = 0;
-	int nn = VISCA_get_auto_exp_mode(ptz_current_interface, ptz_current_camera, &auto_val);
-	if(nn == VISCA_SUCCESS)
+	if(ptz_current_interface != NULL)
 	{
-		if(auto_val == VISCA_AUTO_EXP_FULL_AUTO)
+		int nn = VISCA_get_auto_exp_mode(ptz_current_interface, ptz_current_camera, &auto_val);
+		if(nn == VISCA_SUCCESS)
 		{
-			rr = 1;
-		}
-		else if(auto_val == VISCA_AUTO_EXP_MANUAL)
-		{
-			rr = 0;
-		}
-	}
-	else
-	{
-		Camera *cam = my_window->DisplayedCamera();
-		if(cam != NULL)
-		{
-			if((cam->ptz_lock_interface == ptz_interface_index) 
-			&& ((cam->ptz_lock_camera == ptz_current_camera_idx) || (cam->ptz_lock_camera == -1)))
+			if(auto_val == VISCA_AUTO_EXP_FULL_AUTO)
 			{
-				if(cam->cap != NULL)
+				rr = 1;
+			}
+			else if(auto_val == VISCA_AUTO_EXP_MANUAL)
+			{
+				rr = 0;
+			}
+		}
+		else
+		{
+			Camera *cam = my_window->DisplayedCamera();
+			if(cam != NULL)
+			{
+				if((cam->ptz_lock_interface == ptz_interface_index) 
+				&& ((cam->ptz_lock_camera == ptz_current_camera_idx) || (cam->ptz_lock_camera == -1)))
 				{
-					int val = cam->cap->get(V4L2_EXPOSURE_AUTO);
-					if(val != 0)
+					if(cam->cap != NULL)
 					{
-						rr = 1;
+						int val = cam->cap->get(V4L2_EXPOSURE_AUTO);
+						if(val != 0)
+						{
+							rr = 1;
+						}
+						else
+						{
+							rr = 0;
+						}
 					}
 					else
 					{
-						rr = 0;
+						rr = -1;
 					}
 				}
 				else
@@ -28533,10 +29710,10 @@ int		PTZ_Window::AutoExposureStatus()
 				rr = -1;
 			}
 		}
-		else
-		{
-			rr = -1;
-		}
+	}
+	else
+	{
+		rr = -1;
 	}
 	return(rr);
 }
@@ -28545,16 +29722,23 @@ int		PTZ_Window::DigitalZoomStatus()
 {
 	int rr = 0;
 	uint8_t auto_val = 0;
-	int nn = VISCA_get_dzoom(ptz_current_interface, ptz_current_camera, &auto_val);
-	if(nn == VISCA_SUCCESS)
+	if(ptz_current_interface != NULL)
 	{
-		if(auto_val == VISCA_DZOOM_ON)
+		int nn = VISCA_get_dzoom(ptz_current_interface, ptz_current_camera, &auto_val);
+		if(nn == VISCA_SUCCESS)
 		{
-			rr = 1;
+			if(auto_val == VISCA_DZOOM_ON)
+			{
+				rr = 1;
+			}
+			else if(auto_val == VISCA_DZOOM_OFF)
+			{
+				rr = 0;
+			}
 		}
-		else if(auto_val == VISCA_DZOOM_OFF)
+		else
 		{
-			rr = 0;
+			rr = -1;
 		}
 	}
 	else
@@ -28568,16 +29752,23 @@ int		PTZ_Window::BacklightStatus()
 {
 	int rr = 0;
 	uint8_t auto_val = 0;
-	int nn = VISCA_get_backlight_comp(ptz_current_interface, ptz_current_camera, &auto_val);
-	if(nn == VISCA_SUCCESS)
+	if(ptz_current_interface != NULL)
 	{
-		if(auto_val == VISCA_FOCUS_AUTO_ON)
+		int nn = VISCA_get_backlight_comp(ptz_current_interface, ptz_current_camera, &auto_val);
+		if(nn == VISCA_SUCCESS)
 		{
-			rr = 1;
+			if(auto_val == VISCA_FOCUS_AUTO_ON)
+			{
+				rr = 1;
+			}
+			else if(auto_val == VISCA_FOCUS_AUTO_OFF)
+			{
+				rr = 0;
+			}
 		}
-		else if(auto_val == VISCA_FOCUS_AUTO_OFF)
+		else
 		{
-			rr = 0;
+			rr = -1;
 		}
 	}
 	else
@@ -28668,9 +29859,12 @@ void	PTZ_Window::PTZ_RememberPosition(int num)
 	{
 		pos->Set(win->ptz_pan_reading, win->ptz_tilt_reading, win->ptz_zoom_reading, win->ptz_focus_reading);
 	}
-	if(ptz_soft_memory[ptz_interface_index][ptz_current_camera_idx] == 0)
+	if(ptz_current_interface != NULL)
 	{
-		VISCA_memory_set(ptz_current_interface, ptz_current_camera, num);
+		if(ptz_soft_memory[ptz_interface_index][ptz_current_camera_idx] == 0)
+		{
+			VISCA_memory_set(ptz_current_interface, ptz_current_camera, num);
+		}
 	}
 }
 
@@ -28681,9 +29875,12 @@ void	PTZ_Window::PTZ_UnRememberPosition(int num)
 	{
 		pos->UnSet();
 	}
-	if(ptz_soft_memory[ptz_interface_index][ptz_current_camera_idx] == 0)
+	if(ptz_current_interface != NULL)
 	{
-		VISCA_memory_reset(ptz_current_interface, ptz_current_camera, num);
+		if(ptz_soft_memory[ptz_interface_index][ptz_current_camera_idx] == 0)
+		{
+			VISCA_memory_reset(ptz_current_interface, ptz_current_camera, num);
+		}
 	}
 }
 
@@ -28704,8 +29901,11 @@ int	PTZ_Window::PTZ_RecallPosition(int speed, int num)
 	}
 	else
 	{
-		VISCA_memory_recall(ptz_current_interface, ptz_current_camera, num);
-		r = 1;
+		if(ptz_current_interface != NULL)
+		{
+			VISCA_memory_recall(ptz_current_interface, ptz_current_camera, num);
+			r = 1;
+		}
 	}
 	return(r);
 }
@@ -28864,6 +30064,7 @@ void	clear_window_cb(Fl_Widget *w, void *v)
 
 void	csw_outcome_accept_cb(Fl_Widget *w, void *v)
 {
+void		reset_button_cb(Fl_Widget *w, void *v);
 int			my_find_codec_by_name(int type, char *format_name, char *in_name);
 char		buf[256];
 
@@ -28894,6 +30095,7 @@ char		buf[256];
 		int	audio_found = my_find_codec_by_id(1, win->use_audio_codec, win->audio_codec_name);
 		csw->hide();
 		win->SaveCodecs();
+		reset_button_cb(NULL, win);
 	}
 	else
 	{
@@ -28930,7 +30132,7 @@ char		buf[256];
 			sprintf(buf, "Invalid codecs selected.");
 		}
 		MyButton *button = new MyButton(1, 1, 298, 58);
-		button->label(buf);
+		button->copy_label(buf);
 		button->color(DARK_RED);
 		button->box(FL_FLAT_BOX);
 		button->labelcolor(WHITE);
@@ -29264,9 +30466,10 @@ int		loop;
 	}
 }
 
-CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 810, "Codec Selection")
+CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 815, "Codec Selection")
 {
 	my_window = in_win;
+
 	strcpy(container_selected, "");
 	strcpy(extension_selected, "");
 	strcpy(audio_codec_selected, "");
@@ -29285,6 +30488,14 @@ CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 810,
 	video_codec = new ListMenu(this, 215, 30, 200, 745, "Video Codec");
 	audio_codec = new ListMenu(this, 420, 30, 200, 745, "Audio Codec");
 
+	Fl_Box *warning = new Fl_Box(10, 776, 380, 34);
+	warning->box(FL_FLAT_BOX);
+	warning->color(color());
+	warning->labelcolor(WHITE);
+	warning->labelsize(8);
+	warning->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
+	warning->copy_label("Warning: Reseting the codecs will\nreset recording. A new file will be made.");
+
 	accept = new MyButton(420, 784, 80, 20, "Accept");
 	accept->box(FL_FLAT_BOX);
 	accept->labelcolor(YELLOW);
@@ -29302,6 +30513,7 @@ CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 810,
 	cancel->show();
 	end();
 
+	set_non_modal();
 	callback(codec_selection_window_cb, this);
 }
 
@@ -29409,7 +30621,7 @@ void	command_key_input_cb(Fl_Widget *w, void *v)
 {
 	CommandKeyGroup *ckg = (CommandKeyGroup *)v;
 	ckg->my_window->CloseAll();
-	ckg->value_button->label(ckg->value_input->value());
+	ckg->value_button->copy_label(ckg->value_input->value());
 	ckg->value_menu->value(-1);
 	ckg->redraw();
 }
@@ -29418,7 +30630,7 @@ void	command_key_menu_cb(Fl_Widget *w, void *v)
 {
 	CommandKeyGroup *ckg = (CommandKeyGroup *)v;
 	ckg->my_window->CloseAll();
-	ckg->value_button->label(ckg->value_menu->text(ckg->value_menu->value()));
+	ckg->value_button->copy_label(ckg->value_menu->text(ckg->value_menu->value()));
 	ckg->value_input->value("");
 	ckg->redraw();
 }
@@ -29455,7 +30667,7 @@ CommandKeyGroup::CommandKeyGroup(CommandKeySettingsWindow *in_win, int xx, int y
 	value_button->box(FL_FLAT_BOX);
 	value_button->color(WHITE);
 	value_button->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	value_button->label(strdup(val));
+	value_button->copy_label(val);
 	value_button->callback(command_key_value_button_cb, this);
 
 	int cnt = 0;
@@ -29503,7 +30715,7 @@ void	CommandKeyGroup::value(char *val)
 			value_menu->value(nn);
 		}
 	}
-	value_button->label(strdup(val));
+	value_button->copy_label(val);
 	value_button->show();
 	value_input->hide();
 	value_menu->hide();
@@ -30375,11 +31587,12 @@ int	loop;
 
 	my_window = in_win;
 
-	int yp = 26;
+	int yp = 30;
 	Fl_Box *box = new Fl_Box(2, 2, w() - 4, 20, "Audio Settings");
 	box->box(FL_FLAT_BOX);
 	box->color(BLACK);
 	box->labelcolor(WHITE);
+	box->labelsize(11);
 	
 	sample_rate = new MyMenuButton(100, yp, 100, 16, "Sample Rate");
 	sample_rate->add("8000");
@@ -30514,6 +31727,47 @@ int	loop;
 }
 
 // SECTION ************************************** NDI SOURCE LIST WINDOW **********************************************
+
+void	ndi_source_list(char *list[256], int& final_total)
+{
+int	loop;
+
+	NDIlib_find_instance_t ndi_find;
+	const NDIlib_source_t *sources = NULL;
+	int cnt = 0;
+	if(NDILib != NULL)
+	{
+		uint32_t num_sources = 0;
+		const NDIlib_find_create_t NDI_find_create_desc;
+		NDIlib_find_instance_t ndi_find = NDILib->NDIlib_find_create_v2(&NDI_find_create_desc);
+		NDILib->NDIlib_find_wait_for_sources(ndi_find, 1000);
+		sources = NDILib->NDIlib_find_get_current_sources(ndi_find, &num_sources);
+		if((num_sources > 0) && (num_sources < 33))
+		{
+			for(loop = 0;loop < num_sources;loop++)
+			{
+				char source_name[256];
+				sprintf(source_name, "ndi://%s", sources[loop].p_ndi_name);
+				list[cnt] = strdup(source_name);
+				cnt++;
+				sprintf(source_name, "ndi_uyvy://%s", sources[loop].p_ndi_name);
+				list[cnt] = strdup(source_name);
+				cnt++;
+				sprintf(source_name, "ndi_p216://%s", sources[loop].p_ndi_name);
+				list[cnt] = strdup(source_name);
+				cnt++;
+				sprintf(source_name, "ndi_rgbx://%s", sources[loop].p_ndi_name);
+				list[cnt] = strdup(source_name);
+				cnt++;
+				sprintf(source_name, "ndi_bgrx://%s", sources[loop].p_ndi_name);
+				list[cnt] = strdup(source_name);
+				cnt++;
+			}
+		}
+		NDILib->NDIlib_find_destroy(ndi_find);
+	}
+	final_total = cnt;
+}
 
 void	select_ndi_source_cb(Fl_Widget *w, void *v)
 {
@@ -30804,7 +32058,7 @@ int	loop;
 	accept->labelcolor(YELLOW);
 	accept->labelsize(12);
 	accept->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	accept->tooltip("Accept the currently selected sources and close");
+	accept->copy_tooltip("Accept the currently selected sources and close");
 	accept->callback(source_select_accept_cb, this);
 
 	MyButton *cancel = new MyButton(240, h() - 40, 80, 20, "Cancel");
@@ -30813,7 +32067,7 @@ int	loop;
 	cancel->labelcolor(YELLOW);
 	cancel->labelsize(12);
 	cancel->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	cancel->tooltip("Cancel changes and close");
+	cancel->copy_tooltip("Cancel changes and close");
 	cancel->callback(hide_window_cb, this);
 	end();
 }
@@ -30977,6 +32231,29 @@ void	clipboard_notify(int source, void *v)
 	win->clipboard_changed = 1;
 }
 
+void	record_on_start_cb(void *v)
+{
+	MyWin *win = (MyWin *)v;
+	char *alias = win->record_on_start_alias;
+	Camera *cam = NULL;
+	if(alias != NULL)
+	{
+		cam = win->FindCameraByAlias(alias);
+		if(cam != win->DisplayedCamera())
+		{
+			win->DisplayCamera(cam);
+		}
+	}
+	if(cam == NULL)
+	{
+		cam = win->DisplayedCamera();
+	}
+	if(cam != NULL)
+	{
+		win->RecordOn(cam);
+	}
+}
+
 void	my_window_cb(void *v)
 {
 	MyWin *win = (MyWin *)v;
@@ -30986,6 +32263,16 @@ void	my_window_cb(void *v)
 		win->RecordAll();
 	}
 	win->Scheduled();
+	if(win->button_refresh == 0)
+	{
+		win->ShowButtons();
+		win->button_refresh = 1;
+	}
+	if((win->record_on_start > 0) && (win->recording_on_start == 0))
+	{
+		Fl::add_timeout(1.0, record_on_start_cb, win);
+		win->recording_on_start = 1;
+	}
 	Fl::repeat_timeout(win->forced_interval, my_window_cb, win);
 }
 
@@ -31046,12 +32333,12 @@ int	loop;
 			{
 				if(win->pulse_mixer->pa_monitor[loop]->mini_pause == 0)
 				{
-					w->label("Resume Playing");
+					w->copy_label("Resume Playing");
 					win->pulse_mixer->pa_monitor[loop]->mini_pause = 1;
 				}
 				else
 				{
-					w->label("Pause Playing");
+					w->copy_label("Pause Playing");
 					win->pulse_mixer->pa_monitor[loop]->mini_pause = 0;
 				}
 			}
@@ -31082,12 +32369,12 @@ int	loop;
 	if(win->pulse_mixer->monitor == 1)
 	{
 		win->pulse_mixer->monitor = 0;
-		win->monitor_audio_button->label("Monitor Audio");
+		win->monitor_audio_button->copy_label("Monitor Audio");
 	}
 	else
 	{
 		win->pulse_mixer->monitor = 1;
-		win->monitor_audio_button->label("Stop Monitoring Audio");
+		win->monitor_audio_button->copy_label("Stop Monitoring Audio");
 	}
 }
 
@@ -31138,7 +32425,7 @@ int	loop;
 		{
 			win->pulse_mixer->Unmute();
 		}
-		win->audio_mute_button->label("Mute Audio");
+		win->audio_mute_button->copy_label("Mute Audio");
 	}
 	else
 	{
@@ -31157,7 +32444,7 @@ int	loop;
 		{
 			win->pulse_mixer->Mute();
 		}
-		win->audio_mute_button->label("Unmute Audio");
+		win->audio_mute_button->copy_label("Unmute Audio");
 	}
 }
 
@@ -31179,16 +32466,31 @@ void	jpeg_streaming_button_cb(Fl_Widget *w, void *v)
 	MyWin *win = (MyWin *)v;
 	if(win->transmitting == 0)
 	{
-		win->jpeg_streaming_button->label("Ceace Streaming");
+		win->jpeg_streaming_button->copy_label("Ceace Streaming");
 		win->image_memory.done = 0;
 		win->SendToNetwork();
 		win->transmitting = 1;
 	}
 	else
 	{
-		win->jpeg_streaming_button->label("JPEG Streaming");
+		win->jpeg_streaming_button->copy_label("JPEG Streaming");
 		win->transmitting = 0;
 		win->image_memory.done = 1;
+	}
+}
+
+void	test_recognition_button_cb(Fl_Widget *w, void *v)
+{
+	MyWin *win = (MyWin *)v;
+	if(win->test_recognition == 0)
+	{
+		w->copy_label("Stop Testing Recognition");
+		win->test_recognition = 1;
+	}
+	else
+	{
+		w->copy_label("Test Recognition");
+		win->test_recognition = 0;
 	}
 }
 
@@ -31197,12 +32499,12 @@ void	show_debug_button_cb(Fl_Widget *w, void *v)
 	MyWin *win = (MyWin *)v;
 	if(win->visible_debug == 0)
 	{
-		w->label("Hide Debug");
+		w->copy_label("Stop Recording Recognition");
 		win->visible_debug = 1;
 	}
 	else
 	{
-		w->label("Record Debug");
+		w->copy_label("Record Recognition");
 		win->visible_debug = 0;
 	}
 }
@@ -31212,12 +32514,12 @@ void	show_motion_debug_button_cb(Fl_Widget *w, void *v)
 	MyWin *win = (MyWin *)v;
 	if(win->motion_debug == 0)
 	{
-		w->label("Hide Motion Debug");
+		w->copy_label("Hide Motion Debug");
 		win->motion_debug = 1;
 	}
 	else
 	{
-		w->label("Show Motion Debug");
+		w->copy_label("Show Motion Debug");
 		win->motion_debug = 0;
 	}
 }
@@ -31235,14 +32537,14 @@ void	set_interest_button_cb(Fl_Widget *w, void *v)
 	{
 		win->HideButtons();
 		w->show();
-		w->label("Done Setting Interest");
+		w->copy_label("Done Setting Interest");
 		win->mark_interest = 1;
 	}
 	else
 	{
 		win->mark_interest = 0;
 		win->ShowButtons();
-		w->label("Set Interest");
+		w->copy_label("Set Interest");
 	}
 }
 
@@ -31446,12 +32748,12 @@ void	resize_capture_button_cb(Fl_Widget *w, void *v)
 	{
 		win->resize_capture = 1;
 		reset_button_cb(NULL, win);
-		win->resize_capture_button->label("Zoom");
+		win->resize_capture_button->copy_label("Zoom");
 	}
 	else
 	{
 		win->resize_capture = 0;
-		win->resize_capture_button->label("Resize Capture (reset)");
+		win->resize_capture_button->copy_label("Resize Capture (reset)");
 	}
 }
 
@@ -31503,12 +32805,12 @@ void	monitor_video_button_cb(Fl_Widget *w, void *v)
 	MyWin *win = (MyWin *)v;
 	if(win->monitor_window->visible())
 	{
-		w->label("Monitor Video");
+		w->copy_label("Monitor Video");
 		win->monitor_window->hide();
 	}
 	else
 	{
-		w->label("Hide Monitor");
+		w->copy_label("Hide Monitor");
 		win->monitor_window->show();
 	}
 }
@@ -31782,14 +33084,14 @@ void	audio_bind_to_camera_button_cb(Fl_Widget *w, void *v)
 	{
 		if(cam->bound_mic_cnt == -1)
 		{
-			b->label("Unbind Camera");
-			b->tooltip("Remove audio source binding from displayed camera.");
+			b->copy_label("Unbind Camera");
+			b->copy_tooltip("Remove audio source binding from displayed camera.");
 			cam->BindMics();
 		}
 		else
 		{
-			b->label("Bind to Camera");
-			b->tooltip("Bind currently selected audio sources to displayed camera.");
+			b->copy_label("Bind to Camera");
+			b->copy_tooltip("Bind currently selected audio sources to displayed camera.");
 			cam->UnBindMics();
 		}
 	}
@@ -31866,12 +33168,12 @@ void	toggle_camera_effects_button_cb(Fl_Widget *w, void *v)
 		if(cam->capture_effects == 1)
 		{
 			cam->capture_effects = 0;
-			win->toggle_camera_effects_button->label("Turn On Effects");
+			win->toggle_camera_effects_button->copy_label("Turn On Effects");
 		}
 		else
 		{
 			cam->capture_effects = 1;
-			win->toggle_camera_effects_button->label("Turn Off Effects");
+			win->toggle_camera_effects_button->copy_label("Turn Off Effects");
 		}
 	}
 }
@@ -31926,7 +33228,7 @@ void	encode_button_cb(Fl_Widget *w, void *v)
 	Camera *cam = win->DisplayedCamera();
 	if(win->encoding == 0)
 	{
-		win->record_button->label("Record");
+		win->record_button->copy_label("Record");
 		win->encode_speed_window->Reset();
 		win->encode_speed_window->hide();
 		win->Encode();
@@ -31952,22 +33254,22 @@ void	reset_button_cb(Fl_Widget *w, void *v);
 	}
 	if(cam->trigger_override == 0)
 	{
-		win->override_button->label("Stop Override");
+		win->override_button->copy_label("Stop Override");
 		cam->trigger_override = 1;
 	}
 	else
 	{
-		win->override_button->label("Override");
+		win->override_button->copy_label("Override");
 		cam->trigger_override = 0;
 	}
 }
 
 void	MyWin::RecordOn(Camera *cam)
 {
-	record_button->label("Stop");
+	record_button->copy_label("Stop");
 	if(cam->record_trigger != 0)
 	{
-		override_button->label("Override");
+		override_button->copy_label("Override");
 		override_button->show();
 	}
 	Camera *recording_now = RecordingCamera();
@@ -32035,7 +33337,7 @@ void	MyWin::LoadAudioSettings(char *filename)
 
 void	MyWin::RecordOff(Camera *cam)
 {
-	record_button->label("Record");
+	record_button->copy_label("Record");
 	cam->triggers_requested = 0;
 	cam->recording = 0;
 	cam->trigger_override = 0;
@@ -32097,12 +33399,12 @@ void	freeze_button_cb(Fl_Widget *w, void *v)
 	Camera *cam = win->DisplayedCamera();
 	if(cam->freeze_video == 0)
 	{
-		w->label("Defrost");
+		w->copy_label("Defrost");
 		cam->freeze_video = 1;
 	}
 	else
 	{
-		w->label("Freeze");
+		w->copy_label("Freeze");
 		cam->freeze_video = 0;
 	}
 }
@@ -32113,12 +33415,12 @@ void	mute_video_button_cb(Fl_Widget *w, void *v)
 	Camera *cam = win->DisplayedCamera();
 	if(cam->mute_video == 0)
 	{
-		w->label("Unmute Video");
+		w->copy_label("Unmute Video");
 		cam->mute_video = 1;
 	}
 	else
 	{
-		w->label("Mute Video");
+		w->copy_label("Mute Video");
 		cam->mute_video = 0;
 	}
 }
@@ -32129,12 +33431,12 @@ void	power_button_cb(Fl_Widget *w, void *v)
 	Camera *cam = win->DisplayedCamera();
 	if(cam->power == 0)
 	{
-		w->label("Turn Off");
+		w->copy_label("Turn Off");
 		cam->power = 1;
 	}
 	else
 	{
-		w->label("Turn On");
+		w->copy_label("Turn On");
 		cam->power = 0;
 	}
 	win->HideButtons();
@@ -32190,12 +33492,12 @@ void	hide_video_button_cb(Fl_Widget *w, void *v)
 	if(win->display_video == 1)
 	{
 		win->display_video = 0;
-		win->hide_video_button->label("Display Video");
+		win->hide_video_button->copy_label("Display Video");
 	}
 	else
 	{
 		win->display_video = 1;
-		win->hide_video_button->label("Hide Video");
+		win->hide_video_button->copy_label("Hide Video");
 	}
 }
 
@@ -32205,7 +33507,7 @@ void	timestamp_button_cb(Fl_Widget *w, void *v)
 	Camera *cam = win->DisplayedCamera();
 	if(win->timestamp == 0)
 	{
-		w->label("No Timestamp");
+		w->copy_label("No Timestamp");
 		win->timestamp = 1;
 		if(win->video_settings_window != NULL)
 		{
@@ -32214,7 +33516,7 @@ void	timestamp_button_cb(Fl_Widget *w, void *v)
 	}
 	else
 	{
-		w->label("Timestamp");
+		w->copy_label("Timestamp");
 		win->timestamp = 0;
 		if(win->video_settings_window != NULL)
 		{
@@ -32311,12 +33613,12 @@ int	loop;
 		if(cam->flip_horizontal == 0)
 		{
 			cam->flip_horizontal = 1;
-			win->flip_horizontal_button->label("Restore Horizontal");
+			win->flip_horizontal_button->copy_label("Restore Horizontal");
 		}
 		else
 		{
 			cam->flip_horizontal = 0;
-			win->flip_horizontal_button->label("Flip Horizontal");
+			win->flip_horizontal_button->copy_label("Flip Horizontal");
 		}
 	}
 }
@@ -32332,12 +33634,12 @@ int	loop;
 		if(cam->flip_vertical == 0)
 		{
 			cam->flip_vertical = 1;
-			win->flip_vertical_button->label("Restore Vertical");
+			win->flip_vertical_button->copy_label("Restore Vertical");
 		}
 		else
 		{
 			cam->flip_vertical = 0;
-			win->flip_vertical_button->label("Flip Vertical");
+			win->flip_vertical_button->copy_label("Flip Vertical");
 		}
 	}
 }
@@ -32369,7 +33671,7 @@ void	zoom_box_button_cb(Fl_Widget *w, void *v)
 		else
 		{
 			cam->zoom_box_display = 0;
-			win->zoom_box_button->label("Box Zoom");
+			win->zoom_box_button->copy_label("Box Zoom");
 		}
 	}
 }
@@ -32412,6 +33714,7 @@ MyWin::MyWin(
 	, char *in_ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS]
 	, char *in_ptz_bind_alias[NUMBER_OF_INTERFACES]
 	, int in_ptz_prefer_ndi[NUMBER_OF_INTERFACES]
+	, int in_ptz_prefer_v4l[NUMBER_OF_INTERFACES]
 	, char *in_ptz_alias[NUMBER_OF_INTERFACES]
 	, int in_ptz_home_on_launch
 	, int in_use_yolo_model
@@ -32614,6 +33917,9 @@ int	outer;
 	button_group_side = SIDE_RIGHT;
 	file_selector_layout = MY_SCROLL_LAYOUT_LIST;
 	file_selector_exclude_directories = use_exclude_directories;
+	record_on_start = 0;
+	recording_on_start = 0;
+	record_on_start_alias = NULL;
 
 	Fl::get_color(WHITE, status_color_r, status_color_g, status_color_b);
 	status_color_a = 0;
@@ -32677,6 +33983,8 @@ int	outer;
 
 	shape = NULL;
 	shape_cnt = 0;
+
+	button_refresh = 0;
 
 	for(loop = 0;loop < 128;loop++)
 	{
@@ -32828,6 +34136,8 @@ int	outer;
 	timestamp_position_x = 10;
 	timestamp_position_y = 32;
 
+	test_recognition = 0;
+
 	frame_scaling = use_frame_scaling;
 	crop_scaling = crop_display;
 	crop_output = in_crop_output;
@@ -32893,6 +34203,7 @@ int	outer;
 		ptz_bind_alias[loop] = NULL;
 		ptz_interface_type[loop] = VISCA_INTERFACE_TYPE_SERIAL;
 		ptz_prefer_ndi[loop] = 0;
+		ptz_prefer_v4l[loop] = 0;
 	}
 	ptz_device_cnt = in_ptz_device_path_cnt;
 	for(loop = 0;loop < ptz_device_cnt;loop++)
@@ -32905,6 +34216,7 @@ int	outer;
 		ptz_alias[loop] = in_ptz_alias[loop];
 		ptz_bind_alias[loop] = in_ptz_bind_alias[loop];
 		ptz_prefer_ndi[loop] = in_ptz_prefer_ndi[loop];
+		ptz_prefer_v4l[loop] = in_ptz_prefer_v4l[loop];
 	}
 	ptz_zoom = 0;
 	ptz_panning = 0;
@@ -33074,7 +34386,7 @@ int	outer;
 	number_of_fonts = Fl::set_fonts();
 	if(load_file != NULL)
 	{
-		start_win->Update("Load setup");
+		start_win->Update("Load Setup");
 		Load(load_file);
 	}
 	Fl::add_clipboard_notify(clipboard_notify, this);
@@ -33096,47 +34408,179 @@ int	outer;
 MyWin::~MyWin()
 {
 	Shutdown();
+	if(record_on_start_alias != NULL)
+	{
+		free(record_on_start_alias);
+		record_on_start_alias = NULL;
+	}
 	if(shape != NULL)
 	{
 		free(shape);
 		shape = NULL;
 	}
 	shape_cnt = 0;
-	if(new_source_window != NULL)
+	if(pulse_audio_filter_window != NULL)
 	{
-		new_source_window->hide();
-		Fl::delete_widget(new_source_window);
+		pulse_audio_filter_window->hide();
+		Fl::delete_widget(pulse_audio_filter_window);
+		pulse_audio_filter_window = NULL;
 	}
-	if(color_it_window != NULL)
+	if(embed_app_settings != NULL)
 	{
-		color_it_window->hide();
-		Fl::delete_widget(color_it_window);
+		embed_app_settings->hide();
+		Fl::delete_widget(embed_app_settings);
+		embed_app_settings = NULL;
 	}
-	if(transitions_window != NULL)
+	if(command_key_settings != NULL)
 	{
-		transitions_window->hide();
-		Fl::delete_widget(transitions_window);
+		command_key_settings->hide();
+		Fl::delete_widget(command_key_settings);
+		command_key_settings = NULL;
 	}
-	if(immediate_drawing_window != NULL)
+	if(video_settings_window != NULL)
 	{
-		immediate_drawing_window->hide();
-		Fl::delete_widget(immediate_drawing_window);
+		video_settings_window->hide();
+		Fl::delete_widget(video_settings_window);
+		video_settings_window = NULL;
+	}
+	if(audio_settings_window != NULL)
+	{
+		audio_settings_window->hide();
+		Fl::delete_widget(audio_settings_window);
+		audio_settings_window = NULL;
+	}
+	if(object_menu != NULL)
+	{
+		object_menu->hide();
+		Fl::delete_widget(object_menu);
+		object_menu = NULL;
+	}
+	if(fltk_plugin_window != NULL)
+	{
+		fltk_plugin_window->hide();
+		Fl::delete_widget(fltk_plugin_window);
+		fltk_plugin_window = NULL;
 	}
 	if(filter_plugins_window != NULL)
 	{
 		filter_plugins_window->hide();
 		Fl::delete_widget(filter_plugins_window);
+		filter_plugins_window = NULL;
+	}
+	if(filter_built_in_window != NULL)
+	{
+		filter_built_in_window->hide();
+		Fl::delete_widget(filter_built_in_window);
+		filter_built_in_window = NULL;
+	}
+	if(alias_window != NULL)
+	{
+		alias_window->hide();
+		Fl::delete_widget(alias_window);
+		alias_window = NULL;
+	}
+	if(snapshot_settings_window != NULL)
+	{
+		snapshot_settings_window->hide();
+		Fl::delete_widget(snapshot_settings_window);
+		snapshot_settings_window = NULL;
+	}
+	if(trigger_window != NULL)
+	{
+		trigger_window->hide();
+		Fl::delete_widget(trigger_window);
+		trigger_window = NULL;
+	}
+	if(pseudo_camera_window != NULL)
+	{
+		pseudo_camera_window->hide();
+		Fl::delete_widget(pseudo_camera_window);
+		pseudo_camera_window = NULL;
+	}
+	if(source_select_window != NULL)
+	{
+		source_select_window->hide();
+		Fl::delete_widget(source_select_window);
+		source_select_window = NULL;
+	}
+	if(alert_window != NULL)
+	{
+		alert_window->hide();
+		Fl::delete_widget(alert_window);
+		alert_window = NULL;
+	}
+	if(timer_window != NULL)
+	{
+		timer_window->hide();
+		Fl::delete_widget(timer_window);
+		timer_window = NULL;
+	}
+	if(specify_irc_window != NULL)
+	{
+		specify_irc_window->hide();
+		Fl::delete_widget(specify_irc_window);
+		specify_irc_window = NULL;
+	}
+	if(ndi_source_window != NULL)
+	{
+		ndi_source_window->hide();
+		Fl::delete_widget(ndi_source_window);
+		ndi_source_window = NULL;
+	}
+	if(specify_url_window != NULL)
+	{
+		specify_url_window->hide();
+		Fl::delete_widget(specify_url_window);
+		specify_url_window = NULL;
+	}
+	if(new_source_window != NULL)
+	{
+		new_source_window->hide();
+		Fl::delete_widget(new_source_window);
+		new_source_window = NULL;
+	}
+	if(camera_settings_window != NULL)
+	{
+		camera_settings_window->hide();
+		Fl::delete_widget(camera_settings_window);
+		camera_settings_window = NULL;
+	}
+	if(color_it_window != NULL)
+	{
+		color_it_window->hide();
+		Fl::delete_widget(color_it_window);
+		color_it_window = NULL;
+	}
+	if(transitions_window != NULL)
+	{
+		transitions_window->hide();
+		Fl::delete_widget(transitions_window);
+		transitions_window = NULL;
+	}
+	if(immediate_drawing_window != NULL)
+	{
+		immediate_drawing_window->hide();
+		Fl::delete_widget(immediate_drawing_window);
+		immediate_drawing_window = NULL;
+	}
+	if(filter_plugins_window != NULL)
+	{
+		filter_plugins_window->hide();
+		Fl::delete_widget(filter_plugins_window);
+		filter_plugins_window = NULL;
 	}
 	if(audio_filter_plugins_window != NULL)
 	{
 		audio_filter_plugins_window->hide();
 		Fl::delete_widget(audio_filter_plugins_window);
+		audio_filter_plugins_window = NULL;
 	}
 	if(resize_frame != NULL)
 	{
 		resize_frame->hide();
 		remove(resize_frame);
 		Fl::delete_widget(resize_frame);
+		resize_frame = NULL;
 	}
 }
 
@@ -33190,6 +34634,10 @@ void	MyWin::LoadJSON(char *filename)
 		ParseJSON(buf);
 		free(buf);
 	}
+	else
+	{
+		fprintf(stderr, "Error: Cannor load JSON file: %s\n", filename);
+	}
 }
 
 void	MyWin::SaveAsJSON(FILE *fp)
@@ -33234,6 +34682,7 @@ int	inner;
 			}
 		}
 	}
+	fprintf(fp, "\t\"init detect\": %d,\n", init_detect);
 	fprintf(fp, "\t\"original w\": %d,\n", original_w);
 	fprintf(fp, "\t\"original h\": %d,\n", original_h);
 	fprintf(fp, "\t\"disregard settings\": %d,\n", disregard_settings);
@@ -33243,13 +34692,18 @@ int	inner;
 	fprintf(fp, "\t\"audio display timer\": %d,\n", audio_display_timer);
 	fprintf(fp, "\t\"audio sample rate\": %d,\n", audio_sample_rate);
 	fprintf(fp, "\t\"audio channels\": %d,\n", audio_channels);
-	fprintf(fp, "\t\"requested_w\": %d,\n", requested_w);
-	fprintf(fp, "\t\"requested_h\": %d,\n", requested_h);
+	fprintf(fp, "\t\"requested w\": %d,\n", requested_w);
+	fprintf(fp, "\t\"requested h\": %d,\n", requested_h);
 	fprintf(fp, "\t\"output width\": %d,\n", output_width);
 	fprintf(fp, "\t\"output height\": %d,\n", output_height);
 	fprintf(fp, "\t\"display width\": %f,\n", display_width);
 	fprintf(fp, "\t\"display height\": %f,\n", display_height);
 	fprintf(fp, "\t\"display video\": %d,\n", display_video);
+	fprintf(fp, "\t\"record on start\": %d,\n", record_on_start);
+	if(record_on_start_alias != NULL)
+	{
+		fprintf(fp, "\t\"record on start alias\": \"%s\",\n", record_on_start_alias);
+	}
 	fprintf(fp, "\t\"hour\": %d,\n", hour);
 	fprintf(fp, "\t\"minute\": %d,\n", minute);
 	fprintf(fp, "\t\"second\": %d,\n", second);
@@ -33396,8 +34850,9 @@ int	inner;
 				if(im->text != NULL) use_default = (ImDefault *)im->text;
 				if(im->line != NULL) use_default = (ImDefault *)im->line;
 				if(im->rectangle != NULL) use_default = (ImDefault *)im->rectangle;
-				if(im->rectangle_select != NULL) use_default = (ImDefault *)im->rectangle_select;
+				if(im->rectangle_passthru != NULL) use_default = (ImDefault *)im->rectangle_passthru;
 				if(im->ellipse != NULL) use_default = (ImDefault *)im->ellipse;
+				if(im->ellipse_passthru != NULL) use_default = (ImDefault *)im->ellipse_passthru;
 				if(im->freehand != NULL) use_default = (ImDefault *)im->freehand;
 				if(im->pixelate != NULL) use_default = (ImDefault *)im->pixelate;
 				if(im->image_im != NULL) use_default = (ImDefault *)im->image_im;
@@ -33414,6 +34869,7 @@ int	inner;
 				fprintf(fp, "\t\t\t\"initial y\": %d,\n", im->initial_y);
 				fprintf(fp, "\t\t\t\"layer\": %d,\n", im->layer);
 				fprintf(fp, "\t\t\t\"overall alpha\": %f,\n", im->overall_alpha);
+				fprintf(fp, "\t\t\t\"use as mask\": %d,\n", im->use_as_mask);
 				if(use_default == im->text)
 				{
 					fprintf(fp, "\t\t\t\"text value\": \"%s\",\n", im->text->value());
@@ -33737,7 +35193,7 @@ int		loop;
 		ReadClasses();
 		if(init_detect == 1)
 		{
-			SetupObjectDetection();
+			 SetupObjectDetection();
 		}
 		if((audio == 1) && (audio_thumbnail_cnt == 0))
 		{
@@ -33751,6 +35207,10 @@ int		loop;
 				OpenNamedPulse();
 			}
 		}
+		else if(audio == 1)
+		{
+			OpenNamedPulse();
+		}
 		ptz_mode = 0;
 		if(ptz_device_cnt > 0)
 		{
@@ -33762,6 +35222,7 @@ int		loop;
 		}
 		HideButtons();
 		ShowButtons();
+		Fl::remove_timeout(my_window_cb, this);
 		Fl::add_timeout(0.1, my_window_cb, this);
 	}
 	return(status);
@@ -33772,6 +35233,10 @@ void	MyWin::ParseJSONSystem(cJSON *json)
 int	loop;
 int	inner;
 
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading Setup");
+	}
 	for(loop = 0;loop < source_cnt;loop++)
 	{
 		if(source[loop] != NULL)
@@ -33781,7 +35246,9 @@ int	inner;
 		}
 	}
 	source_cnt = 0;
-	int success = json_parse_int(json, "source cnt", source_cnt);
+	int local_source_cnt = 0;
+	int success = json_parse_int(json, "source cnt", local_source_cnt);
+
 	cJSON *source_item = NULL;
 	cJSON *source_items = json_parse_array(json, "source");
 	if(source_items != NULL)
@@ -33795,7 +35262,7 @@ int	inner;
 				cnt++;
 			}
 		}
-		source_cnt = cnt;
+		local_source_cnt = cnt;
 	}
 	for(loop = 0;loop < audio_source_cnt;loop++)
 	{
@@ -33805,7 +35272,9 @@ int	inner;
 			audio_source[loop] = NULL;
 		}
 	}
-	success = json_parse_int(json, "audio source cnt", audio_source_cnt);
+	int local_audio_source_cnt = 0;
+	audio_source_cnt = 0;
+	success = json_parse_int(json, "audio source cnt", local_audio_source_cnt);
 	cJSON *audio_source_item = NULL;
 	cJSON *audio_source_items = json_parse_array(json, "audio source");
 	if(audio_source_items != NULL)
@@ -33822,8 +35291,9 @@ int	inner;
 				}
 			}
 		}
-		audio_source_cnt = cnt;
+		local_audio_source_cnt = cnt;
 	}
+	success = json_parse_int(json, "init detect", init_detect);
 	success = json_parse_int(json, "original w", original_w);
 	success = json_parse_int(json, "original h", original_h);
 	success = json_parse_int(json, "disregard settings", disregard_settings);
@@ -33840,6 +35310,12 @@ int	inner;
 	success = json_parse_double(json, "display width", display_width);
 	success = json_parse_double(json, "display height", display_height);
 	success = json_parse_int(json, "display video", display_video);
+	success = json_parse_int(json, "record on start", record_on_start);
+	char *str = json_parse_string(json, "record on start alias");
+	if(str != NULL)
+	{
+		record_on_start_alias = strdup(str);
+	}
 	success = json_parse_int(json, "hour", hour);
 	success = json_parse_int(json, "minute", minute);
 	success = json_parse_int(json, "second", second);
@@ -33850,7 +35326,7 @@ int	inner;
 	success = json_parse_int(json, "exclude directories", file_selector_exclude_directories);
 	success = json_parse_int(json, "use tooltips", use_tooltips);
 	strcpy(last_used_filename, "");
-	char *str = json_parse_string(json, "last used filename");
+	str = json_parse_string(json, "last used filename");
 	if(str != NULL)
 	{
 		strcpy(last_used_filename, str);
@@ -34025,6 +35501,10 @@ int	inner;
 			cnt++;
 		}
 	}
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading Immediate Drawings");
+	}
 	ClearImmediate();
 	success = json_parse_int(json, "immediate cnt", immediate_cnt);
 	if(immediate_cnt > 0)
@@ -34044,6 +35524,10 @@ int	inner;
 			immediate_cnt = cnt;
 		}
 	}
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading Audio Sources");
+	}
 	success = json_parse_int(json, "pulse microphone cnt", pulse_microphone_cnt);
 	ParseJSONMicrophones(json);
 	success = json_parse_int(json, "audio", audio);
@@ -34058,6 +35542,10 @@ int	inner;
 			delete shape[loop];
 			shape[loop] = NULL;
 		}
+	}
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading Shapes");
 	}
 	success = json_parse_int(json, "shape cnt", shape_cnt);
 	if(shape_cnt > 0)
@@ -34150,6 +35638,10 @@ int	inner;
 				cnt++;
 			}
 		}
+	}
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading PTZ Settings");
 	}
 	success = json_parse_int(json, "zoom boxing", zoom_boxing);
 	success = json_parse_int(json, "timestamp", timestamp);
@@ -34300,6 +35792,10 @@ int	inner;
 	success = json_parse_int(json, "move corner", move_corner);
 	success = json_parse_int(json, "resize corner", resize_corner);
 	strcpy(use_extension, "");
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading Codecs");
+	}
 	str = json_parse_string(json, "use extension");
 	if(str != NULL)
 	{
@@ -34325,6 +35821,10 @@ int	inner;
 	}
 	success = json_parse_int(json, "render mouse", render_mouse);
 	success = json_parse_int(json, "tutorial mode", tutorial_mode);
+	if(start_win != NULL)
+	{
+		start_win->Update("Reading Video Sources");
+	}
 	ParseJSONCameras(json);
 }
 
@@ -34387,10 +35887,16 @@ void	MyWin::LoadJSONCamera(char *filename, Camera *cam)
 		}
 		free(buf);
 	}
+	else
+	{
+		fprintf(stderr, "Error: Cannot read JSON file: %s\n", filename);
+	}
 }
 
 Camera	*MyWin::ParseJSONCamera(cJSON *name, Camera *in_cam)
 {
+int	loop;
+
 	Camera *out = NULL;
 	if(name != NULL)
 	{
@@ -34406,19 +35912,25 @@ Camera	*MyWin::ParseJSONCamera(cJSON *name, Camera *in_cam)
 		int filter_plugin_cnt;
 		int bound_mic_cnt;
 		int split_src_cnt;
+		int recognize_object_cnt;
 
 		int success = 0;
 		char *path = json_parse_string(name, "path");
+		char *original_path = json_parse_string(name, "original path");
 		char *alias = json_parse_string(name, "alias");
 		success = json_parse_int(name, "width", width);
 		success = json_parse_int(name, "height", height);
 		success = json_parse_int(name, "font sz", font_sz);
-
+		char *use_path = original_path;
+		if(use_path == NULL)
+		{
+			use_path = path;
+		}
 		Camera *cam = NULL;
 		int cam_num = -1;
 		if(in_cam == NULL)
 		{
-			cam_num = SetupCamera(path, alias, width, height, font_sz);
+			cam_num = SetupCamera(use_path, alias, width, height, font_sz);
 			cam = camera[cam_num];
 		}
 		else
@@ -34427,18 +35939,13 @@ Camera	*MyWin::ParseJSONCamera(cJSON *name, Camera *in_cam)
 			if((width != cam->width) || (height != cam->height))
 			{
 				RemoveSource(cam->id);
-				cam_num = SetupCamera(cam->path, cam->alias, width, height, font_sz);
+				cam_num = SetupCamera(path, cam->alias, width, height, font_sz);
 				cam = camera[cam_num];
 			}
 		}
 		if(cam != NULL)
 		{
 			out = cam;
-			char *original_path = json_parse_string(name, "original path");
-			if(original_path != NULL)
-			{
-				strcpy(cam->original_path, original_path);
-			}
 			success = json_parse_int(name, "triggers requested", cam->triggers_requested);
 			success = json_parse_int(name, "requested x", cam->requested_x);
 			success = json_parse_int(name, "requested y", cam->requested_y);
@@ -34467,12 +35974,26 @@ Camera	*MyWin::ParseJSONCamera(cJSON *name, Camera *in_cam)
 			{
 				strcpy(cam->format_code, format_code);
 			}
+			char *extra_url = json_parse_string(name, "extra url");
+			if(extra_url != NULL)
+			{
+				cam->extra_url = strdup(extra_url);
+			}
 			char *extra_css = json_parse_string(name, "extra css");
 			if(extra_css != NULL)
 			{
 				cam->extra_css = strdup(extra_css);
 			}
-			success = json_parse_int(name, "ndi capture", cam->ndi_capture);
+			char *extra_js_once = json_parse_string(name, "extra js once");
+			if(extra_js_once != NULL)
+			{
+				cam->extra_js_once = strdup(extra_js_once);
+			}
+			char *extra_js_always = json_parse_string(name, "extra js always");
+			if(extra_js_always != NULL)
+			{
+				cam->extra_js_always = strdup(extra_js_always);
+			}
 			success = json_parse_int(name, "chroma color", cam->chroma_color);
 			success = json_parse_int(name, "crop start x", cam->crop_start_x);
 			success = json_parse_int(name, "crop start y", cam->crop_start_y);
@@ -34699,6 +36220,26 @@ Camera	*MyWin::ParseJSONCamera(cJSON *name, Camera *in_cam)
 				}
 				cam->split_source_cnt = cnt;
 			}
+			success = json_parse_int(name, "recognize object cnt", recognize_object_cnt);
+			if(recognize_object_cnt > 0)
+			{
+				cJSON *object = NULL;
+				cJSON *objects = json_parse_array(name, "recognize object");
+				int cnt = 0;
+				cJSON_ArrayForEach(object, objects)
+				{
+					if(object->valuestring != NULL)
+					{
+						for(loop = 0;loop < recognize_class_cnt;loop++)
+						{
+							if(strcasecmp(object->valuestring, recognize_class_name[loop]) == 0)
+							{
+								cam->object_index[loop] = 1;
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	return(out);
@@ -34739,10 +36280,10 @@ int sh;
 		im->add(im->pixelate);
 		def = (ImDefault *)im->pixelate;
 	}
-	else if(im_type == IM_RECTANGLE_SELECT)
+	else if(im_type == IM_RECTANGLE_PASSTHRU)
 	{
-		im->rectangle_select = new ImRectangleSelect(this, im, sx, sy, sw, sh);
-		im->add(im->rectangle_select);
+		im->rectangle_passthru = new ImRectanglePassThru(this, im, sx, sy, sw, sh);
+		im->add(im->rectangle_passthru);
 		def = (ImDefault *)im->pixelate;
 	}
 	else if(im_type == IM_IMAGE)
@@ -34756,6 +36297,12 @@ int sh;
 		im->ellipse = new ImEllipse(this, im, sx, sy, sw, sh);
 		im->add(im->ellipse);
 		def = (ImDefault *)im->ellipse;
+	}
+	else if(im_type == IM_ELLIPSE_PASSTHRU)
+	{
+		im->ellipse_passthru = new ImEllipsePassThru(this, im, sx, sy, sw, sh);
+		im->add(im->ellipse_passthru);
+		def = (ImDefault *)im->ellipse_passthru;
 	}
 	else if(im_type == IM_FREEHAND)
 	{
@@ -34781,6 +36328,7 @@ int sh;
 	success = json_parse_int(immediate, "initial y", im->initial_y);
 	success = json_parse_int(immediate, "layer", im->layer);
 	success = json_parse_double(immediate, "overall alpha", im->overall_alpha);
+	success = json_parse_int(immediate, "use as mask", im->use_as_mask);
 	if(im->text != NULL)
 	{
 		char *text_value = json_parse_string(immediate, "text value");
@@ -35047,6 +36595,7 @@ ImageWindow	*MyWin::ParseJSONImageWindow(cJSON *image_window, Camera *cam, int c
 			success = json_parse_int(image_window, "trim x", iw->trim_x);
 			success = json_parse_int(image_window, "trim y", iw->trim_y);
 			success = json_parse_double(image_window, "overall alpha", iw->overall_alpha);
+			success = json_parse_int(image_window, "use as mask", iw->use_as_mask);
 			success = json_parse_double(image_window, "angle", iw->angle);
 			success = json_parse_int(image_window, "frame", iw->frame);
 			success = json_parse_int(image_window, "flip horizontal", iw->flip_horizontal);
@@ -35214,6 +36763,7 @@ void	sliding_element_close_cb(void *v);
 		if(recognize_class_name[loop] != NULL)
 		{
 			free(recognize_class_name[loop]);
+			recognize_class_name[loop] = NULL;
 		}
 	}
 	recognize_class_cnt = 0;
@@ -35250,8 +36800,15 @@ void	sliding_element_close_cb(void *v);
 			char out_filename[4096];
 			sprintf(out_filename, "global.%s", use_extension);
 			Muxer *use_muxer = new Muxer(this, NULL, 1);
-			use_muxer->InitMux(audio, use_video_codec, use_audio_codec, "global.bin", NULL, out_filename, NULL, desktop_monitor, pulse_mixer, -1, original_w, original_h, fps, audio_sample_rate, audio_channels, -1, NULL, NULL);
-			AddLastMuxed(out_filename);
+			int mux_err = use_muxer->InitMux(audio, use_video_codec, use_audio_codec, "global.bin", NULL, out_filename, NULL, desktop_monitor, pulse_mixer, -1, original_w, original_h, fps, audio_sample_rate, audio_channels, -1, NULL, NULL);
+			if(mux_err == 0)
+			{
+				AddLastMuxed(out_filename);
+			}
+			else
+			{
+				SetErrorMessage("Encoding Error: Not recording.");
+			}
 			delete use_muxer;
 		}
 	}
@@ -35366,6 +36923,14 @@ int	aa, ab, ac;
 			{
 				close(cam->fd);
 			}
+		}
+	}
+	for(loop = 0;loop < recognize_class_cnt;loop++)
+	{
+		if(recognize_class_name[loop] != NULL)
+		{
+			free(recognize_class_name[loop]);
+			recognize_class_name[loop] = NULL;
 		}
 	}
 	recognize_class_cnt = 0;
@@ -35753,6 +37318,7 @@ void	set_output_select_cb(Fl_Widget *w, void *v)
 int	loop;
 
 	EditOutputWindow *win = (EditOutputWindow *)v;
+	win->NDI_Exclusive(w);
 	win->redraw();
 }
 
@@ -35789,16 +37355,16 @@ void	set_output_rescan_cb(Fl_Widget *w, void *v)
 		if(streaming == STREAMING_NET)
 		{
 			in->color(DARK_RED);
-			in->label("URL:");
+			in->copy_label("URL:");
 		}
-		if(streaming == STREAMING_NDI)
+		else if(streaming == STREAMING_NDI)
 		{
 			in->color(DARK_BLUE);
-			in->label("NDI:");
+			in->copy_label("NDI:");
 		}
 		else
 		{
-			in->label("File:");
+			in->copy_label("File:");
 		}
 		in->redraw();
 		in->parent()->redraw();
@@ -36096,7 +37662,6 @@ void	MyWin::RestoreFromStored(StoredMyWin *in_win)
 void	my_window_cb(void *v);
 int		loop;
 int		inner;
-static int repeat = 0;
 
 	source_cnt = 0;
 	for(loop = 0;loop < in_win->source_cnt;loop++)
@@ -36531,10 +38096,18 @@ int	inner;
 				{
 					if(strlen(in_source[loop]) > 0)
 					{
-						int nn = SetupCamera(in_source[loop], NULL, requested_w, requested_h, 32);
-						if(nn == -1)
+						if(strncmp(in_source[loop], "json://", strlen("json://")) == 0)
 						{
-							SetErrorMessage("Cannot Open Camera");
+							char *filename = in_source[loop] + strlen("json://");
+							LoadJSONCamera(filename);
+						}
+						else
+						{
+							int nn = SetupCamera(in_source[loop], NULL, requested_w, requested_h, 32);
+							if(nn == -1)
+							{
+								SetErrorMessage("Cannot Open Camera");
+							}
 						}
 					}
 				}
@@ -36590,7 +38163,11 @@ Camera	*MyWin::RecordingCamera()
 
 Camera	*MyWin::DisplayedCamera()
 {
-	Camera *cam = camera[displayed_source];
+	Camera *cam = NULL;
+	if(displayed_source > -1)
+	{
+		cam = camera[displayed_source];
+	}
 	return(cam);
 }
 
@@ -36601,8 +38178,9 @@ void	MyWin::HideObjects()
 
 void	MyWin::ShowObjects()
 {
-int	loop;
-int	inner;
+int		loop;
+int		inner;
+char	*sorted_list[1024];
 
 	Camera *cam = DisplayedCamera();
 	if(cam != NULL)
@@ -36613,10 +38191,17 @@ int	inner;
 		int cnt = 0;
 		for(loop = 0;loop < recognize_class_cnt;loop++)
 		{
+			sorted_list[loop] = recognize_class_name[loop];
+		}
+		object_page = 0;
+		qsort(sorted_list, recognize_class_cnt, sizeof(char *), cmpstringp);
+		for(loop = 0;loop < recognize_class_cnt;loop++)
+		{
 			int start = 123 * object_page;
 			int end = 123 * (object_page + 1);
 			if((cnt >= start) && (cnt < end))
 			{
+				object_menu->object_name_button[loop]->copy_label(sorted_list[loop]);
 				object_menu->object_name_button[loop]->show();
 				object_menu->object_name_button[loop]->redraw();
 				for(inner = 0;inner < recognize_class_cnt;inner++)
@@ -36643,6 +38228,7 @@ int	inner;
 		object_menu->object_clear_button->show();
 		object_menu->object_all_button->show();
 		object_menu->object_done_button->show();
+		object_menu->object_apply_all_button->show();
 		if(recognize_class_cnt > 123)
 		{
 			if((recognize_class_cnt / 123) > object_page)
@@ -36687,12 +38273,6 @@ int	loop;
 		{
 			delete cam;
 		}
-	}
-	if(record_desktop == 1)
-	{
-		Camera *cam = new Camera(this, source_cnt, "desktop://", loop, forced_fps, requested_w, requested_h);
-		camera[source_cnt] = cam;
-		source_cnt++;
 	}
 }
 
@@ -36849,9 +38429,12 @@ static char	buf2[256];
 		if(ptz_zoom_reading < 0)
 		{
 			ptz_zoom_reading = 0;
-			VISCA_get_zoom_value(win->ptz_current_interface, win->ptz_current_camera, (uint16_t *)&ptz_zoom_reading);
+			if(win->ptz_current_interface != NULL)
+			{
+				VISCA_get_zoom_value(win->ptz_current_interface, win->ptz_current_camera, (uint16_t *)&ptz_zoom_reading);
+			}
 			sprintf(buf2, "%05d", ptz_zoom_reading);
-			win->ptz_zoom_value_label->label(buf2);
+			win->ptz_zoom_value_label->copy_label(buf2);
 		}
 		ptz_set_speed_cb(win->ptz_speed_slider, this);
 
@@ -36901,17 +38484,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, ps, ts);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Motion(V4L_UP | V4L_LEFT);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_upleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_upleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_UP | V4L_LEFT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Motion(V4L_UP | V4L_LEFT);
+						}
 					}
 				}
 			}
@@ -36924,17 +38514,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, -ps, ts);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Motion(V4L_UP | V4L_RIGHT);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_upright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_upright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_UP | V4L_RIGHT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Motion(V4L_UP | V4L_RIGHT);
+						}
 					}
 				}
 			}
@@ -36947,17 +38544,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, -ps, -ts);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Motion(V4L_DOWN | V4L_RIGHT);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_downright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_downright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_DOWN | V4L_RIGHT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Motion(V4L_DOWN | V4L_RIGHT);
+						}
 					}
 				}
 			}
@@ -36970,17 +38574,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, ps, -ts);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Motion(V4L_DOWN | V4L_LEFT);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_downleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_downleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_DOWN | V4L_LEFT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Motion(V4L_DOWN | V4L_LEFT);
+						}
 					}
 				}
 			}
@@ -36993,17 +38604,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, 0.0, ts);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Command(V4L_UP);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_up(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_up(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_UP);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Command(V4L_UP);
+						}
 					}
 				}
 			}
@@ -37016,17 +38634,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, 0.0, -ts);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Command(V4L_DOWN);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_down(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_down(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_DOWN);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Command(V4L_DOWN);
+						}
 					}
 				}
 			}
@@ -37039,17 +38664,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, -ps, 0.0);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Command(V4L_RIGHT);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_right(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_right(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_RIGHT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Command(V4L_RIGHT);
+						}
 					}
 				}
 			}
@@ -37062,17 +38694,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, ps, 0.0);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_Command(V4L_LEFT);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_left(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_left(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_Command(V4L_LEFT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_Command(V4L_LEFT);
+						}
 					}
 				}
 			}
@@ -37085,17 +38724,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_zoom_speed(bound_cam->ndi_recv, zs);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_RepeatCommand(V4L_ZOOM_IN);
+		}
 		else
 		{
-			int err = VISCA_set_zoom_tele_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_zoom_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_zoom_tele_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_zoom_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_RepeatCommand(V4L_ZOOM_IN);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_RepeatCommand(V4L_ZOOM_IN);
+						}
 					}
 				}
 			}
@@ -37108,17 +38754,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_zoom_speed(bound_cam->ndi_recv, -zs);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_RepeatCommand(V4L_ZOOM_OUT);
+		}
 		else
 		{
-			int err = VISCA_set_zoom_wide_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_zoom_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_zoom_wide_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_zoom_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_RepeatCommand(V4L_ZOOM_OUT);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_RepeatCommand(V4L_ZOOM_OUT);
+						}
 					}
 				}
 			}
@@ -37127,21 +38780,30 @@ static char	buf2[256];
 	}
 	else if(button == PTZ_ZOOM)
 	{
-		VISCA_set_zoom_value(win->ptz_current_interface, win->ptz_current_camera, arg0);
-		ptz_zooming = -1;
+		if(win->ptz_current_interface != NULL)
+		{
+			VISCA_set_zoom_value(win->ptz_current_interface, win->ptz_current_camera, arg0);
+			ptz_zooming = -1;
+		}
 	}
 	else if(button == PTZ_FOCUS)
 	{
-		VISCA_set_focus_value(win->ptz_current_interface, win->ptz_current_camera, arg0);
-		ptz_focusing = 1;
+		if(win->ptz_current_interface != NULL)
+		{
+			VISCA_set_focus_value(win->ptz_current_interface, win->ptz_current_camera, arg0);
+			ptz_focusing = 1;
+		}
 	}
 	else if(button == PTZ_ZOOM_AND_FOCUS)
 	{
-		VISCA_set_zoom_and_focus_value(win->ptz_current_interface, win->ptz_current_camera, arg0, arg1);
-		ptz_zooming = 1;
-		ptz_focusing = 1;
-		acquire_zoom = 1;
-		acquire_focus = 1;
+		if(win->ptz_current_interface != NULL)
+		{
+			VISCA_set_zoom_and_focus_value(win->ptz_current_interface, win->ptz_current_camera, arg0, arg1);
+			ptz_zooming = 1;
+			ptz_focusing = 1;
+			acquire_zoom = 1;
+			acquire_focus = 1;
+		}
 	}
 	else if(button == PTZ_FOCUS_FAR)
 	{
@@ -37149,17 +38811,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_focus_speed(bound_cam->ndi_recv, fs);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_RepeatCommand(V4L_FOCUS_FAR);
+		}
 		else
 		{
-			int err = VISCA_set_focus_far_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_focus_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_focus_far_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_focus_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_RepeatCommand(V4L_FOCUS_FAR);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_RepeatCommand(V4L_FOCUS_FAR);
+						}
 					}
 				}
 			}
@@ -37172,17 +38841,24 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_focus_speed(bound_cam->ndi_recv, -fs);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->V4L_RepeatCommand(V4L_FOCUS_NEAR);
+		}
 		else
 		{
-			int err = VISCA_set_focus_near_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_focus_speed);
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_focus_near_speed(win->ptz_current_interface, win->ptz_current_camera, win->ptz_focus_speed);
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->V4L_RepeatCommand(V4L_FOCUS_NEAR);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->V4L_RepeatCommand(V4L_FOCUS_NEAR);
+						}
 					}
 				}
 			}
@@ -37191,13 +38867,19 @@ static char	buf2[256];
 	}
 	else if(button == PTZ_APERTURE_OPEN)
 	{
-		VISCA_set_iris_up(win->ptz_current_interface, win->ptz_current_camera);
-		ptz_focusing = 1;
+		if(win->ptz_current_interface != NULL)
+		{
+			VISCA_set_iris_up(win->ptz_current_interface, win->ptz_current_camera);
+			ptz_focusing = 1;
+		}
 	}
 	else if(button == PTZ_APERTURE_CLOSE)
 	{
-		VISCA_set_iris_down(win->ptz_current_interface, win->ptz_current_camera);
-		ptz_focusing = -1;
+		if(win->ptz_current_interface != NULL)
+		{
+			VISCA_set_iris_down(win->ptz_current_interface, win->ptz_current_camera);
+			ptz_focusing = -1;
+		}
 	}
 	else if(button == PTZ_HOME)
 	{
@@ -37207,9 +38889,12 @@ static char	buf2[256];
 		}
 		else
 		{
-			VISCA_set_pantilt_home(win->ptz_current_interface, win->ptz_current_camera);
-			VISCA_set_zoom_value(win->ptz_current_interface, win->ptz_current_camera, 0);
-			VISCA_set_focus_value(win->ptz_current_interface, win->ptz_current_camera, 20000);
+			if(win->ptz_current_interface != NULL)
+			{
+				VISCA_set_pantilt_home(win->ptz_current_interface, win->ptz_current_camera);
+				VISCA_set_zoom_value(win->ptz_current_interface, win->ptz_current_camera, 0);
+				VISCA_set_focus_value(win->ptz_current_interface, win->ptz_current_camera, 20000);
+			}
 		}
 		acquire_position = 1;
 		acquire_zoom = 1;
@@ -37221,20 +38906,28 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_pan_tilt_speed(bound_cam->ndi_recv, 0.0, 0.0);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->v4l_pending_command = 0;
+			bound_cam->V4L_Command(V4L_STOP);
+		}
 		else
 		{
-			int err = VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			ptz_panning = 0;
-			acquire_position = 1;
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				ptz_panning = 0;
+				acquire_position = 1;
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->v4l_pending_command = 0;
-						cam->V4L_Command(V4L_STOP);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->v4l_pending_command = 0;
+							cam->V4L_Command(V4L_STOP);
+						}
 					}
 				}
 			}
@@ -37246,20 +38939,28 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_zoom_speed(bound_cam->ndi_recv, 0.0);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->v4l_pending_command = 0;
+			bound_cam->V4L_Command(V4L_STOP);
+		}
 		else
 		{
-			int err = VISCA_set_zoom_stop(win->ptz_current_interface, win->ptz_current_camera);
-			ptz_zooming = 0;
-			acquire_zoom = 1;
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_zoom_stop(win->ptz_current_interface, win->ptz_current_camera);
+				ptz_zooming = 0;
+				acquire_zoom = 1;
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->v4l_pending_command = 0;
-						cam->V4L_Command(V4L_STOP);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->v4l_pending_command = 0;
+							cam->V4L_Command(V4L_STOP);
+						}
 					}
 				}
 			}
@@ -37271,20 +38972,28 @@ static char	buf2[256];
 		{
 			NDILib->recv_ptz_focus_speed(bound_cam->ndi_recv, 0.0);
 		}
+		else if(bound_cam->prefer_v4l == 1)
+		{
+			bound_cam->v4l_pending_command = 0;
+			bound_cam->V4L_Command(V4L_STOP);
+		}
 		else
 		{
-			int err = VISCA_set_focus_stop(win->ptz_current_interface, win->ptz_current_camera);
-			ptz_focusing = 0;
-			acquire_focus = 1;
-			if(err != 0)
+			if(win->ptz_current_interface != NULL)
 			{
-				if(win != NULL)
+				int err = VISCA_set_focus_stop(win->ptz_current_interface, win->ptz_current_camera);
+				ptz_focusing = 0;
+				acquire_focus = 1;
+				if(err != 0)
 				{
-					if(win->bound_camera != NULL)
+					if(win != NULL)
 					{
-						Camera *cam = win->bound_camera;
-						cam->v4l_pending_command = 0;
-						cam->V4L_Command(V4L_STOP);
+						if(win->bound_camera != NULL)
+						{
+							Camera *cam = win->bound_camera;
+							cam->v4l_pending_command = 0;
+							cam->V4L_Command(V4L_STOP);
+						}
 					}
 				}
 			}
@@ -37292,64 +39001,70 @@ static char	buf2[256];
 	}
 	else if(button == PTZ_RELATIVE_POSITION)
 	{
-		int err = VISCA_set_pantilt_relative_position(win->ptz_current_interface, win->ptz_current_camera, arg0, arg1, arg2, arg3);
-		if(err != 0)
+		if(win->ptz_current_interface != NULL)
 		{
-			if((arg2 == 0) && (arg3 == 10))
+			int err = VISCA_set_pantilt_relative_position(win->ptz_current_interface, win->ptz_current_camera, arg0, arg1, arg2, arg3);
+			if(err != 0)
 			{
-				VISCA_set_pantilt_up(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				if((arg2 == 0) && (arg3 == 10))
+				{
+					VISCA_set_pantilt_up(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == 10) && (arg3 == 10))
+				{
+					VISCA_set_pantilt_upright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == 10) && (arg3 == 0))
+				{
+					VISCA_set_pantilt_right(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == 10) && (arg3 == -10))
+				{
+					VISCA_set_pantilt_downright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == 0) && (arg3 == -10))
+				{
+					VISCA_set_pantilt_down(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == -10) && (arg3 == -10))
+				{
+					VISCA_set_pantilt_downleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == -10) && (arg3 == 0))
+				{
+					VISCA_set_pantilt_left(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
+				else if((arg2 == -10) && (arg3 == 10))
+				{
+					VISCA_set_pantilt_upleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
+					usleep(10000);
+					VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
+				}
 			}
-			else if((arg2 == 10) && (arg3 == 10))
-			{
-				VISCA_set_pantilt_upright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
-			else if((arg2 == 10) && (arg3 == 0))
-			{
-				VISCA_set_pantilt_right(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
-			else if((arg2 == 10) && (arg3 == -10))
-			{
-				VISCA_set_pantilt_downright(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
-			else if((arg2 == 0) && (arg3 == -10))
-			{
-				VISCA_set_pantilt_down(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
-			else if((arg2 == -10) && (arg3 == -10))
-			{
-				VISCA_set_pantilt_downleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
-			else if((arg2 == -10) && (arg3 == 0))
-			{
-				VISCA_set_pantilt_left(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
-			else if((arg2 == -10) && (arg3 == 10))
-			{
-				VISCA_set_pantilt_upleft(win->ptz_current_interface, win->ptz_current_camera, use_pan_speed, use_tilt_speed);
-				usleep(10000);
-				VISCA_set_pantilt_stop(win->ptz_current_interface, win->ptz_current_camera, 0, 0);
-			}
+			acquire_position = 1;
 		}
-		acquire_position = 1;
 	}
 	else if(button == PTZ_ABSOLUTE_POSITION)
 	{
-		VISCA_set_pantilt_absolute_position(win->ptz_current_interface, win->ptz_current_camera, arg0, arg1, arg2, arg3);
-		acquire_position = 1;
+		if(win->ptz_current_interface != NULL)
+		{
+			VISCA_set_pantilt_absolute_position(win->ptz_current_interface, win->ptz_current_camera, arg0, arg1, arg2, arg3);
+			acquire_position = 1;
+		}
 	}
 	else
 	{
@@ -37359,40 +39074,49 @@ static char	buf2[256];
 	}
 	if(acquire_focus == 1)
 	{
-		ptz_focus_reading = 0;
-		char nn = -1;
-		int cnt = 0;
-		while((nn == -1) && (cnt < 10))
+		if(win->ptz_current_interface != NULL)
 		{
-			nn = VISCA_get_focus_value(win->ptz_current_interface, win->ptz_current_camera, (uint16_t *)&ptz_focus_reading);
-			cnt++;
+			ptz_focus_reading = 0;
+			char nn = -1;
+			int cnt = 0;
+			while((nn == -1) && (cnt < 10))
+			{
+				nn = VISCA_get_focus_value(win->ptz_current_interface, win->ptz_current_camera, (uint16_t *)&ptz_focus_reading);
+				cnt++;
+			}
+			sprintf(buf1, "%05d", ptz_focus_reading);
+			win->ptz_focus_value_label->copy_label(buf1);
 		}
-		sprintf(buf1, "%05d", ptz_focus_reading);
-		win->ptz_focus_value_label->label(buf1);
 	}
 	if(acquire_zoom == 1)
 	{
-		ptz_zoom_reading = 0;
-		char nn = -1;
-		int cnt = 0;
-		while((nn == -1) && (cnt < 10))
+		if(win->ptz_current_interface != NULL)
 		{
-			nn = VISCA_get_zoom_value(win->ptz_current_interface, win->ptz_current_camera, (uint16_t *)&ptz_zoom_reading);
-			cnt++;
+			ptz_zoom_reading = 0;
+			char nn = -1;
+			int cnt = 0;
+			while((nn == -1) && (cnt < 10))
+			{
+				nn = VISCA_get_zoom_value(win->ptz_current_interface, win->ptz_current_camera, (uint16_t *)&ptz_zoom_reading);
+				cnt++;
+			}
+			sprintf(buf2, "%05d", ptz_zoom_reading);
+			win->ptz_zoom_value_label->copy_label(buf2);
 		}
-		sprintf(buf2, "%05d", ptz_zoom_reading);
-		win->ptz_zoom_value_label->label(buf2);
 	}
 	if(acquire_position == 1)
 	{
-		ptz_pan_reading = 0;
-		ptz_tilt_reading = 0;
-		char nn = -1;
-		int cnt = 0;
-		while((nn == -1) && (cnt < 10))
+		if(win->ptz_current_interface != NULL)
 		{
-			nn = (char)VISCA_get_pantilt_position(win->ptz_current_interface, win->ptz_current_camera, &ptz_pan_reading, &ptz_tilt_reading);
-			cnt++;
+			ptz_pan_reading = 0;
+			ptz_tilt_reading = 0;
+			char nn = -1;
+			int cnt = 0;
+			while((nn == -1) && (cnt < 10))
+			{
+				nn = (char)VISCA_get_pantilt_position(win->ptz_current_interface, win->ptz_current_camera, &ptz_pan_reading, &ptz_tilt_reading);
+				cnt++;
+			}
 		}
 	}
 	ptz_window[index]->UpdatePTZButtons();
@@ -37510,17 +39234,20 @@ void	MyWin::ZoomALittle(int instance, int key)
 {
 	if(visca_command == 0)
 	{
-		int zoom_reading = 0;
-		VISCA_get_zoom_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&zoom_reading);
-		if((key == 'w') || (key == FL_KP + '8'))
+		if(ptz_window[instance]->ptz_current_interface != NULL)
 		{
-			ViscaCommand(instance, PTZ_ZOOM, 1, zoom_reading + ptz_little_speed);
-		}
-		else if((key == 's') || (key == FL_KP + '2'))
-		{
-			if(zoom_reading > ptz_little_speed)
+			int zoom_reading = 0;
+			VISCA_get_zoom_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&zoom_reading);
+			if((key == 'w') || (key == FL_KP + '8'))
 			{
-				ViscaCommand(instance, PTZ_ZOOM, 1, zoom_reading - ptz_little_speed);
+				ViscaCommand(instance, PTZ_ZOOM, 1, zoom_reading + ptz_little_speed);
+			}
+			else if((key == 's') || (key == FL_KP + '2'))
+			{
+				if(zoom_reading > ptz_little_speed)
+				{
+					ViscaCommand(instance, PTZ_ZOOM, 1, zoom_reading - ptz_little_speed);
+				}
 			}
 		}
 	}
@@ -37530,17 +39257,20 @@ void	MyWin::FocusALittle(int instance, int key)
 {
 	if(visca_command == 0)
 	{
-		int focus_reading = 0;
-		VISCA_get_focus_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&focus_reading);
-		if((key == 'w') || (key == FL_KP + '8'))
+		if(ptz_window[instance]->ptz_current_interface != NULL)
 		{
-			ViscaCommand(instance, PTZ_FOCUS, 1, focus_reading + ptz_little_speed);
-		}
-		else if((key == 's') || (key == FL_KP + '2'))
-		{
-			if(focus_reading > ptz_little_speed)
+			int focus_reading = 0;
+			VISCA_get_focus_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&focus_reading);
+			if((key == 'w') || (key == FL_KP + '8'))
 			{
-				ViscaCommand(instance, PTZ_FOCUS, 1, focus_reading - ptz_little_speed);
+				ViscaCommand(instance, PTZ_FOCUS, 1, focus_reading + ptz_little_speed);
+			}
+			else if((key == 's') || (key == FL_KP + '2'))
+			{
+				if(focus_reading > ptz_little_speed)
+				{
+					ViscaCommand(instance, PTZ_FOCUS, 1, focus_reading - ptz_little_speed);
+				}
 			}
 		}
 	}
@@ -37550,20 +39280,23 @@ void	MyWin::ZoomAndFocusALittle(int instance, int key)
 {
 	if(visca_command == 0)
 	{
-		int zoom_reading = 0;
-		int focus_reading = 0;
-		VISCA_get_zoom_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&zoom_reading);
-		VISCA_get_focus_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&focus_reading);
-		if((key == 'w') || (key == FL_KP + '8'))
+		if(ptz_window[instance]->ptz_current_interface != NULL)
 		{
-			ViscaCommand(instance, PTZ_ZOOM_AND_FOCUS, 2, zoom_reading + ptz_little_speed, focus_reading + ptz_little_speed);
-		}
-		else if((key == 's') || (key == FL_KP + '2'))
-		{
-			if((zoom_reading > ptz_little_speed)
-			&& (focus_reading > ptz_little_speed))
+			int zoom_reading = 0;
+			int focus_reading = 0;
+			VISCA_get_zoom_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&zoom_reading);
+			VISCA_get_focus_value(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, (uint16_t *)&focus_reading);
+			if((key == 'w') || (key == FL_KP + '8'))
 			{
-				ViscaCommand(instance, PTZ_ZOOM_AND_FOCUS, 2, zoom_reading - ptz_little_speed, focus_reading - ptz_little_speed);
+				ViscaCommand(instance, PTZ_ZOOM_AND_FOCUS, 2, zoom_reading + ptz_little_speed, focus_reading + ptz_little_speed);
+			}
+			else if((key == 's') || (key == FL_KP + '2'))
+			{
+				if((zoom_reading > ptz_little_speed)
+				&& (focus_reading > ptz_little_speed))
+				{
+					ViscaCommand(instance, PTZ_ZOOM_AND_FOCUS, 2, zoom_reading - ptz_little_speed, focus_reading - ptz_little_speed);
+				}
 			}
 		}
 	}
@@ -37645,37 +39378,40 @@ int	MyWin::ptz_joystick_handler()
 				int y_speed = abs(test_y);
 				if(x_speed > 20) x_speed = 20;
 				if(y_speed > 20) y_speed = 20;
-				if((test_x > 0) && (test_y > 0))
+				if((x_speed > 0) || (y_speed > 0))
 				{
-					ViscaCommand(instance, PTZ_DOWN_RIGHT, 2, x_speed, y_speed);
-				}
-				else if((test_x > 0) && (test_y < 0))
-				{
-					ViscaCommand(instance, PTZ_UP_RIGHT, 2, x_speed, y_speed);
-				}
-				else if((test_x < 0) && (test_y > 0))
-				{
-					ViscaCommand(instance, PTZ_DOWN_LEFT, 2, x_speed, y_speed);
-				}
-				else if((test_x < 0) && (test_y < 0))
-				{
-					ViscaCommand(instance, PTZ_UP_LEFT, 2, x_speed, y_speed);
-				}
-				else if(test_x > 0)
-				{
-					ViscaCommand(instance, PTZ_RIGHT, 2, x_speed, y_speed);
-				}
-				else if(test_x < 0)
-				{
-					ViscaCommand(instance, PTZ_LEFT, 2, x_speed, y_speed);
-				}
-				else if(test_y > 0)
-				{
-					ViscaCommand(instance, PTZ_DOWN, 2, x_speed, y_speed);
-				}
-				else if(test_y < 0)
-				{
-					ViscaCommand(instance, PTZ_UP, 2, x_speed, y_speed);
+					if((test_x > 0) && (test_y > 0))
+					{
+						ViscaCommand(instance, PTZ_DOWN_RIGHT, 2, x_speed, y_speed);
+					}
+					else if((test_x > 0) && (test_y < 0))
+					{
+						ViscaCommand(instance, PTZ_UP_RIGHT, 2, x_speed, y_speed);
+					}
+					else if((test_x < 0) && (test_y > 0))
+					{
+						ViscaCommand(instance, PTZ_DOWN_LEFT, 2, x_speed, y_speed);
+					}
+					else if((test_x < 0) && (test_y < 0))
+					{
+						ViscaCommand(instance, PTZ_UP_LEFT, 2, x_speed, y_speed);
+					}
+					else if(test_x > 0)
+					{
+						ViscaCommand(instance, PTZ_RIGHT, 2, x_speed, y_speed);
+					}
+					else if(test_x < 0)
+					{
+						ViscaCommand(instance, PTZ_LEFT, 2, x_speed, y_speed);
+					}
+					else if(test_y > 0)
+					{
+						ViscaCommand(instance, PTZ_DOWN, 2, x_speed, y_speed);
+					}
+					else if(test_y < 0)
+					{
+						ViscaCommand(instance, PTZ_UP, 2, x_speed, y_speed);
+					}
 				}
 				r = 1;
 			}
@@ -37788,6 +39524,8 @@ int	MyWin::DoDeleteImmediate()
 
 int	MyWin::TogglePTZJoystick()
 {
+int	loop;
+
 	int flag = 0;
 	if(ptz_mode == 1)
 	{
@@ -37800,6 +39538,13 @@ int	MyWin::TogglePTZJoystick()
 		{
 			ptz_joystick = 0;
 			ptz_window[0]->ptz_joystick_button->value(0);
+		}
+		for(loop = 0;loop < PTZ_WINDOW_LIMIT;loop++)
+		{
+			if(ptz_window[loop] != NULL)
+			{
+				ptz_window[loop]->ptz_joystick_button->value(ptz_joystick);
+			}
 		}
 		flag = 1;
 	}
@@ -38462,8 +40207,8 @@ int	loop;
 		if((immediate_drawing_window->selected_widget == NULL)
 		|| (((immediate_drawing_window->mode != DRAWING_MODE_LINE))
 			&& (immediate_drawing_window->mode != DRAWING_MODE_POLYGON)
-			&& (immediate_drawing_window->mode != DRAWING_MODE_POLYGON_SELECT)
-			&& (immediate_drawing_window->mode != DRAWING_MODE_RECTANGLE_SELECT)
+			&& (immediate_drawing_window->mode != DRAWING_MODE_POLYGON_PASSTHRU)
+			&& (immediate_drawing_window->mode != DRAWING_MODE_RECTANGLE_PASSTHRU)
 			&& (immediate_drawing_window->mode != DRAWING_MODE_LOOP)))
 		{
 			int xx = Fl::event_x();
@@ -38525,7 +40270,7 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 		yy += cam->image_sy;
 		if((immediate_drawing_window->mode == DRAWING_MODE_LINE)
 		|| (immediate_drawing_window->mode == DRAWING_MODE_POLYGON)
-		|| (immediate_drawing_window->mode == DRAWING_MODE_POLYGON_SELECT)
+		|| (immediate_drawing_window->mode == DRAWING_MODE_POLYGON_PASSTHRU)
 		|| (immediate_drawing_window->mode == DRAWING_MODE_FREEHAND)
 		|| (immediate_drawing_window->mode == DRAWING_MODE_LOOP))
 		{
@@ -38613,6 +40358,8 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 							int dist_h = cam->height - (yy - cam->image_sy);
 							Immediate *im = new Immediate(this, cam, idw, xx, yy, dist_w, dist_h);
 							immediate_drawing_window->selected_widget = im;
+							im->orig_w = im->w();
+							im->orig_h = im->h();
 							cam->AddImmediate(im);
 							add(im);
 							flag = 1;
@@ -38690,7 +40437,7 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 				}
 			}
 		}
-		else if(immediate_drawing_window->mode == DRAWING_MODE_RECTANGLE_SELECT)
+		else if(immediate_drawing_window->mode == DRAWING_MODE_RECTANGLE_PASSTHRU)
 		{
 			if(Fl::event_button() == FL_LEFT_MOUSE)
 			{
@@ -38771,6 +40518,49 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 							im->ellipse->style = idw->rectangle_style;
 							im->ellipse->filled = idw->rectangle_filled;
 							im->ellipse->erase = idw->rectangle_erase;
+						}
+					}
+				}
+			}
+		}
+		else if(immediate_drawing_window->mode == DRAWING_MODE_ELLIPSE_PASSTHRU)
+		{
+			if(Fl::event_button() == FL_LEFT_MOUSE)
+			{
+				ImmediateDrawingWindow *idw = immediate_drawing_window;
+				if(idw->selected_widget == NULL)
+				{
+					if((xx > cam->image_sx)
+					&& (yy > cam->image_sy)
+					&& (xx < cam->image_sx + cam->width)
+					&& (yy < cam->image_sy + cam->height))
+					{
+						Immediate *im = cam->EventInImmediate();
+						if(im == NULL)
+						{
+							Immediate *im = new Immediate(this, cam, idw, xx, yy, 0, 0);
+							immediate_drawing_window->selected_widget = im;
+							cam->AddImmediate(im);
+							add(im);
+							flag = 1;
+						}
+					}
+				}
+				else
+				{
+					Immediate *im = (Immediate *)idw->selected_widget;
+					if(im->layer == cam->edit_layer)
+					{
+						if(im->ellipse_passthru != NULL)
+						{
+							im->ellipse_passthru->width = idw->rectangle_size;
+							im->ellipse_passthru->red = idw->rectangle_color_red;
+							im->ellipse_passthru->green = idw->rectangle_color_green;
+							im->ellipse_passthru->blue = idw->rectangle_color_blue;
+							im->ellipse_passthru->alpha = idw->rectangle_color_alpha;
+							im->ellipse_passthru->style = idw->rectangle_style;
+							im->ellipse_passthru->filled = idw->rectangle_filled;
+							im->ellipse_passthru->erase = idw->rectangle_erase;
 						}
 					}
 				}
@@ -39032,7 +40822,7 @@ int	MyWin::HandleReleaseForImmediate(Camera *cam)
 				flag = 1;
 			}
 		}
-		else if(immediate_drawing_window->mode == DRAWING_MODE_RECTANGLE_SELECT)
+		else if(immediate_drawing_window->mode == DRAWING_MODE_RECTANGLE_PASSTHRU)
 		{
 			if(immediate_drawing_window->selected_widget != NULL)
 			{
@@ -39045,10 +40835,10 @@ int	MyWin::HandleReleaseForImmediate(Camera *cam)
 				{
 					ImmediateDrawingWindow *idw = immediate_drawing_window;
 					Immediate *im = (Immediate *)idw->selected_widget;
-					if(im->rectangle_select != NULL)
+					if(im->rectangle_passthru != NULL)
 					{
 						im->CompleteRectangle(xx, yy);
-						im->rectangle_select->selecting = 0;
+						im->rectangle_passthru->selecting = 0;
 						idw->ClearSelectedWidget();
 					}
 					im->redraw();
@@ -39070,6 +40860,29 @@ int	MyWin::HandleReleaseForImmediate(Camera *cam)
 					ImmediateDrawingWindow *idw = immediate_drawing_window;
 					Immediate *im = (Immediate *)idw->selected_widget;
 					if(im->ellipse != NULL)
+					{
+						im->CompleteRectangle(xx, yy);
+						idw->ClearSelectedWidget();
+					}
+					im->redraw();
+					flag = 1;
+				}
+			}
+		}
+		else if(immediate_drawing_window->mode == DRAWING_MODE_ELLIPSE_PASSTHRU)
+		{
+			if(immediate_drawing_window->selected_widget != NULL)
+			{
+				int xx = Fl::event_x();
+				int yy = Fl::event_y();
+				if((xx > cam->image_sx)
+				&& (yy > cam->image_sy)
+				&& (xx < cam->image_sx + cam->width)
+				&& (yy < cam->image_sy + cam->height))
+				{
+					ImmediateDrawingWindow *idw = immediate_drawing_window;
+					Immediate *im = (Immediate *)idw->selected_widget;
+					if(im->ellipse_passthru != NULL)
 					{
 						im->CompleteRectangle(xx, yy);
 						idw->ClearSelectedWidget();
@@ -39129,8 +40942,11 @@ int	MyWin::HandleReleaseForImmediate(Camera *cam)
 		{
 			ImmediateDrawingWindow *idw = immediate_drawing_window;
 			Immediate *im = (Immediate *)idw->selected_widget;
-			im->orig_w = im->w();
-			im->orig_h = im->h();
+			if(im != NULL)
+			{
+				im->orig_w = im->w();
+				im->orig_h = im->h();
+			}
 			idw->ClearSelectedWidget();
 			flag = 1;
 		}
@@ -39193,7 +41009,7 @@ int	MyWin::HandleRelease(Camera *cam)
 					cam->zoom_box_y = drag_start_y;
 					cam->zoom_box_w = diff_x;
 					cam->zoom_box_h = diff_y;
-					zoom_box_button->label("Cease Box Zoom");
+					zoom_box_button->copy_label("Cease Box Zoom");
 				}
 			}
 		}
@@ -39224,9 +41040,12 @@ int	MyWin::HandleReleaseForPTZ(Camera *cam)
 			{
 				if(ptz_joystick == 1)
 				{
-					VISCA_set_pantilt_stop(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, 0, 0);
-					ptz_joystick_x = 0;
-					ptz_joystick_y = 0;
+					if(ptz_window[instance]->ptz_current_interface != NULL)
+					{
+						VISCA_set_pantilt_stop(ptz_window[instance]->ptz_current_interface, ptz_window[instance]->ptz_current_camera, 0, 0);
+						ptz_joystick_x = 0;
+						ptz_joystick_y = 0;
+					}
 				}
 				else
 				{
@@ -39771,15 +41590,15 @@ int	MyWin::HandleImmediateDrag(Camera *cam)
 					flag = 1;
 				}
 			}
-			else if(immediate_drawing_window->mode == DRAWING_MODE_RECTANGLE_SELECT)
+			else if(immediate_drawing_window->mode == DRAWING_MODE_RECTANGLE_PASSTHRU)
 			{
 				if(immediate_drawing_window->selected_widget != NULL)
 				{
 					ImmediateDrawingWindow *idw = immediate_drawing_window;
 					Immediate *im = (Immediate *)idw->selected_widget;
-					if(im->rectangle_select != NULL)
+					if(im->rectangle_passthru != NULL)
 					{
-						im->rectangle_select->selecting = 1;
+						im->rectangle_passthru->selecting = 1;
 						im->CompleteRectangle(xx, yy);
 					}
 					im->redraw();
@@ -39793,6 +41612,20 @@ int	MyWin::HandleImmediateDrag(Camera *cam)
 					ImmediateDrawingWindow *idw = immediate_drawing_window;
 					Immediate *im = (Immediate *)idw->selected_widget;
 					if(im->ellipse != NULL)
+					{
+						im->CompleteRectangle(xx, yy);
+					}
+					im->redraw();
+					flag = 1;
+				}
+			}
+			else if(immediate_drawing_window->mode == DRAWING_MODE_ELLIPSE_PASSTHRU)
+			{
+				if(immediate_drawing_window->selected_widget != NULL)
+				{
+					ImmediateDrawingWindow *idw = immediate_drawing_window;
+					Immediate *im = (Immediate *)idw->selected_widget;
+					if(im->ellipse_passthru != NULL)
 					{
 						im->CompleteRectangle(xx, yy);
 					}
@@ -40063,6 +41896,30 @@ int	inner;
 				misc_copy[loop] = NULL;
 			}
 		}
+	}
+}
+
+void	MyWin::MiscRemoveLast()
+{
+int	loop;
+int	inner;
+
+	Camera *cam = DisplayedCamera();
+	int last = -1;
+	for(loop = 0;loop < misc_copy_cnt;loop++)
+	{
+		if(misc_copy[loop] != NULL)
+		{
+			if(misc_copy[loop]->source == cam)
+			{
+				last = loop;
+			}
+		}
+	}
+	if(last > -1)
+	{
+		delete misc_copy[last];
+		misc_copy[last] = NULL;
 	}
 }
 
@@ -40442,7 +42299,7 @@ int	MyWin::PushToSelectColors(Camera *cam)
 	return(flag);
 }
 
-int	MyWin::AddMiscCopy(Camera *in_source, int in_type, Mat local, int immediate_display, char *str, int xx, int yy, int ww, int hh, int rr, int gg, int bb, int aa)
+int	MyWin::AddMiscCopy(Camera *in_source, int in_type, Mat local, int immediate_display, char *str, int xx, int yy, int ww, int hh, int rr, int gg, int bb, int aa, double contrast, double brightness, double saturation, double hue, double intensity)
 {
 	int r = 0;
 	misc_copy = (MiscCopy **)realloc(misc_copy, sizeof(MiscCopy *) * (misc_copy_cnt + 1));
@@ -40456,6 +42313,11 @@ int	MyWin::AddMiscCopy(Camera *in_source, int in_type, Mat local, int immediate_
 			misc_copy[misc_copy_cnt]->blue = bb;
 			misc_copy[misc_copy_cnt]->alpha = aa;
 		}
+		misc_copy[misc_copy_cnt]->contrast = contrast;
+		misc_copy[misc_copy_cnt]->brightness = brightness;
+		misc_copy[misc_copy_cnt]->saturation = saturation;
+		misc_copy[misc_copy_cnt]->hue = hue;
+		misc_copy[misc_copy_cnt]->intensity = intensity;
 		r = misc_copy_cnt;
 	}
 	misc_copy_cnt++;
@@ -40570,7 +42432,14 @@ int	loop;
 					char text[8192];
 					char alias[8192];
 					sprintf(text, "sourced://%s", cam->path);
-					sprintf(alias, "Copy of %s", cam->path);
+					if(strlen(cam->alias) > 0)
+					{
+						sprintf(alias, "Copy of %s", cam->alias);
+					}
+					else
+					{
+						sprintf(alias, "Copy of %s", cam->path);
+					}
 					int nw = cam->requested_x;
 					int nh = cam->requested_y;
 					int cam_n = win->SetupCamera(text, alias, nw, nh, 32, "Sans", 0, 0, 0, 0, 255, 255, 255, 255, 0);
@@ -40640,19 +42509,19 @@ int	loop;
 					win->misc_copy = NULL;
 					win->misc_copy_cnt = 0;
 				}
-				else if(strcmp(str, "Rubberband Mode") == 0)
+				else if(strcmp(str, "@C3Rubberband Mode") == 0)
 				{
 					win->rubberband_mode = RUBBERBAND_MODE;
 				}
-				else if(strcmp(str, "Reposition Mode") == 0)
+				else if(strcmp(str, "@C3Reposition Mode") == 0)
 				{
 					win->rubberband_mode = REPOSITION_MODE;
 				}
-				else if(strcmp(str, "Scroll Mode") == 0)
+				else if(strcmp(str, "@C3Scroll Mode") == 0)
 				{
 					win->rubberband_mode = SCROLL_MODE;
 				}
-				else if(strcmp(str, "Guideline Mode") == 0)
+				else if(strcmp(str, "@C3Guideline Mode") == 0)
 				{
 					win->rubberband_mode = GUIDELINE_MODE;
 				}
@@ -40700,7 +42569,7 @@ int	loop;
 				{
 					win->editing_misc_mode = EDITING_MISC_MOVE;
 				}
-				else if(strcmp(str, "Save") == 0)
+				else if(strcmp(str, "Save Image") == 0)
 				{
 					Mat local;
 					int use_x = xx - cam->image_sx;
@@ -40714,11 +42583,22 @@ int	loop;
 					{
 						if(strlen(filename) > 0)
 						{
-							cv::imwrite(filename, local);
+							const char *ext = fl_filename_ext(filename);
+							if(ext != NULL)
+							{
+								if(cv::haveImageWriter(ext))
+								{
+									cv::imwrite(filename, local);
+								}
+								else
+								{
+									win->SetErrorMessage("Error: Cannot save image with that extension.");
+								}
+							}
 						}
 					}
 				}
-				else if(strcmp(str, "Load") == 0)
+				else if(strcmp(str, "Load Image") == 0)
 				{
 					int use_x = ux - cam->image_sx;
 					int use_y = uy - cam->image_sy;
@@ -40773,6 +42653,10 @@ int	loop;
 				{
 					win->MiscRemoveAll();
 				}
+				else if(strcmp(str, "Remove Last") == 0)
+				{
+					win->MiscRemoveLast();
+				}
 				else if(strcmp(str, "Rectangle") == 0)
 				{
 					Mat local;
@@ -40793,6 +42677,44 @@ int	loop;
 					int use_x = xx - cam->image_sx;
 					int use_y = yy - cam->image_sy;
 					win->AddMiscCopy(cam, MISC_COPY_BORDER, local, 1, NULL, use_x, use_y, ww, hh);
+				}
+				else if(strcmp(str, "Reverse") == 0)
+				{
+					Mat local;
+					int use_x = xx - cam->image_sx;
+					int use_y = yy - cam->image_sy;
+					win->AddMiscCopy(cam, MISC_COPY_REVERSE, local, 1, NULL, use_x, use_y, ww, hh);
+				}
+				else if(strcmp(str, "Video Settings") == 0)
+				{
+					double contrast = 0.5;
+					double brightness = 0.5;
+					double saturation = 1.0;
+					double hue = 1.0;
+					double intensity = 1.0;
+					Mat local;
+					int use_x = xx - cam->image_sx;
+					int use_y = yy - cam->image_sy;
+					int r = win->AddMiscCopy(cam, MISC_COPY_VIDEO_SETTINGS, local, 1, NULL, use_x, use_y, ww, hh, -1, -1, -1, -1, contrast, brightness, saturation, hue, intensity);
+					if(r > -1)
+					{
+						MiscCopy *misc = win->misc_copy[r];
+						my_video_settings_chooser(win, misc->contrast, misc->brightness, misc->saturation, misc->hue, misc->intensity);
+					}
+				}
+				else if(strcmp(str, "Flip Horizontally") == 0)
+				{
+					Mat local;
+					int use_x = xx - cam->image_sx;
+					int use_y = yy - cam->image_sy;
+					win->AddMiscCopy(cam, MISC_COPY_HFLIP, local, 1, NULL, use_x, use_y, ww, hh);
+				}
+				else if(strcmp(str, "Flip Vertically") == 0)
+				{
+					Mat local;
+					int use_x = xx - cam->image_sx;
+					int use_y = yy - cam->image_sy;
+					win->AddMiscCopy(cam, MISC_COPY_VFLIP, local, 1, NULL, use_x, use_y, ww, hh);
 				}
 				else if(strcmp(str, "Text") == 0)
 				{
@@ -40890,7 +42812,10 @@ int	loop;
 							popup->browser->add("Dynamic Copy");
 							popup->browser->add("Static Copy");
 							popup->browser->add("Copy to Clipboard");
-							popup->browser->add("Source Camera");
+							if(cam->source_camera == NULL)
+							{
+								popup->browser->add("Source Camera");
+							}
 							popup->browser->add("Select All");
 							popup->browser->add("Cut Out");
 							popup->browser->add("Fill");
@@ -40899,10 +42824,14 @@ int	loop;
 							popup->browser->add("Rectangle");
 							popup->browser->add("Magnify");
 							popup->browser->add("Border");
-							popup->browser->add("Save");
-							popup->browser->add("Scroll Mode");
-							popup->browser->add("Reposition Mode");
-							popup->browser->add("Guideline Mode");
+							popup->browser->add("Reverse");
+							popup->browser->add("Video Settings");
+							popup->browser->add("Flip Horizontally");
+							popup->browser->add("Flip Vertically");
+							popup->browser->add("Save Image");
+							popup->browser->add("@C3Scroll Mode");
+							popup->browser->add("@C3Reposition Mode");
+							popup->browser->add("@C3Guideline Mode");
 							popup->set_non_modal();
 							popup->Fit();
 							popup->show();
@@ -40931,6 +42860,8 @@ int	loop;
 							popup->browser->clear();
 							if(misc_copy_cnt > 0)
 							{
+								popup->browser->add("Remove All");
+								popup->browser->add("Remove Last");
 								if(hit == 0)
 								{
 									popup->browser->add("Paste");
@@ -40947,7 +42878,6 @@ int	loop;
 									}
 									popup->browser->add("Move");
 									popup->browser->add("Remove");
-									popup->browser->add("Remove All");
 									popup->browser->add("Resize");
 								}
 							}
@@ -40955,11 +42885,11 @@ int	loop;
 							{
 								popup->browser->add("Paste from Clipboard");
 							}
-							popup->browser->add("Load");
+							popup->browser->add("Load Image");
 							popup->browser->add("Select All");
-							popup->browser->add("Scroll Mode");
-							popup->browser->add("Reposition Mode");
-							popup->browser->add("Guideline Mode");
+							popup->browser->add("@C3Scroll Mode");
+							popup->browser->add("@C3Reposition Mode");
+							popup->browser->add("@C3Guideline Mode");
 							popup->set_non_modal();
 							popup->Fit();
 							popup->show();
@@ -40984,14 +42914,9 @@ int	loop;
 						popup = new PopupMenu(Fl::event_x_root(), Fl::event_y_root(), 160, 20);
 						popup->browser->callback(rubberband_popup_cb, this);
 						popup->browser->clear();
-						if(Fl::clipboard_contains(Fl::clipboard_image)) 
-						{
-							popup->browser->add("Paste from Clipboard");
-						}
-						popup->browser->add("Load");
-						popup->browser->add("Rubberband Mode");
-						popup->browser->add("Guideline Mode");
-						popup->browser->add("Scroll Mode");
+						popup->browser->add("@C3Rubberband Mode");
+						popup->browser->add("@C3Guideline Mode");
+						popup->browser->add("@C3Scroll Mode");
 						if(cam->type == CAMERA_TYPE_SPLIT)
 						{
 							popup->browser->add("Blank");
@@ -41019,19 +42944,14 @@ int	loop;
 						popup = new PopupMenu(Fl::event_x_root(), Fl::event_y_root(), 160, 20);
 						popup->browser->callback(rubberband_popup_cb, this);
 						popup->browser->clear();
-						if(Fl::clipboard_contains(Fl::clipboard_image)) 
-						{
-							popup->browser->add("Paste from Clipboard");
-						}
 						popup->browser->add("Horizontal");
 						popup->browser->add("Vertical");
 						popup->browser->add("Hide Guidelines");
 						popup->browser->add("Show Guidelines");
 						popup->browser->add("Remove Guidelines");
-						popup->browser->add("Load");
-						popup->browser->add("Rubberband Mode");
-						popup->browser->add("Reposition Mode");
-						popup->browser->add("Scroll Mode");
+						popup->browser->add("@C3Rubberband Mode");
+						popup->browser->add("@C3Reposition Mode");
+						popup->browser->add("@C3Scroll Mode");
 						if(cam->type == CAMERA_TYPE_SPLIT)
 						{
 							popup->browser->add("Blank");
@@ -41059,14 +42979,9 @@ int	loop;
 						popup = new PopupMenu(Fl::event_x_root(), Fl::event_y_root(), 160, 20);
 						popup->browser->callback(rubberband_popup_cb, this);
 						popup->browser->clear();
-						if(Fl::clipboard_contains(Fl::clipboard_image)) 
-						{
-							popup->browser->add("Paste from Clipboard");
-						}
-						popup->browser->add("Load");
-						popup->browser->add("Rubberband Mode");
-						popup->browser->add("Guideline Mode");
-						popup->browser->add("Reposition Mode");
+						popup->browser->add("@C3Rubberband Mode");
+						popup->browser->add("@C3Guideline Mode");
+						popup->browser->add("@C3Reposition Mode");
 						if(cam->type == CAMERA_TYPE_SPLIT)
 						{
 							popup->browser->add("Blank");
@@ -41241,8 +43156,6 @@ static int 	stat_me = 0;
 											MiscPaste();
 										}
 									}
-									delete im;
-									clipboard_changed = 0;
 									flag = 1;
 								}
 							}
@@ -41262,8 +43175,18 @@ static int 	stat_me = 0;
 						flag = HandleKeyboard(event, cam);
 						if(key == 'b')
 						{
-							SnapAll();
-							flag = 1;
+							void ndi_source_list(char *list[256], int& final_total);
+							char *list[256];
+							int final_total = 0;
+							ndi_source_list(list, final_total);
+							for(loop = 0;loop < final_total;loop++)
+							{
+								printf("%d: [%s]\n", loop, list[loop]);
+								if(list[loop] != NULL)
+								{
+									free(list[loop]);
+								}
+							}
 						}
 					}
 					break;
@@ -41309,29 +43232,37 @@ static int 	stat_me = 0;
 									}
 									else if(rubberband_mode == GUIDELINE_MODE)
 									{
-										if(Fl::event_button() == FL_LEFT_MOUSE)
+										if((ImageWindowHit(last_push_x, last_push_y) == -1)
+										&& (Fl::event_inside(resize_frame) == 0))
 										{
-											if(guideline_mode == HORIZONTAL_GUIDELINE)
+											if(Fl::event_button() == FL_LEFT_MOUSE)
 											{
-												if(guideline_cnt < 1024)
+												if(guideline_mode == HORIZONTAL_GUIDELINE)
 												{
-													int use_y = last_push_y - cam->image_sy;
-													if((use_y >= 0) && (use_y < cam->display_height))
+													if(guideline_cnt < 1024)
 													{
-														guideline[guideline_cnt] = new Guideline(this, HORIZONTAL_GUIDELINE, use_y);
-														guideline_cnt++;
+														int use_x = last_push_x - cam->image_sx;
+														int use_y = last_push_y - cam->image_sy;
+														if((use_y >= 0) && (use_y < cam->display_height)
+														&& (use_x >= 0) && (use_x < cam->display_width))
+														{
+															guideline[guideline_cnt] = new Guideline(this, HORIZONTAL_GUIDELINE, use_y);
+															guideline_cnt++;
+														}
 													}
 												}
-											}
-											else if(guideline_mode == VERTICAL_GUIDELINE)
-											{
-												if(guideline_cnt < 1024)
+												else if(guideline_mode == VERTICAL_GUIDELINE)
 												{
-													int use_x = last_push_x - cam->image_sx;
-													if((use_x >= 0) && (use_x < cam->display_width))
+													if(guideline_cnt < 1024)
 													{
-														guideline[guideline_cnt] = new Guideline(this, VERTICAL_GUIDELINE, use_x);
-														guideline_cnt++;
+														int use_x = last_push_x - cam->image_sx;
+														int use_y = last_push_y - cam->image_sy;
+														if((use_y >= 0) && (use_y < cam->display_height)
+														&& (use_x >= 0) && (use_x < cam->display_width))
+														{
+															guideline[guideline_cnt] = new Guideline(this, VERTICAL_GUIDELINE, use_x);
+															guideline_cnt++;
+														}
 													}
 												}
 											}
@@ -41796,14 +43727,18 @@ void	MyWin::SetUseOutputPath(int index, char *buf)
 			streaming = interpret_output_path(this, output_path[index], use_buf, NULL);
 			if(strlen(use_buf) > 1)
 			{
-				if(streaming == 0)
-				{
-					sprintf(buf, "%s.%s", use_buf, use_extension);
-				}
-				else
+				if(streaming == STREAMING_NET)
 				{
 					sprintf(buf, "streaming.%s", use_extension);
 					strcpy(stream_url, use_buf);
+				}
+				else if(streaming == STREAMING_NDI)
+				{
+					sprintf(buf, "%s", use_buf);
+				}
+				else
+				{
+					sprintf(buf, "%s.%s", use_buf, use_extension);
 				}
 			}
 		}
@@ -42015,8 +43950,15 @@ char	buf[4096];
 			// COW - Forced to 30 FPS, otherwise cannot sync
 			ifps = 30;
 
-			use_muxer->InitMux(audio, use_video_codec, use_audio_codec, video_in, audio_in, buf, NULL, desktop_monitor, NULL, -1, uw, uh, ifps, audio_sample_rate, audio_channels, number_of_frames, local_crop_x, local_crop_y);
-			AddLastMuxed(buf);
+			int mux_err = use_muxer->InitMux(audio, use_video_codec, use_audio_codec, video_in, audio_in, buf, NULL, desktop_monitor, NULL, -1, uw, uh, ifps, audio_sample_rate, audio_channels, number_of_frames, local_crop_x, local_crop_y);
+			if(mux_err == 0)
+			{
+				AddLastMuxed(buf);
+			}
+			else
+			{
+				SetErrorMessage("Encoding Error: Not recording.");
+			}
 			delete use_muxer;
 			encoding = 0;
 		}
@@ -42758,7 +44700,7 @@ int	loop;
 						int yy = video_thumbnail_group->y();
 						tb->resize(xx, yy + (tb->h() * displayed_cnt), tb->w(), tb->h());
 						tb->redraw();
-						tb->alias_button->label(cam->alias);
+						tb->alias_button->copy_label(cam->alias);
 						tb->show();
 						if(loop == displayed_source)
 						{
@@ -42779,7 +44721,7 @@ int	loop;
 					int yy = video_thumbnail_group->y();
 					tb->resize(xx, yy + (tb->h() * displayed_cnt), tb->w(), tb->h());
 					tb->redraw();
-					tb->alias_button->label(cam->alias);
+					tb->alias_button->copy_label(cam->alias);
 					tb->show();
 					if(loop == displayed_source)
 					{
@@ -43470,7 +45412,7 @@ int			outer;
 									use_image_sy = cam->image_sy;
 								}
 								DisplayOutput(cam, in_mat, alt_cam);
-								cam->PaintRecognizedObjects();
+								cam->PaintRecognizedObjects(test_recognition);
 								if((crop_output == 1) && (alt_cam == NULL))
 								{
 									if((output_width < in_mat.cols) || (output_height < in_mat.rows))
@@ -43527,25 +45469,28 @@ int			outer;
 								fl_rectf(0, 0, w(), h());
 							}
 						}
-						if(guideline_cnt > 0)
+						if(outer == displayed_source)
 						{
-							for(loop = 0;loop < guideline_cnt;loop++)
+							if(guideline_cnt > 0)
 							{
-								if(guideline[loop] != NULL)
+								for(loop = 0;loop < guideline_cnt;loop++)
 								{
-									if(guideline[loop]->hide == 0)
+									if(guideline[loop] != NULL)
 									{
-										if(guideline[loop]->type == HORIZONTAL_GUIDELINE)
+										if(guideline[loop]->hide == 0)
 										{
-											int use_y = guideline[loop]->pos + cam->image_sy;
-											fl_color(RED);
-											fl_line(cam->image_sx, use_y, cam->image_sx + (int)display_width, use_y);
-										}
-										else if(guideline[loop]->type == VERTICAL_GUIDELINE)
-										{
-											int use_x = guideline[loop]->pos + cam->image_sx;
-											fl_color(RED);
-											fl_line(use_x, cam->image_sy, use_x, cam->image_sy + (int)display_height);
+											if(guideline[loop]->type == HORIZONTAL_GUIDELINE)
+											{
+												int use_y = guideline[loop]->pos + cam->image_sy;
+												fl_color(RED);
+												fl_line(cam->image_sx, use_y, cam->image_sx + (int)display_width, use_y);
+											}
+											else if(guideline[loop]->type == VERTICAL_GUIDELINE)
+											{
+												int use_x = guideline[loop]->pos + cam->image_sx;
+												fl_color(RED);
+												fl_line(use_x, cam->image_sy, use_x, cam->image_sy + (int)display_height);
+											}
 										}
 									}
 								}
@@ -43607,7 +45552,7 @@ int			outer;
 			}
 			else
 			{
-				fprintf(stderr, "ERROR: Current stream is NULL.\n");
+				fprintf(stderr, "Error: Current stream (%d of %d) is NULL.\n", outer, source_cnt);
 				CompressCameraList();
 				UpdateThumbButtons();
 			}
@@ -43943,7 +45888,11 @@ static int 		text_countdown = 0;
 	}
 	else
 	{
-		b = grab_raw_image(NULL, desktop_x, desktop_y, desktop_w, desktop_h, &sz, &depth);
+		int use_w = desktop_w;
+		int use_h = desktop_h;
+		b = grab_raw_image(NULL, desktop_x, desktop_y, use_w, use_h, &sz, &depth);
+		width = use_w;
+		height = use_h;
 	}
 	if(b != NULL)
 	{
@@ -43956,11 +45905,6 @@ static int 		text_countdown = 0;
 		map_busy_key(keystring);
 	
 		double s = Fl::screen_scale(0);
-		if(alt_capture == 0)
-		{
-			height = (int)(desktop_h * s);
-			width = (int)(desktop_w * s);
-		}
 		Mat src(height, width, CV_8UC4, (void *)b);
 		if((render_mouse == 1) && (alt_capture == 0))
 		{
@@ -44052,7 +45996,7 @@ static int 		text_countdown = 0;
 	}
 	else
 	{
-		fprintf(stderr, "ERROR: Bad Frame\n");
+		fprintf(stderr, "Error: Bad Frame\n");
 	}
 }
 
@@ -44253,7 +46197,7 @@ void	MyWin::RecordAll()
 		}
 		else
 		{
-			fprintf(stderr, "ERROR: Bad Frame\n");
+			fprintf(stderr, "Error: Bad Frame\n");
 		}
 		refreshed = 0;
 	}
@@ -44274,7 +46218,6 @@ void	MyWin::SnapAll()
 		{
 			int width = ww;
 			int height = hh;
-printf("USING: %d %d\n", width, height);
 			Mat src(height, width, CV_8UC4, (void *)b);
 			Mat out;
 			cv::cvtColor(src, out, COLOR_BGRA2BGR);
@@ -44625,12 +46568,17 @@ int	loop;
 	Camera *cam = DisplayedCamera();
 	if(cam != NULL)
 	{
-		for(loop = 0;loop < immediate_cnt;loop++)
+		Immediate *old_im[1024];
+		int use_cnt = immediate_cnt;
+		for(loop = 0;((loop < use_cnt) && (loop < 1024));loop++)
 		{
-			Immediate *old_im = immediate_list[loop];
-			if(old_im != NULL)
+			old_im[loop] = immediate_list[loop];
+		}
+		for(loop = 0;((loop < use_cnt) && (loop < 1024));loop++)
+		{
+			if(old_im[loop] != NULL)
 			{
-				Immediate *new_im = new Immediate(old_im, cam);
+				Immediate *new_im = new Immediate(old_im[loop], cam);
 				cam->AddImmediate(new_im);
 				add(new_im);
 			}
@@ -44912,11 +46860,25 @@ int	loop;
 
 void	MyWin::SetupObjectDetection()
 {
-	net = readNetFromDarknet(yolo_cfg_filename, yolo_weights_filename);
-	net.setPreferableBackend(DNN_BACKEND_CUDA);
-	net.setPreferableTarget(DNN_TARGET_CUDA);
+	if((access(yolo_cfg_filename, F_OK) == 0)
+	&& (access(yolo_weights_filename, F_OK) == 0))
+	{
+		net = readNetFromDarknet(yolo_cfg_filename, yolo_weights_filename);
+		if(!net.empty()) 
+		{
+			net.setPreferableBackend(DNN_BACKEND_CUDA);
+			net.setPreferableTarget(DNN_TARGET_CUDA);
+		}
+		else
+		{
+			fprintf(stderr, "Error: While reading net from darknet, %s or %s produced an empty network.\n", yolo_cfg_filename, yolo_weights_filename);
+		}
+	}
+	else
+	{
+		fprintf(stderr, "Error: While reading net from darknet, %s or %s cannot be accessed.\n", yolo_cfg_filename, yolo_weights_filename);
+	}
 }
-
 
 int	MyWin::DrawPred(Camera *cam, int classId, float conf, int left, int top, int right, int bottom, Mat &frame)
 {
@@ -44935,7 +46897,6 @@ int	MyWin::DrawPred(Camera *cam, int classId, float conf, int left, int top, int
 	}
 	return(found_bird);
 }
-
 
 void	MyWin::ReadClasses()
 {
@@ -45066,7 +47027,7 @@ void	MyWin::RecordingFullStop()
 void	reset_button_cb(Fl_Widget *w, void *v);
 
 	Camera *cam = DisplayedCamera();
-	record_button->label("Record");
+	record_button->copy_label("Record");
 	encode_speed_window->Reset();
 	encode_speed_window->hide();
 	if(pulse_mixer != NULL)
@@ -45217,6 +47178,7 @@ void	MyWin::HideButtons()
 	override_button->hide();
 	encode_button->hide();
 	show_debug_button->hide();
+	test_recognition_button->hide();
 	review_button->hide();
 	reset_button->hide();
 	review_muxed_button->hide();
@@ -45304,10 +47266,7 @@ void	MyWin::ShowButtons()
 	if(mark_interest == 0)
 	{
 		Camera *cam = NULL;
-		if(cam == NULL)
-		{
-			cam = DisplayedCamera();
-		}
+		cam = DisplayedCamera();
 		if(cam != NULL)
 		{
 			load_setup_button->show();
@@ -45321,7 +47280,7 @@ void	MyWin::ShowButtons()
 				camera_settings_button->show();
 				if(cam->triggers_requested == 1)
 				{
-					record_button->label("Stop");
+					record_button->copy_label("Stop");
 					encode_speed_window->show();
 					reset_camera_button->hide();
 					reset_cameras_button->hide();
@@ -45351,7 +47310,7 @@ void	MyWin::ShowButtons()
 				}
 				else
 				{
-					record_button->label("Record");
+					record_button->copy_label("Record");
 					encode_speed_window->hide();
 					reset_camera_button->show();
 					reset_cameras_button->show();
@@ -45412,6 +47371,7 @@ void	MyWin::ShowButtons()
 				dump_button->hide();
 			}
 			show_debug_button->show();
+			test_recognition_button->show();
 			if(review == NULL)
 			{
 				if(recorded_frames > 0)
@@ -45442,11 +47402,11 @@ void	MyWin::ShowButtons()
 			load_interest_button->show();
 			if(cam->zoom_box_display == 1)
 			{
-				zoom_box_button->label("Cease Box Zoom");
+				zoom_box_button->copy_label("Cease Box Zoom");
 			}
 			else
 			{
-				zoom_box_button->label("Box Zoom");
+				zoom_box_button->copy_label("Box Zoom");
 			}
 			zoom_box_button->show();
 			if(source_cnt > 1)
@@ -45525,31 +47485,31 @@ void	MyWin::ShowButtons()
 			quit_button->show();
 			if(cam->power == 1)
 			{
-				power_button->label("Turn Off");
+				power_button->copy_label("Turn Off");
 			}
 			else
 			{
-				power_button->label("Turn On");
+				power_button->copy_label("Turn On");
 			}
 			power_button->show();
 			if(cam->power == 1)
 			{
 				if(cam->mute_video == 1)
 				{
-					mute_video_button->label("Unmute Video");
+					mute_video_button->copy_label("Unmute Video");
 				}
 				else
 				{
-					mute_video_button->label("Mute Video");
+					mute_video_button->copy_label("Mute Video");
 				}
 				mute_video_button->show();
 				if(cam->freeze_video == 1)
 				{
-					freeze_button->label("Defrost");
+					freeze_button->copy_label("Defrost");
 				}
 				else
 				{
-					freeze_button->label("Freeze");
+					freeze_button->copy_label("Freeze");
 				}
 				freeze_button->show();
 			}
@@ -45572,7 +47532,13 @@ void	MyWin::ShowButtons()
 				stop_playing_audio_button->show();
 				pause_playing_audio_button->show();
 			}
-			toggle_objects_button->show();
+			if(init_detect == 1)
+			{
+				if(!net.empty()) 
+				{
+					toggle_objects_button->show();
+				}
+			}
 			set_interest_button->show();
 			if(audio_filter_plugins_button != NULL)
 			{
@@ -45618,6 +47584,8 @@ void	MyWin::ShowButtons()
 				encode_button->hide();
 			if(show_debug_button != NULL)
 				show_debug_button->hide();
+			if(test_recognition_button != NULL)
+				test_recognition_button->hide();
 			if(review_button != NULL)
 				review_button->hide();
 			if(reset_button != NULL)
@@ -46138,6 +48106,7 @@ int	aa, ab, ac;
 		local_ptz_window = new PTZ_Window(this, ptz_alias[in_instance], in_instance, (w() - 310) - (in_instance * 300), h() - 330, 300, 330);
 	}
 	local_ptz_window->prefer_ndi = ptz_prefer_ndi[in_instance];
+	local_ptz_window->prefer_v4l = ptz_prefer_v4l[in_instance];
 	local_ptz_window->end();
 	ptz_window[in_instance] = local_ptz_window;
 	if(in_instance != 0)
@@ -46592,7 +48561,7 @@ int	loop;
 	y_pos += (y_inc / 2);
 
 	record_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Record");
-	record_button->tooltip("Toggle recording or begin testing for record-trigger conditions.");
+	record_button->copy_tooltip("Toggle recording or begin testing for record-trigger conditions.");
 	record_button->callback(record_button_cb, this);
 	record_button->shortcut(FL_F + 10);
 	if(use_old == 1)
@@ -46602,66 +48571,66 @@ int	loop;
 	y_pos += button_height;
 
 	encode_speed_window = new EncodeSpeedWindow(this, 8, y_pos, button_sz, 16);
-	encode_speed_window->tooltip("Set recording speed as a fraction or multiplier of normal.");
+	encode_speed_window->copy_tooltip("Set recording speed as a fraction or multiplier of normal.");
 	y_pos += y_inc;
 
 	override_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Override");
-	override_button->tooltip("Override a recording trigger and start recording immediately.");
+	override_button->copy_tooltip("Override a recording trigger and start recording immediately.");
 	override_button->callback(override_button_cb, this);
 	y_pos += y_inc;
 
 	snapshot_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Snap Photo");
-	snapshot_button->tooltip("Capture the displayed camera and save it as a PNG.");
+	snapshot_button->copy_tooltip("Capture the displayed camera and save it as a PNG.");
 	snapshot_button->callback(snapshot_button_cb, this);
 	y_pos += y_inc;
 
 	trigger_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Trigger Conditions");
-	trigger_button->tooltip("Set trigger conditions for recording.");
+	trigger_button->copy_tooltip("Set trigger conditions for recording.");
 	trigger_button->callback(trigger_camera_button_cb, this);
 	y_pos += y_inc;
 
 	camera_settings_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Camera Settings");
-	camera_settings_button->tooltip("Camera settings for the currently displayed camera.");
+	camera_settings_button->copy_tooltip("Camera settings for the currently displayed camera.");
 	camera_settings_button->callback(camera_settings_button_cb, this);
 	y_pos += y_inc;
 
 	snapshot_settings_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Snapshot Settings");
-	snapshot_settings_button->tooltip("Set trigger settings for the snapshot function.\n");
+	snapshot_settings_button->copy_tooltip("Set trigger settings for the snapshot function.\n");
 	snapshot_settings_button->callback(snapshot_settings_button_cb, this);
 	y_pos += y_inc;
 
 	zoom_box_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Box Zoom");
-	zoom_box_button->tooltip("Zoom in using a draggable selection area.");
+	zoom_box_button->copy_tooltip("Zoom in using a draggable selection area.");
 	zoom_box_button->callback(zoom_box_button_cb, this);
 	y_pos += y_inc;
 
 	alias_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Set Camera Alias");
-	alias_button->tooltip("Set the alias for the currently displayed camera.");
+	alias_button->copy_tooltip("Set the alias for the currently displayed camera.");
 	alias_button->callback(alias_button_cb, this);
 	y_pos += y_inc;
 
 	reset_camera_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Reset Camera");
-	reset_camera_button->tooltip("Reset the currently displayed camera.");
+	reset_camera_button->copy_tooltip("Reset the currently displayed camera.");
 	reset_camera_button->callback(reset_camera_button_cb, this);
 	y_pos += y_inc;
 
 	flip_horizontal_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Flip Horizontal");
-	flip_horizontal_button->tooltip("Flip the currently displayed camera's image horizontally.");
+	flip_horizontal_button->copy_tooltip("Flip the currently displayed camera's image horizontally.");
 	flip_horizontal_button->callback(flip_horizontal_button_cb, this);
 	y_pos += y_inc;
 
 	flip_vertical_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Flip Vertical");
-	flip_vertical_button->tooltip("Flip the currently displayed camera's image vertically.");
+	flip_vertical_button->copy_tooltip("Flip the currently displayed camera's image vertically.");
 	flip_vertical_button->callback(flip_vertical_button_cb, this);
 	y_pos += y_inc;
 
 	filter_built_in_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Filters");
-	filter_built_in_button->tooltip("Apply filters to the currently displayed camera.\n");
+	filter_built_in_button->copy_tooltip("Apply filters to the currently displayed camera.\n");
 	filter_built_in_button->callback(filter_built_in_button_cb, this);
 	y_pos += y_inc;
 
 	filter_plugins_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Filter Plugins");
-	filter_plugins_button->tooltip("Apply plug-in filters to the currently displayed camera.\n");
+	filter_plugins_button->copy_tooltip("Apply plug-in filters to the currently displayed camera.\n");
 	filter_plugins_button->callback(filter_plugins_button_cb, this);
 	if(global_potential_filter_cnt <= 0)
 	{
@@ -46670,52 +48639,52 @@ int	loop;
 	y_pos += y_inc;
 
 	fltk_plugin_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "FLTK Plugin");
-	fltk_plugin_button->tooltip("Apply a FLTK program to the GUI. The primary FLTK class is passed to the plugin. This allows the plugin to alter the primary GUI classes attached to the passed entry point.\n");
+	fltk_plugin_button->copy_tooltip("Apply a FLTK program to the GUI. The primary FLTK class is passed to the plugin. This allows the plugin to alter the primary GUI classes attached to the passed entry point.\n");
 	fltk_plugin_button->callback(fltk_plugin_button_cb, this);
 	y_pos += y_inc;
 
 	immediate_drawing_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Immediate Drawing");
-	immediate_drawing_button->tooltip("Apply selected drawing functions to the currently displayed camera.\n");
+	immediate_drawing_button->copy_tooltip("Apply selected drawing functions to the currently displayed camera.\n");
 	immediate_drawing_button->callback(immediate_drawing_button_cb, this);
 	y_pos += y_inc;
 
 	dynamic_coloring_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Dynamic Coloring");
-	dynamic_coloring_button->tooltip("Apply a color change to a range of tones selected with the mouse from within the image.");
+	dynamic_coloring_button->copy_tooltip("Apply a color change to a range of tones selected with the mouse from within the image.");
 	dynamic_coloring_button->callback(dynamic_coloring_button_cb, this);
 	y_pos += y_inc;
 
 	toggle_camera_effects_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Turn Off Effects");
-	toggle_camera_effects_button->tooltip("Toggle the effects that have been applied to the currently displayed camera.");
+	toggle_camera_effects_button->copy_tooltip("Toggle the effects that have been applied to the currently displayed camera.");
 	toggle_camera_effects_button->callback(toggle_camera_effects_button_cb, this);
 	y_pos += y_inc;
 
 	save_camera_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Save Camera");
-	save_camera_button->tooltip("Save the currently displayed camera's settings to a file.\n");
+	save_camera_button->copy_tooltip("Save the currently displayed camera's settings to a file.\n");
 	save_camera_button->callback(save_camera_button_cb, this);
 	y_pos += y_inc;
 
 	hide_video_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Hide Video");
-	hide_video_button->tooltip("Hide the images coming from the currently displayed camera.");
+	hide_video_button->copy_tooltip("Hide the images coming from the currently displayed camera.");
 	hide_video_button->callback(hide_video_button_cb, this);
 	y_pos += y_inc;
 
 	freeze_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Freeze");
-	freeze_button->tooltip("Freeze the image coming from the currently displayed camera.");
+	freeze_button->copy_tooltip("Freeze the image coming from the currently displayed camera.");
 	freeze_button->callback(freeze_button_cb, this);
 	y_pos += y_inc;
 
 	mute_video_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Mute Video");
-	mute_video_button->tooltip("Toggle the images coming from the currently displayed camera.");
+	mute_video_button->copy_tooltip("Toggle the images coming from the currently displayed camera.");
 	mute_video_button->callback(mute_video_button_cb, this);
 	y_pos += y_inc;
 
 	power_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Turn Off");
-	power_button->tooltip("Toggle sampling the currently displayed camera.");
+	power_button->copy_tooltip("Toggle sampling the currently displayed camera.");
 	power_button->callback(power_button_cb, this);
 	y_pos += y_inc;
 
 	toggle_objects_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Select Objects");
-	toggle_objects_button->tooltip("Toggle displaying objects that appear on currently displayed camera's image.");
+	toggle_objects_button->copy_tooltip("Toggle displaying objects that appear on currently displayed camera's image.");
 	toggle_objects_button->callback(toggle_objects_button_cb, this);
 	y_pos += y_inc;
 
@@ -46724,44 +48693,44 @@ int	loop;
 	y_pos += (y_inc / 2);
 
 	audio_mute_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Mute Audio");
-	audio_mute_button->tooltip("Mute all audio from the audio mixer.");
+	audio_mute_button->copy_tooltip("Mute all audio from the audio mixer.");
 	audio_mute_button->callback(audio_mute_button_cb, this);
 	y_pos += y_inc;
 
 	monitor_audio_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Monitor Audio");
-	monitor_audio_button->tooltip("Monitor the audio mixer through the system's default output audio device.");
+	monitor_audio_button->copy_tooltip("Monitor the audio mixer through the system's default output audio device.");
 	monitor_audio_button->callback(monitor_audio_button_cb, this);
 	y_pos += y_inc;
 
 	audio_library_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Audio Library");
-	audio_library_button->tooltip("Manage a library of audio files.");
+	audio_library_button->copy_tooltip("Manage a library of audio files.");
 	audio_library_button->callback(audio_library_button_cb, this);
 	y_pos += y_inc;
 
 	audio_library_list_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Play Audio Library");
-	audio_library_list_button->tooltip("Play an audio file from the audio library.");
+	audio_library_list_button->copy_tooltip("Play an audio file from the audio library.");
 	audio_library_list_button->callback(audio_library_list_button_cb, this);
 	y_pos += y_inc;
 
 	play_audio_file_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Play Audio File");
-	play_audio_file_button->tooltip("Play an audio file.");
+	play_audio_file_button->copy_tooltip("Play an audio file.");
 	play_audio_file_button->callback(play_audio_file_button_cb, this);
 	y_pos += y_inc;
 
 	pause_playing_audio_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Pause Playing");
-	pause_playing_audio_button->tooltip("Pause playing an audio file.");
+	pause_playing_audio_button->copy_tooltip("Pause playing an audio file.");
 	pause_playing_audio_button->callback(pause_playing_audio_button_cb, this);
 	pause_playing_audio_button->hide();
 	y_pos += y_inc;
 
 	stop_playing_audio_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Stop Playing");
-	stop_playing_audio_button->tooltip("Stop playing an audio file.");
+	stop_playing_audio_button->copy_tooltip("Stop playing an audio file.");
 	stop_playing_audio_button->callback(stop_playing_audio_button_cb, this);
 	stop_playing_audio_button->hide();
 	y_pos += y_inc;
 
 	audio_filter_plugins_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Audio Filter Plugins");
-	audio_filter_plugins_button->tooltip("Apply audio effects available as plug-ins.");
+	audio_filter_plugins_button->copy_tooltip("Apply audio effects available as plug-ins.");
 	audio_filter_plugins_button->callback(audio_filter_plugins_button_cb, this);
 	if(global_potential_audio_filter_cnt <= 0)
 	{
@@ -46769,22 +48738,22 @@ int	loop;
 	}
 	y_pos += y_inc;
 	audio_bind_to_camera_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Bind to Camera");
-	audio_bind_to_camera_button->tooltip("Bind currently selected audio sources to displayed camera.");
+	audio_bind_to_camera_button->copy_tooltip("Bind currently selected audio sources to displayed camera.");
 	audio_bind_to_camera_button->callback(audio_bind_to_camera_button_cb, this);
 	y_pos += y_inc;
 
 	audio_settings_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Audio Settings");
-	audio_settings_button->tooltip("Set audio settings.");
+	audio_settings_button->copy_tooltip("Set audio settings.");
 	audio_settings_button->callback(audio_settings_button_cb, this);
 	y_pos += y_inc;
 
 	audio_save_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Save Audio Sources");
-	audio_save_button->tooltip("Save audio sources.");
+	audio_save_button->copy_tooltip("Save audio sources.");
 	audio_save_button->callback(audio_save_button_cb, this);
 	y_pos += y_inc;
 
 	audio_load_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Load Audio Sources");
-	audio_load_button->tooltip("Load audio sources.");
+	audio_load_button->copy_tooltip("Load audio sources.");
 	audio_load_button->callback(audio_load_button_cb, this);
 	y_pos += y_inc;
 
@@ -46793,81 +48762,86 @@ int	loop;
 	y_pos += (y_inc / 2);
 
 	new_source_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "New Source");
-	new_source_button->tooltip("Create new cameras and microphones, including several special purpose virtual devices.");
+	new_source_button->copy_tooltip("Create new cameras and microphones, including several special purpose virtual devices.");
 	new_source_button->callback(new_source_button_cb, this);
 	y_pos += y_inc;
 
 	edit_source_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Edit Source");
-	edit_source_button->tooltip("Edit the settings for the currently displayed video source.");
+	edit_source_button->copy_tooltip("Edit the settings for the currently displayed video source.");
 	edit_source_button->callback(edit_source_button_cb, this);
 	y_pos += y_inc;
 
 	select_output_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Select Output");
-	select_output_button->tooltip("Select the outputs for the muxed audio/video stream while recording.");
+	select_output_button->copy_tooltip("Select the outputs for the muxed audio/video stream while recording.");
 	select_output_button->callback(select_output_button_cb, this);
 	y_pos += y_inc;
 
 	edit_output_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Edit Outputs");
-	select_output_button->tooltip("Define the outputs for the muxed audio/video stream while recording.");
+	select_output_button->copy_tooltip("Define the outputs for the muxed audio/video stream while recording.");
 	edit_output_button->callback(edit_output_button_cb, this);
 	y_pos += y_inc;
 
 	save_setup_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Save Setup");
-	save_setup_button->tooltip("Save the full system settings including sources.");
+	save_setup_button->copy_tooltip("Save the full system settings including sources.");
 	save_setup_button->callback(save_setup_button_cb, this);
 	y_pos += y_inc;
 
 	load_setup_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Load Setup");
-	load_setup_button->tooltip("Load the full system settings including defined sources.");
+	load_setup_button->copy_tooltip("Load the full system settings including defined sources.");
 	load_setup_button->callback(load_setup_button_cb, this);
 	y_pos += y_inc;
 
 	transitions_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Transitions");
-	transitions_button->tooltip("Select between several transitions invoked when changing the recording camera.");
+	transitions_button->copy_tooltip("Select between several transitions invoked when changing the recording camera.");
 	transitions_button->callback(transitions_button_cb, this);
 	y_pos += y_inc;
 
 	timestamp_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Timestamp");
-	timestamp_button->tooltip("Imprint a timestamp on the images coming in from the recording camera.");
+	timestamp_button->copy_tooltip("Imprint a timestamp on the images coming in from the recording camera.");
 	timestamp_button->callback(timestamp_button_cb, this);
 	y_pos += y_inc;
 
 	dump_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Dump Frames");
-	dump_button->tooltip("Save the individual frames coming in from the recording camera as image files.");
+	dump_button->copy_tooltip("Save the individual frames coming in from the recording camera as image files.");
 	dump_button->callback(dump_button_cb, this);
 	dump_button->hide();
 	y_pos += y_inc;
 
 	encode_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Force Encode");
-	encode_button->tooltip("Encode frames recorded to a buffer file in the selected muxed format.");
+	encode_button->copy_tooltip("Encode frames recorded to a buffer file in the selected muxed format.");
 	encode_button->callback(encode_button_cb, this);
 	encode_button->hide();
 	y_pos += y_inc;
 
-	show_debug_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Record Debug");
-	show_debug_button->tooltip("Imprint onto the video graphics demonstrating recognized objects.");
+	test_recognition_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Test Recognition");
+	test_recognition_button->copy_tooltip("Attempt to recognize selected objects, but do not trigger recording.");
+	test_recognition_button->callback(test_recognition_button_cb, this);
+	y_pos += y_inc;
+
+	show_debug_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Record Recognition");
+	show_debug_button->copy_tooltip("Imprint onto the video graphics demonstrating recognized objects.");
 	show_debug_button->callback(show_debug_button_cb, this);
 	y_pos += y_inc;
 
 	show_motion_debug_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Show Motion Debug");
-	show_motion_debug_button->tooltip("Show motion information overlayed on the viewed image signal.");
+	show_motion_debug_button->copy_tooltip("Show motion information overlayed on the viewed image signal.");
 	show_motion_debug_button->callback(show_motion_debug_button_cb, this);
 	y_pos += y_inc;
 
 	review_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Review Footage");
-	review_button->tooltip("Review buffer footage in a simple video viewer and editor.");
+	review_button->copy_tooltip("Review buffer footage in a simple video viewer and editor.");
 	review_button->callback(review_button_cb, this);
 	y_pos += y_inc;
 
 	review_muxed_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Review Muxed");
-	review_muxed_button->tooltip("Review muxed footage in a simple video viewer.");
+	review_muxed_button->copy_tooltip("Review muxed footage in a simple video viewer.");
 	review_muxed_button->callback(review_muxed_button_cb, this);
 	review_muxed_button->hide();
 	y_pos += y_inc;
 
 	jpeg_streaming_button = NULL;
 	jpeg_streaming_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "JPEG Stream");
-	jpeg_streaming_button->tooltip("Enable streaming of frames as JPG to a networked server.");
+	jpeg_streaming_button->copy_tooltip("Enable streaming of frames as JPG to a networked server.");
 	jpeg_streaming_button->callback(jpeg_streaming_button_cb, this);
 	if(jpeg_streaming == NULL)
 	{
@@ -46876,82 +48850,82 @@ int	loop;
 	y_pos += y_inc;
 
 	set_interest_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Set Interest");
-	set_interest_button->tooltip("Set areas of interest when using motion detection.");
+	set_interest_button->copy_tooltip("Set areas of interest when using motion detection.");
 	set_interest_button->callback(set_interest_button_cb, this);
 	y_pos += y_inc;
 
 	clear_interest_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Clear Interest");
-	clear_interest_button->tooltip("Clear all areas of interest when using motion detection.");
+	clear_interest_button->copy_tooltip("Clear all areas of interest when using motion detection.");
 	clear_interest_button->callback(clear_interest_button_cb, this);
 	y_pos += y_inc;
 
 	save_interest_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Save Interest");
-	clear_interest_button->tooltip("Save areas of interest to a file.");
+	clear_interest_button->copy_tooltip("Save areas of interest to a file.");
 	save_interest_button->callback(save_interest_button_cb, this);
 	y_pos += y_inc;
 
 	load_interest_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Load Interest");
-	clear_interest_button->tooltip("Load saved areas of interest when using motion detection.");
+	clear_interest_button->copy_tooltip("Load saved areas of interest when using motion detection.");
 	load_interest_button->callback(load_interest_button_cb, this);
 	y_pos += y_inc;
 
 	reset_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Reset Recording");
-	reset_button->tooltip("Reset the recording. This allows you to start over to a fresh file.");
+	reset_button->copy_tooltip("Reset the recording. This allows you to start over to a fresh file.");
 	reset_button->callback(reset_button_cb, this);
 	y_pos += y_inc;
 
 	reset_cameras_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Reset Cameras");
-	reset_cameras_button->tooltip("Reset all cameras.");
+	reset_cameras_button->copy_tooltip("Reset all cameras.");
 	reset_cameras_button->callback(reset_cameras_button_cb, this);
 	y_pos += y_inc;
 
 	split_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Split Screen");
-	split_button->tooltip("Divide the screen up into panels, each displaying one of the available cameras.");
+	split_button->copy_tooltip("Divide the screen up into panels, each displaying one of the available cameras.");
 	split_button->callback(split_button_cb, this);
 	y_pos += y_inc;
 
 	monitor_video_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Monitor Video");
-	monitor_video_button->tooltip("Monitor the signal coming in from the recording camera.");
+	monitor_video_button->copy_tooltip("Monitor the signal coming in from the recording camera.");
 	monitor_video_button->callback(monitor_video_button_cb, this);
 	y_pos += y_inc;
 
 	open_standalone_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Standalone Display");
-	open_standalone_button->tooltip("Open a window displaying the currently displayed camera, without controls.,");
+	open_standalone_button->copy_tooltip("Open a window displaying the currently displayed camera, without controls.,");
 	open_standalone_button->callback(open_standalone_cb, this);
 	y_pos += y_inc;
 
 	resize_capture_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Resize Capture (reset)");
-	resize_capture_button->tooltip("Resize the resolution for a video source. This will cause the source to reset.");
+	resize_capture_button->copy_tooltip("Resize the resolution for a video source. This will cause the source to reset.");
 	resize_capture_button->callback(resize_capture_button_cb, this);
 	y_pos += y_inc;
 
 	load_camera_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Load Camera");
-	load_camera_button->tooltip("Load a camera from a previously saved file.");
+	load_camera_button->copy_tooltip("Load a camera from a previously saved file.");
 	load_camera_button->callback(load_camera_button_cb, this);
 	y_pos += y_inc;
 
 	ptz_lock_window_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "PTZ Lock Camera");
-	ptz_lock_window_button->tooltip("Lock a camera to a set of PTZ controls.");
+	ptz_lock_window_button->copy_tooltip("Lock a camera to a set of PTZ controls.");
 	ptz_lock_window_button->callback(ptz_lock_window_button_cb, this);
 	y_pos += y_inc;
 
 	video_settings_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Video Settings");
-	video_settings_button->tooltip("Set overall video settings.");
+	video_settings_button->copy_tooltip("Set overall video settings.");
 	video_settings_button->callback(video_settings_button_cb, this);
 	y_pos += y_inc;
 
 	keyboard_settings_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Keyboard Settings");
-	keyboard_settings_button->tooltip("Change keyboard bindings to commands.");
+	keyboard_settings_button->copy_tooltip("Change keyboard bindings to commands.");
 	keyboard_settings_button->callback(keyboard_settings_button_cb, this);
 	y_pos += y_inc;
 
 	gui_settings_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "GUI Settings");
-	gui_settings_button->tooltip("Change user interface settings.");
+	gui_settings_button->copy_tooltip("Change user interface settings.");
 	gui_settings_button->callback(gui_settings_button_cb, this);
 	y_pos += y_inc;
 
 	codecs_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Codecs");
-	codecs_button->tooltip("Select the codec to be used when recording or rendering from buffers.");
+	codecs_button->copy_tooltip("Select the codec to be used when recording or rendering from buffers.");
 	codecs_button->callback(container_menu_cb, this);
 	if(global_my_format_cnt > 0)
 	{
@@ -46964,7 +48938,7 @@ int	loop;
 	y_pos += y_inc;
 
 	external_pgm_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "External PGMs");
-	external_pgm_button->tooltip("In open an external X11 program and embed the resulting window.\n");
+	external_pgm_button->copy_tooltip("In open an external X11 program and embed the resulting window.\n");
 	external_pgm_button->callback(external_pgm_button_cb, this);
 	y_pos += y_inc;
 
@@ -46973,7 +48947,7 @@ int	loop;
 	y_pos += (y_inc / 2);
 
 	quit_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Exit");
-	quit_button->tooltip("Exit the program.");
+	quit_button->copy_tooltip("Exit the program.");
 	quit_button->callback(quit_cb, this);
 	y_pos += y_inc;
 
@@ -47624,7 +49598,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	add->labelcolor(YELLOW);
 	add->labelsize(12);
 	add->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	add->tooltip("Add another output path");
+	add->copy_tooltip("Add another output path");
 	add->callback(set_output_add_cb, this);
 
 	MyButton *accept = new MyButton(470, hh - 35, 80, 20, "Accept");
@@ -47633,7 +49607,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	accept->labelcolor(YELLOW);
 	accept->labelsize(12);
 	accept->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	accept->tooltip("Accept the current output paths and close");
+	accept->copy_tooltip("Accept the current output paths and close");
 	accept->callback(set_output_accept_cb, this);
 
 	MyButton *cancel = new MyButton(540, hh - 35, 80, 20, "Cancel");
@@ -47642,7 +49616,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	cancel->labelcolor(YELLOW);
 	cancel->labelsize(12);
 	cancel->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	cancel->tooltip("Cancel changes and close");
+	cancel->copy_tooltip("Cancel changes and close");
 	cancel->callback(set_output_cancel_cb, this);
 	end();
 }
@@ -47728,19 +49702,19 @@ int	inner;
 			button[loop]->down_color(YELLOW);
 			button[loop]->labelcolor(YELLOW);
 			button[loop]->value(0);
-			button[loop]->tooltip("Activate this output path");
+			button[loop]->copy_tooltip("Activate this output path");
 			button[loop]->callback(set_output_select_cb, this);
 			button[loop]->value(my_window->output_active[loop]);
 
-			name[loop] = new Fl_Input(60, y_pos, 120, 20);
+			name[loop] = new Fl_Input(60, y_pos, 80, 20);
 			name[loop]->color(BLACK);
 			name[loop]->textcolor(WHITE);
 			name[loop]->textsize(11);
 			name[loop]->cursor_color(WHITE);
 			name[loop]->labelcolor(YELLOW);
 			name[loop]->labelsize(9);
-			name[loop]->box(FL_FRAME_BOX);
-			name[loop]->tooltip("Edit the name of the output path");
+			name[loop]->box(FL_FLAT_BOX);
+			name[loop]->copy_tooltip("Edit the name of the output path");
 			name[loop]->value(my_window->output_name[loop]);
 
 			preset[loop] = new Fl_Input(181, y_pos, 520, 20);
@@ -47750,19 +49724,26 @@ int	inner;
 			preset[loop]->cursor_color(WHITE);
 			preset[loop]->labelcolor(YELLOW);
 			preset[loop]->labelsize(9);
-			preset[loop]->box(FL_FRAME_BOX);
+			preset[loop]->box(FL_FLAT_BOX);
 			preset[loop]->value(my_window->output_path[loop]);
-			preset[loop]->tooltip("Edit the output path");
+			preset[loop]->copy_tooltip("Edit the output path");
 			preset[loop]->callback(set_output_rescan_cb, this);
+
 			char out[4096];
 			int	streaming = interpret_output_path(my_window, my_window->output_path[loop], out, NULL);
 			if(streaming == STREAMING_NET)
 			{
 				preset[loop]->color(DARK_RED);
+				preset[loop]->copy_label("URL:");
 			}
 			else if(streaming == STREAMING_NDI)
 			{
 				preset[loop]->color(DARK_BLUE);
+				preset[loop]->copy_label("NDI:");
+			}
+			else
+			{
+				preset[loop]->copy_label("File:");
 			}
 		grp->end();
 		pack->add(grp);
@@ -47770,6 +49751,53 @@ int	inner;
 	}
 }
 
+void	EditOutputWindow::NDI_Exclusive(Fl_Widget *which)
+{
+int	loop;
+
+	int go_ahead = 0;
+	int cnt = my_window->output_path_cnt;
+	for(loop = 0;((loop < cnt) && (go_ahead == 0));loop++)
+	{
+		if(button[loop] != NULL)
+		{
+			if(button[loop] == which)
+			{
+				if(preset[loop] != NULL)
+				{
+					char *str = (char *)preset[loop]->value();
+					if(str != NULL)
+					{
+						go_ahead = test_for_ndi_path(str);
+					}
+				}
+			}
+		}
+	}
+	if(go_ahead == 1)
+	{
+		for(loop = 0;loop < cnt;loop++)
+		{
+			if(button[loop] != NULL)
+			{
+				if(button[loop] != which)
+				{
+					if(preset[loop] != NULL)
+					{
+						char *str = (char *)preset[loop]->value();
+						if(str != NULL)
+						{
+							if(test_for_ndi_path(str))
+							{
+								button[loop]->value(0);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
 
 SelectOutputWindow::SelectOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh) : DragWindow(xx, yy, ww, hh, "Select Output")
 {
@@ -47795,7 +49823,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	close->color(BLACK);
 	close->labelcolor(YELLOW);
 	close->labelsize(11);
-	close->tooltip("Activate an output path");
+	close->copy_tooltip("Activate an output path");
 	close->callback(hide_window_cb, this);
 
 	end();
@@ -47849,18 +49877,44 @@ int	loop;
 
 	pack->clear();
 	int yp = 0;
+	int test_all_ndi = 0;
 	for(loop = 0;loop < my_window->output_path_cnt;loop++)
 	{
-		MyToggleButton *button = new MyToggleButton(10, yp, 100, 18, my_window->output_name[loop]);
-		button->color(BLACK);
-		button->labelcolor(YELLOW);
-		button->labelsize(9);
-		button->box(FL_FLAT_BOX);
-		button->value(my_window->output_active[loop]);
-		button->down_color(DARK_BLUE);
-		button->callback(select_specific_output_button_cb, my_window);
-		pack->add(button);
-		yp += 19;
+		if(test_for_ndi_path(my_window->output_path[loop]))
+		{
+			if(my_window->output_active[loop] == 1)
+			{
+				test_all_ndi = 1;
+			}
+		}
+	}
+	for(loop = 0;loop < my_window->output_path_cnt;loop++)
+	{
+		int do_it = 1;
+		if(test_all_ndi == 1)
+		{
+			if(test_for_ndi_path(my_window->output_path[loop]))
+			{
+				do_it = 0;
+				if(my_window->output_active[loop] == 1)
+				{
+					do_it = 1;
+				}
+			}
+		}
+		if(do_it == 1)
+		{
+			MyToggleButton *button = new MyToggleButton(10, yp, 100, 18, my_window->output_name[loop]);
+			button->color(BLACK);
+			button->labelcolor(YELLOW);
+			button->labelsize(9);
+			button->box(FL_FLAT_BOX);
+			button->value(my_window->output_active[loop]);
+			button->down_color(DARK_BLUE);
+			button->callback(select_specific_output_button_cb, my_window);
+			pack->add(button);
+			yp += 19;
+		}
 	}
 	pack->resize(5, 22, 120, yp);
 	resize(x(), y(), 130, yp + 50);
@@ -47889,14 +49943,16 @@ char	*sorted_list[1024];
 	qsort(sorted_list, my_window->recognize_class_cnt, sizeof(char *), cmpstringp);
 	for(loop = 0;loop < my_window->recognize_class_cnt;loop++)
 	{
-		object_name_button[loop] = new MyButton(nxx, nyy, 200, 16, strdup(sorted_list[loop]));
+		object_name_button[loop] = new MyButton(nxx, nyy, 200, 16);
+		object_name_button[loop]->copy_label(sorted_list[loop]);
 		object_name_button[loop]->box(FL_NO_BOX);
+		object_name_button[loop]->color(BLACK);
 		object_name_button[loop]->labelcolor(YELLOW);
 		object_name_button[loop]->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 		object_name_button[loop]->callback(select_objects_cb, my_window);
-		object_name_button[loop]->labelsize(9);
+		object_name_button[loop]->labelsize(11);
 		object_name_button[loop]->hide();
-		nyy += 16;
+		nyy += 17;
 		if(nyy > 890)
 		{
 			nyy = 10;
@@ -47907,12 +49963,12 @@ char	*sorted_list[1024];
 			}
 		}
 	}
-	Fl_Box *box = new Fl_Box(nxx + 190, 15, 180, 110);
+	Fl_Box *box = new Fl_Box(w() - 190, 15, 180, 130);
 	box->color(DARK_GRAY);
 	box->box(FL_FRAME_BOX);
 
 	int yp = 25;
-	object_clear_button = new MyButton(nxx + 200, yp, 120, 20, "Clear");
+	object_clear_button = new MyButton(w() - 180, yp, 120, 20, "Clear");
 	object_clear_button->box(FL_NO_BOX);
 	object_clear_button->color(BLACK);
 	object_clear_button->labelcolor(YELLOW);
@@ -47922,7 +49978,7 @@ char	*sorted_list[1024];
 	object_clear_button->hide();
 	yp += 22;
 
-	object_all_button = new MyButton(nxx + 200, yp, 120, 20, "Select All");
+	object_all_button = new MyButton(w() - 180, yp, 120, 20, "Select All");
 	object_all_button->box(FL_NO_BOX);
 	object_all_button->color(BLACK);
 	object_all_button->labelcolor(YELLOW);
@@ -47932,7 +49988,17 @@ char	*sorted_list[1024];
 	object_all_button->hide();
 	yp += 22;
 
-	object_done_button = new MyButton(nxx + 200, yp, 120, 20, "Done");
+	object_apply_all_button = new MyButton(w() - 180, yp, 120, 20, "Apply to All Cameras");
+	object_apply_all_button->box(FL_NO_BOX);
+	object_apply_all_button->color(BLACK);
+	object_apply_all_button->labelcolor(YELLOW);
+	object_apply_all_button->labelsize(11);
+	object_apply_all_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+	object_apply_all_button->callback(apply_all_select_objects_cb, my_window);
+	object_apply_all_button->hide();
+	yp += 22;
+
+	object_done_button = new MyButton(w() - 180, yp, 120, 20, "Done");
 	object_done_button->box(FL_NO_BOX);
 	object_done_button->color(BLACK);
 	object_done_button->labelcolor(YELLOW);
@@ -47942,7 +50008,7 @@ char	*sorted_list[1024];
 	object_done_button->hide();
 	yp += 22;
 
-	object_next_button = new MyButton(nxx + 200, yp, 120, 20, "Next Page");
+	object_next_button = new MyButton(w() - 180, yp, 120, 20, "Next Page");
 	object_next_button->box(FL_NO_BOX);
 	object_next_button->color(BLACK);
 	object_next_button->labelcolor(YELLOW);
@@ -47952,7 +50018,7 @@ char	*sorted_list[1024];
 	object_next_button->hide();
 	yp += 22;
 
-	object_prev_button = new MyButton(nxx + 200, yp, 180, 20, "Prev Page");
+	object_prev_button = new MyButton(w() - 180, yp, 180, 20, "Prev Page");
 	object_prev_button->box(FL_NO_BOX);
 	object_prev_button->color(BLACK);
 	object_prev_button->labelcolor(YELLOW);
@@ -48345,6 +50411,31 @@ int			loop;
 
 // SECTION ************************************** IMMEDIATE DRAWING **********************************************
 
+void	draw_all(Camera *cam, int xx, int yy, int ww, int hh, int red, int green, int blue, int alpha, double angle, double scale_x, double scale_y, int clip_x, int clip_y, int clip_w, int clip_h)
+{
+	if(cam->cairo_context != NULL)
+	{
+		int half_w = (ww / 2);
+		int half_h = (hh / 2);
+		int nx = xx + half_w;
+		int ny = yy + half_h;
+		cairo_t *cr = cam->cairo_context;
+		cairo_save(cr);
+		if((clip_w > 0) && (clip_h > 0))
+		{
+			cairo_rectangle(cr, clip_x, clip_y, clip_w, clip_h);
+			cairo_clip(cr);
+		}
+		cairo_translate(cr, nx, ny);
+		cairo_rotate(cr, angle);
+		cairo_scale(cr, scale_x, scale_y);
+		my_cairo_set_source_rgba(cr, red, green, blue, alpha);
+		cairo_rectangle(cr, -half_w, -half_h, ww, hh);
+		cairo_fill(cr);
+		cairo_restore(cr);
+	}
+}
+
 ImDefault::ImDefault()
 {
 	my_window = NULL;
@@ -48496,30 +50587,50 @@ void	ImRectangle::draw()
 	Camera *cam = my_immediate->my_camera;
 	if(cam->cairo_context != NULL)
 	{
-		int sx = x() - my_window->image_origin_x;
-		int sy = y() - my_window->image_origin_y;
-		int sw = w() * my_immediate->scale_w;
-		int sh = h() * my_immediate->scale_h;
-		my_cairo_set_line_style(cam->cairo_context, style, width);
+		cairo_t *cr = cam->cairo_context;
+		int sx = my_immediate->relative_x;
+		int sy = my_immediate->relative_y;
+		int sw = w();
+		int sh = h();
 
 		if(erase == 1)
 		{
+			int sw = w() * my_immediate->scale_w;
+			int sh = h() * my_immediate->scale_h;
 			rectangle(cam->mat, Point(sx, sy), Point(sx + sw, sy + sh), Vec4b(0, 0, 0, 0), cv::FILLED);
 		}
 		else
 		{
+			my_cairo_set_line_style(cr, style, width);
+			double scale_w = my_immediate->scale_w;
+			double scale_h = my_immediate->scale_h;
+			cairo_save(cr);
+			if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+			{
+				int crop_x = sx + my_immediate->crop_x;
+				int crop_y = sy + my_immediate->crop_y;
+				int crop_w = my_immediate->crop_w;
+				int crop_h = my_immediate->crop_h;
+				cairo_rectangle(cr, crop_x, crop_y, crop_w, crop_h);
+				cairo_clip(cr);
+			}
 			int use_alpha = (int)((double)alpha * my_immediate->overall_alpha);
-			my_cairo_set_source_rgba(cam->cairo_context, red, green, blue, use_alpha);
-			cairo_rectangle(cam->cairo_context, sx, sy, sw, sh);
+			my_cairo_set_source_rgba(cr, red, green, blue, use_alpha);
+			cairo_translate(cr, sx + (sw / 2), sy + (sh / 2));
+			cairo_scale(cr, scale_w, scale_h);
+			cairo_rotate(cr, my_immediate->angle);
+			cairo_rectangle(cr, -(sw / 2), -(sh / 2), sw, sh);
 			if(filled == 0)
 			{
-				cairo_stroke(cam->cairo_context);
+				cairo_stroke(cr);
 			}
 			else
 			{
-				cairo_fill(cam->cairo_context);
+				cairo_fill(cr);
 			}
+			cairo_restore(cr);
 		}
+		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
 	}
 }
 
@@ -48537,6 +50648,11 @@ ImPixelate::~ImPixelate()
 {
 }
 
+void	ImPixelate::resize(int xx, int yy, int ww, int hh)
+{
+	Fl_Group::resize(xx, yy, ww, hh);
+}
+
 void	ImPixelate::draw()
 {
 int	xx, yy;
@@ -48544,52 +50660,92 @@ int	xx, yy;
 	Camera *cam = my_immediate->my_camera;
 	if(cam->cairo_context != NULL)
 	{
+		int sx = my_immediate->relative_x;
+		int sy = my_immediate->relative_y;
+		int sw = w() * my_immediate->scale_w;
+		int sh = h() * my_immediate->scale_h;
 		cairo_t *cr = cam->cairo_context;
 		if(style == PIXELATE_MODE_PIXELATE)
 		{
 			Mat use = cam->mat.clone();
 			cvtColor(use, use, COLOR_RGBA2RGB);
-			for(yy = y();yy < y() + h();yy += use_size)
+			int nx1 = (sx + sw);
+			int ny1 = (sy + sh);
+			if(use_size < 2) use_size = 2;
+			int ux = sw / use_size;
+			int uy = sh / use_size;
+			if(ux < 2) ux = 2;
+			if(uy < 2) uy = 2;
+			cairo_save(cr);
+			if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
 			{
-				for(xx = x();xx < x() + w();xx += use_size)
+				int crop_x = sx + my_immediate->crop_x;
+				int crop_y = sy + my_immediate->crop_y;
+				int crop_w = my_immediate->crop_w;
+				int crop_h = my_immediate->crop_h;
+				cairo_rectangle(cr, crop_x, crop_y, crop_w, crop_h);
+				cairo_clip(cr);
+			}
+			cairo_translate(cr, sx + (sw / 2), sy + (sh / 2));
+			cairo_rotate(cr, my_immediate->angle);
+			cairo_translate(cr, -(sw / 2), -(sh / 2));
+			for(yy = 0;yy + uy < sh;yy += uy)
+			{
+				for(xx = 0;xx + ux < sw;xx += ux)
 				{
-					int nx = xx - cam->image_sx;
-					int ny = yy - cam->image_sy;
+					int nx = sx + xx;
+					int ny = sy + yy;
 					Vec3b colour = use.at<Vec3b>(Point(nx, ny));
 					int r = colour[0];
 					int g = colour[1];
 					int b = colour[2];
 					my_cairo_set_source_rgb(cr, r, g, b);
-					cairo_rectangle(cr, nx, ny, use_size, use_size);
+					cairo_rectangle(cr, xx, yy, ux, uy);
 					cairo_fill(cr);
 				}
 			}
+			cairo_restore(cr);
 		}
 		else if(style == PIXELATE_MODE_BLUR)
 		{
 			if((w() > 0) && (h() > 0))
 			{
 				Mat mat;
-				int nx = x() - cam->image_sx;
-				int ny = y() - cam->image_sy;
+				int nx = sx;
+				int ny = sy;
 				if((nx > 0) && (ny >= 0))
 				{
-					crop_section(cam->mat, mat, nx, ny, w(), h());
+					crop_section(cam->mat, mat, nx, ny, sw, sh);
 					blur(mat, mat, Size(use_size, use_size));
+					cairo_save(cam->cairo_context);
+					if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+					{
+						int crop_x = sx + my_immediate->crop_x;
+						int crop_y = sy + my_immediate->crop_y;
+						int crop_w = my_immediate->crop_w;
+						int crop_h = my_immediate->crop_h;
+						cairo_rectangle(cam->cairo_context, crop_x, crop_y, crop_w, crop_h);
+						cairo_clip(cam->cairo_context);
+					}
 					cairo_surface_t *surface = cairo_image_surface_create_for_data(mat.ptr(), CAIRO_FORMAT_ARGB32, mat.cols, mat.rows, mat.step);
 					if(surface != NULL)
 					{
-						cairo_set_source_surface(cr, surface, x() - my_window->image_origin_x, y() - my_window->image_origin_y);
+						cairo_translate(cr, sx + (sw / 2), sy + (sh / 2));
+						cairo_rotate(cr, my_immediate->angle);
+						cairo_translate(cr, -(sw / 2), -(sh / 2));
+						cairo_set_source_surface(cr, surface, 0, 0);
 						cairo_paint(cr);
 						cairo_surface_destroy(surface);
 					}
+					cairo_restore(cam->cairo_context);
 				}
 			}
 		}
+		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
 	}
 }
 
-ImRectangleSelect::ImRectangleSelect(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh) : MyGroup(xx, yy, ww, hh)
+ImRectanglePassThru::ImRectanglePassThru(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh) : MyGroup(xx, yy, ww, hh)
 {
 	end();
 	my_window = in_win;
@@ -48598,32 +50754,52 @@ ImRectangleSelect::ImRectangleSelect(MyWin *in_win, Immediate *in_im, int xx, in
 	SetToDialog();
 }
 
-ImRectangleSelect::~ImRectangleSelect()
+ImRectanglePassThru::~ImRectanglePassThru()
 {
 }
 
-void	ImRectangleSelect::draw()
+void	ImRectanglePassThru::draw()
 {
 	Camera *cam = my_immediate->my_camera;
 	if(cam->cairo_context != NULL)
 	{
 		cairo_t *cr = cam->cairo_context;
-		if(selecting == 1)
-		{
-			fl_color(WHITE);
-			fl_rect(x(), y(), w(), h());
-		}
+		fl_color(WHITE);
+		fl_rect(x(), y(), w(), h());
 		if((w() > 0) && (h() > 0))
 		{
+			int sx = my_immediate->relative_x;
+			int sy = my_immediate->relative_y;
+			int sw = w();
+			int sh = h();
+			Mat use;
 			Mat mat;
-			crop_section(cam->reserve_mat, mat, x() - cam->image_sx, y() - cam->image_sy, w(), h());
+			cv::resize(cam->reserve_mat, use, cv::Size(cam->mat.cols, cam->mat.rows));
+			crop_section(use, mat, sx, sy, w(), h());
+			cairo_save(cam->cairo_context);
+			if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+			{
+				int crop_x = sx + my_immediate->crop_x;
+				int crop_y = sy + my_immediate->crop_y;
+				int crop_w = my_immediate->crop_w;
+				int crop_h = my_immediate->crop_h;
+				cairo_rectangle(cam->cairo_context, crop_x, crop_y, crop_w, crop_h);
+				cairo_clip(cam->cairo_context);
+			}
+			double scale_w = my_immediate->scale_w;
+			double scale_h = my_immediate->scale_h;
+			cairo_translate(cr, sx + (sw / 2), sy + (sh / 2));
+			cairo_scale(cr, scale_w, scale_h);
+			cairo_rotate(cr, my_immediate->angle);
 			cairo_surface_t *surface = cairo_image_surface_create_for_data(mat.ptr(), CAIRO_FORMAT_ARGB32, mat.cols, mat.rows, mat.step);
 			if(surface != NULL)
 			{
-				cairo_set_source_surface(cr, surface, x() - cam->image_sx, y() - cam->image_sy);
+				cairo_set_source_surface(cr, surface, -(sw / 2), -(sh / 2));
 				cairo_paint(cr);
 				cairo_surface_destroy(surface);
 			}
+			cairo_restore(cam->cairo_context);
+			my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
 		}
 	}
 }
@@ -48661,8 +50837,8 @@ void	ImImage::draw()
 		{
 			if((my_mat.rows > 0) && (my_mat.cols > 0))
 			{
-				int xx = x() - my_window->image_origin_x;
-				int yy = y() - my_window->image_origin_y;
+				int xx = my_immediate->relative_x;
+				int yy = my_immediate->relative_y;
 				int ww = w();
 				int hh = h();
 				if((ww > 0) && (hh > 0))
@@ -48674,16 +50850,30 @@ void	ImImage::draw()
 					int nh = orig_h * scale;
 					if((nw > 0) && (nh > 0))
 					{
+						cairo_save(cam->cairo_context);
 						cv::resize(my_mat, local_mat, cv::Size(nw, nh));
 						cairo_surface_t *surface = cairo_image_surface_create_for_data(local_mat.ptr(), CAIRO_FORMAT_ARGB32, local_mat.cols, local_mat.rows, local_mat.step);
 						if(surface != NULL)
 						{
-							cairo_set_source_surface(cr, surface, xx, yy);
+							if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+							{
+								int crop_x = xx + my_immediate->crop_x;
+								int crop_y = yy + my_immediate->crop_y;
+								int crop_w = my_immediate->crop_w;
+								int crop_h = my_immediate->crop_h;
+								cairo_rectangle(cam->cairo_context, crop_x, crop_y, crop_w, crop_h);
+								cairo_clip(cam->cairo_context);
+							}
+							cairo_translate(cr, xx + (nw / 2), yy + (nh / 2));
+							cairo_rotate(cr, my_immediate->angle);
+							cairo_set_source_surface(cr, surface, -(nw / 2), -(nh / 2));
 							cairo_paint(cr);
 							cairo_surface_destroy(surface);
 						}
+						cairo_restore(cam->cairo_context);
 					}
 				}
+				my_immediate->resize(xx + cam->image_sx, yy + cam->image_sy, w(), h());
 			}
 		}
 	}
@@ -48713,24 +50903,37 @@ void	ImEllipse::draw()
 	Camera *cam = my_immediate->my_camera;
 	if(cam->cairo_context != NULL)
 	{
+		int sx = my_immediate->relative_x;
+		int sy = my_immediate->relative_y;
 		int sw = w() * my_immediate->scale_w;
 		int sh = h() * my_immediate->scale_h;
 		if(erase == 1)
 		{
-			int sx = x() - my_window->image_origin_x;
-			int sy = y() - my_window->image_origin_y;
-			ellipse(cam->mat, Point(sx, sy), Size(sw, sh), 0, 0, 360, Scalar(0, 0, 0, 0), -1, LINE_AA);
+			double cx = sx + (w() / 2.0);
+			double cy = sy + (h() / 2.0);
+			ellipse(cam->mat, Point(cx, cy), Size(sw / 2.0, sh / 2.0), 0, 0, 360, Scalar(0, 0, 0, 0), -1, LINE_AA);
 		}
 		else
 		{
 			cairo_t *cr = cam->cairo_context;
+			cairo_save(cr);
+			if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+			{
+				int crop_x = sx + my_immediate->crop_x;
+				int crop_y = sy + my_immediate->crop_y;
+				int crop_w = my_immediate->crop_w;
+				int crop_h = my_immediate->crop_h;
+				cairo_rectangle(cam->cairo_context, crop_x, crop_y, crop_w, crop_h);
+				cairo_clip(cam->cairo_context);
+			}
 			int use_alpha = (int)((double)alpha * my_immediate->overall_alpha);
 			my_cairo_set_source_rgba(cr, red, green, blue, use_alpha);
-			double cx = (double)((x() + (sw / 2.0)) - my_window->image_origin_x);
-			double cy = (double)((y() + (sh / 2.0)) - my_window->image_origin_y);
+			double cx = (double)(sx + (sw / 2.0));
+			double cy = (double)(sy + (sh / 2.0));
 			cairo_matrix_t save_matrix;
 			cairo_get_matrix(cr, &save_matrix);
 			cairo_translate(cr, cx, cy);
+			cairo_rotate(cr, my_immediate->angle);
 			double sy = 1.0;
 			if(sw > 0)
 			{
@@ -48748,7 +50951,71 @@ void	ImEllipse::draw()
 			{
 				cairo_fill(cr);
 			}
+			cairo_restore(cr);
 		}
+		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
+	}
+}
+
+ImEllipsePassThru::ImEllipsePassThru(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh) : MyGroup(xx, yy, ww, hh)
+{
+	end();
+	my_window = in_win;
+	my_immediate = in_im;
+	width = 1;
+	red = 255;
+	green = 255;
+	blue = 255;
+	style = 0;
+	filled = 0;
+	erase = 0;
+	SetToDialog();
+}
+
+ImEllipsePassThru::~ImEllipsePassThru()
+{
+}
+
+void	ImEllipsePassThru::draw()
+{
+	Camera *cam = my_immediate->my_camera;
+	if(cam->cairo_context != NULL)
+	{
+		fl_color(WHITE);
+		fl_rect(x(), y(), w(), h());
+		int sx = my_immediate->relative_x;
+		int sy = my_immediate->relative_y;
+		int sw = w() * my_immediate->scale_w;
+		int sh = h() * my_immediate->scale_h;
+		Mat use;
+		cv::resize(cam->reserve_mat, use, cv::Size(cam->mat.cols, cam->mat.rows));
+		cv::Mat mask(use.rows, use.cols, CV_8UC4, cv::Scalar(0, 0, 0, 0));
+		double cx = sx + (w() / 2.0);
+		double cy = sy + (h() / 2.0);
+		ellipse(mask, Point(cx, cy), Size(sw / 2.0, sh / 2.0), 0, 0, 360, Scalar(255, 255, 255, 255), -1, LINE_AA);
+		Mat out;
+		mask_mats(use, mask, out);
+		cairo_save(cam->cairo_context);
+		if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+		{
+			int crop_x = sx + my_immediate->crop_x;
+			int crop_y = sy + my_immediate->crop_y;
+			int crop_w = my_immediate->crop_w;
+			int crop_h = my_immediate->crop_h;
+			cairo_rectangle(cam->cairo_context, crop_x, crop_y, crop_w, crop_h);
+			cairo_clip(cam->cairo_context);
+		}
+		cairo_translate(cam->cairo_context, cx, cy);
+		cairo_rotate(cam->cairo_context, my_immediate->angle);
+		cairo_surface_t *surface = cairo_image_surface_create_for_data(out.ptr(), CAIRO_FORMAT_ARGB32, out.cols, out.rows, out.step);
+		if((surface != NULL) && (cam->cairo_surface != NULL))
+		{
+			cairo_set_source_surface(cam->cairo_context, surface, -cx, -cy);
+			cairo_paint(cam->cairo_context);
+			cairo_surface_destroy(surface);
+		}
+		cairo_restore(cam->cairo_context);
+		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
 	}
 }
 
@@ -48934,6 +51201,26 @@ int		loop;
 	Camera *cam = my_immediate->my_camera;
 	if(cam->cairo_context != NULL)
 	{
+		int sx = my_immediate->relative_x;
+		int sy = my_immediate->relative_y;
+		int sw = w() * my_immediate->scale_w;
+		int sh = h() * my_immediate->scale_h;
+		cairo_save(cam->cairo_context);
+		if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+		{
+			int crop_x = sx + my_immediate->crop_x;
+			int crop_y = sy + my_immediate->crop_y;
+			int crop_w = my_immediate->crop_w;
+			int crop_h = my_immediate->crop_h;
+			cairo_rectangle(cam->cairo_context, crop_x, crop_y, crop_w, crop_h);
+			cairo_clip(cam->cairo_context);
+		}
+		int half_w = sw / 2;
+		int half_h = sh / 2;
+		int ssx = sx + half_w;
+		int ssy = sy + half_h;
+		cairo_translate(cam->cairo_context, ssx, ssy);
+		cairo_rotate(cam->cairo_context, my_immediate->angle);
 		if(shape != DRAWING_MODE_FREEHAND)
 		{
 			if(my_immediate != NULL)
@@ -48988,8 +51275,8 @@ int		loop;
 						int ny = yy[loop];
 						if(loop == 0)
 						{
-							nx -= my_window->image_origin_x;
-							ny -= my_window->image_origin_y;
+							nx -= (my_window->image_origin_x + ssx);
+							ny -= (my_window->image_origin_y + ssy);
 							cairo_move_to(cam->cairo_context, nx, ny);
 							origin_x = nx;
 							origin_y = ny;
@@ -49030,8 +51317,8 @@ int		loop;
 						{
 							int cur_x = Fl::event_x();
 							int cur_y = Fl::event_y();
-							cur_x -= my_window->image_origin_x;
-							cur_y -= my_window->image_origin_y;
+							cur_x -= (my_window->image_origin_x + ssx);
+							cur_y -= (my_window->image_origin_y + ssy);
 							cairo_line_to(cam->cairo_context, cur_x, cur_y);
 							if(cnt < 3)
 							{
@@ -49073,35 +51360,62 @@ int		loop;
 					}
 				}
 			}
-			else if(shape == DRAWING_MODE_POLYGON_SELECT)
+			else if(shape == DRAWING_MODE_POLYGON_PASSTHRU)
 			{
-				if(my_immediate->idw->mode == DRAWING_MODE_POLYGON_SELECT)
+				if(my_immediate->idw->mode == DRAWING_MODE_POLYGON_PASSTHRU)
 				{
+					int origin_x = 0;
+					int origin_y = 0;
 					fl_color(WHITE);
 					fl_begin_loop();
 					for(loop = 0;loop < cnt;loop++)
 					{
 						int nx = xx[loop];
 						int ny = yy[loop];
-						fl_vertex(nx, ny);
+						if(loop == 0)
+						{
+							origin_x = nx;
+							origin_y = ny;
+							fl_vertex(nx, ny);
+						}
+						else
+						{
+							int ux = (nx * my_immediate->scale_w) + origin_x;
+							int uy = (ny * my_immediate->scale_h) + origin_y;
+							fl_vertex(ux, uy);
+						}
 					}
 					fl_end_loop();
 				}
 				if(cnt > 2)
 				{
+					int origin_x = 0;
+					int origin_y = 0;
 					int a_xx[1024];
 					int a_yy[1024];
 					for(loop = 0;loop < cnt;loop++)
 					{
-						a_xx[loop] = xx[loop] - cam->image_sx;
-						a_yy[loop] = yy[loop] - cam->image_sy;
+						if(loop == 0)
+						{
+							a_xx[loop] = xx[loop] - cam->image_sx;
+							a_yy[loop] = yy[loop] - cam->image_sy;
+							origin_x = a_xx[loop];
+							origin_y = a_yy[loop];
+						}
+						else
+						{
+							a_xx[loop] = ((xx[loop] * my_immediate->scale_w) + origin_x);
+							a_yy[loop] = ((yy[loop] * my_immediate->scale_h) + origin_y);
+						}
 					}
 					Mat out;
-					mask_it(cam->reserve_mat, out, cnt, a_xx, a_yy);
+					Mat use;
+					cv::resize(cam->reserve_mat, use, cv::Size(cam->mat.cols, cam->mat.rows));
+					mask_polygon(use, out, cnt, a_xx, a_yy);
 					cairo_surface_t *surface = cairo_image_surface_create_for_data(out.ptr(), CAIRO_FORMAT_ARGB32, out.cols, out.rows, out.step);
 					if((surface != NULL) && (cam->cairo_surface != NULL))
 					{
-						cairo_set_source_surface(cam->cairo_context, surface, 0, 0);
+						cairo_set_source_surface(cam->cairo_context, surface, -ssx, -ssy);
 						cairo_paint(cam->cairo_context);
 						cairo_surface_destroy(surface);
 					}
@@ -49118,8 +51432,8 @@ int		loop;
 			{
 				if(loop == 0)
 				{
-					origin_x = xx[loop] - my_window->image_origin_x;
-					origin_y = yy[loop] - my_window->image_origin_y;
+					origin_x = xx[loop] - (my_window->image_origin_x + ssx);
+					origin_y = yy[loop] - (my_window->image_origin_y + ssy);
 				}
 				else
 				{
@@ -49140,6 +51454,8 @@ int		loop;
 				}
 			}
 		}
+		cairo_restore(cam->cairo_context);
+		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
 	}
 }
 
@@ -49224,7 +51540,7 @@ int	loop;
 	int nn = width / 2;
 	if((shape == DRAWING_MODE_LINE)
 	|| (shape == DRAWING_MODE_POLYGON)
-	|| (shape == DRAWING_MODE_POLYGON_SELECT)
+	|| (shape == DRAWING_MODE_POLYGON_PASSTHRU)
 	|| (shape == DRAWING_MODE_FREEHAND)
 	|| (shape == DRAWING_MODE_LOOP))
 	{
@@ -49416,6 +51732,8 @@ ImText::~ImText()
 
 int	ImText::handle(int event)
 {
+static int once = 0;
+
 	int flag = 0;
 	if(event == FL_DRAG)
 	{
@@ -49424,41 +51742,32 @@ int	ImText::handle(int event)
 	if(flag == 0)
 	{
 		flag = Fl_Multiline_Input::handle(event);
-		if((event == FL_FOCUS)
-		|| (event == FL_UNFOCUS)
-		|| (event == FL_KEYBOARD))
+		int ww = 0;
+		int hh = 0;
+		if(my_immediate->extent_taken == 0)
 		{
-			int ww = 0;
-			int hh = 0;
-			if(my_immediate->extent_taken == 0)
-			{
-				fl_font(textfont(), textsize());
-				fl_measure(value(), ww, hh);
-				my_immediate->orig_w = ww;
-				my_immediate->orig_h = hh;
-				resize(x(), y(), ww + 20, hh + 20);
-				my_immediate->resize(x(), y(), ww + 20, hh + 20);
-				my_immediate->scale_w = 1.0;
-				my_immediate->scale_h = 1.0;
-			}
-			else
-			{
-				ww = my_immediate->extent_w;
-				hh = my_immediate->extent_h;
-				resize(x(), y(), ww + 20, hh + 20);
-			}
-			if(FL_UNFOCUS)
-			{
-				my_immediate->resize(x(), y(), ww + 20, hh + 20);
-			}
-			if(event == FL_FOCUS)
-			{
-				focused = 1;
-			}
-			if(event == FL_UNFOCUS)
-			{
-				focused = 0;
-			}
+			fl_font(textfont(), textsize());
+			fl_measure(value(), ww, hh);
+			my_immediate->orig_w = ww;
+			my_immediate->orig_h = hh;
+			resize(x(), y(), ww, hh);
+			my_immediate->resize(x(), y(), ww, hh);
+			my_immediate->scale_w = 1.0;
+			my_immediate->scale_h = 1.0;
+		}
+		else
+		{
+			ww = my_immediate->extent_w;
+			hh = my_immediate->extent_h;
+			resize(x(), y(), ww, hh);
+		}
+		if(event == FL_FOCUS)
+		{
+			focused = 1;
+		}
+		if(event == FL_UNFOCUS)
+		{
+			focused = 0;
 		}
 	}
 	return(flag);
@@ -49471,6 +51780,7 @@ int		loop;
 	Camera *cam = my_immediate->my_camera;
 	if(cam->cairo_context != NULL)
 	{
+		cairo_t *cr = cam->cairo_context;
 		char *str = (char *)value();
 		char *use = strdup(str);
 		int pos = insert_position();
@@ -49484,33 +51794,52 @@ int		loop;
 		back_g = background_green;
 		back_b = background_blue;
 
-		int sx = x() - my_window->image_origin_x;
-		int sy = y() - my_window->image_origin_y;
+		int sx = my_immediate->relative_x;
+		int sy = my_immediate->relative_y;
+		int save_sx = sx;
+		int save_sy = sy;
+
+		int ssx = sx + (w() / 2);
+		int ssy = sy + (h() / 2);
+		cairo_save(cr);
+		if((my_immediate->crop_w > 0) && (my_immediate->crop_h > 0))
+		{
+			int crop_x = sx + my_immediate->crop_x;
+			int crop_y = sy + my_immediate->crop_y;
+			int crop_w = my_immediate->crop_w;
+			int crop_h = my_immediate->crop_h;
+			cairo_rectangle(cr, crop_x, crop_y, crop_w, crop_h);
+			cairo_clip(cr);
+		}
+		cairo_translate(cr, ssx, ssy);
+		cairo_rotate(cr, my_immediate->angle);
+		sx -= ssx;
+		sy -= ssy;
 		if(box_type == FL_FLAT_BOX)
 		{
 			int use_alpha = (int)((double)background_alpha * my_immediate->overall_alpha);
-			my_cairo_set_source_rgba(cam->cairo_context, back_r, back_g, back_b, use_alpha);
-			cairo_rectangle(cam->cairo_context, sx, sy, w(), h());
-			cairo_fill(cam->cairo_context);
+			my_cairo_set_source_rgba(cr, back_r, back_g, back_b, use_alpha);
+			cairo_rectangle(cr, sx, sy, my_immediate->w(), my_immediate->h());
+			cairo_fill(cr);
 		}
 		else if(box_type == FL_FRAME)
 		{
 			int use_alpha = (int)((double)background_alpha * my_immediate->overall_alpha);
-			my_cairo_set_source_rgba(cam->cairo_context, back_r, back_g, back_b, use_alpha);
-			cairo_rectangle(cam->cairo_context, sx, sy, w(), h());
-			cairo_stroke(cam->cairo_context);
+			my_cairo_set_source_rgba(cr, back_r, back_g, back_b, use_alpha);
+			cairo_rectangle(cr, sx, sy, my_immediate->w(), my_immediate->h());
+			cairo_stroke(cr);
 		}
 		else if(box_type == FL_FRAME_BOX)
 		{
 			int use_alpha = (int)((double)background_alpha * my_immediate->overall_alpha);
-			my_cairo_set_source_rgba(cam->cairo_context, back_r, back_g, back_b, use_alpha);
-			cairo_rectangle(cam->cairo_context, sx, sy, w(), h());
-			cairo_fill(cam->cairo_context);
+			my_cairo_set_source_rgba(cr, back_r, back_g, back_b, use_alpha);
+			cairo_rectangle(cr, sx, sy, my_immediate->w(), my_immediate->h());
+			cairo_fill(cr);
 
 			use_alpha = (int)((double)font_alpha * my_immediate->overall_alpha);
-			my_cairo_set_source_rgba(cam->cairo_context, red, green, blue, use_alpha);
-			cairo_rectangle(cam->cairo_context, sx, sy, w(), h());
-			cairo_stroke(cam->cairo_context);
+			my_cairo_set_source_rgba(cr, red, green, blue, use_alpha);
+			cairo_rectangle(cr, sx, sy, my_immediate->w(), my_immediate->h());
+			cairo_stroke(cr);
 		}
 		int y_pos = sy;
 		if(strlen(use) > 0)
@@ -49532,12 +51861,14 @@ int		loop;
 			if(focused == 0) pos = -1;
 			int extent_w = 0;
 			int extent_h = 0;
-			my_cairo_draw_text(cam->my_window, cam, cam->cairo_context, sx, y_pos, use, font_name, style, font_sz, pos, red, green, blue, use_alpha, outline_r, outline_g, outline_b, outline_alpha, extent_w, extent_h, my_immediate->scale_w, my_immediate->scale_h);
+			my_cairo_draw_text(cam->my_window, cam, cr, sx, y_pos, use, font_name, style, font_sz, pos, red, green, blue, use_alpha, outline_r, outline_g, outline_b, outline_alpha, extent_w, extent_h, my_immediate->scale_w, my_immediate->scale_h);
 			my_immediate->extent_w = extent_w;
 			my_immediate->extent_h = extent_h;
 			my_immediate->extent_taken = 1;
 		}
 		free(use);
+		cairo_restore(cr);
+		my_immediate->resize(save_sx + cam->image_sx, save_sy + cam->image_sy, my_immediate->w(), my_immediate->h());
 	}
 }
 
@@ -49563,20 +51894,27 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_i
 	drag_mode = DRAG_MODE_MOVE;
 	popup = NULL;
 	overall_alpha = 1.0;
+	use_as_mask = 0;
 	box(FL_NO_BOX);
-	mw_mode = MW_MODE_TRANSPARENCY;
+	mw_mode = MW_MODE_NONE;
 	scale_w = 1.0;
 	scale_h = 1.0;
 	extent_w = ww;
 	extent_h = hh;
 	extent_taken = 0;
 	actively_drawing = 0;
+	crop_x = 0;
+	crop_y = 0;
+	crop_w = 0;
+	crop_h = 0;
+	angle = 0.0;
 
 	text = NULL;
 	line = NULL;
 	rectangle = NULL;
-	rectangle_select = NULL;
+	rectangle_passthru = NULL;
 	ellipse = NULL;
+	ellipse_passthru = NULL;
 	freehand = NULL;
 	pixelate = NULL;
 	image_im = NULL;
@@ -49607,7 +51945,7 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_i
 	}
 	else if((immediate_type == DRAWING_MODE_LINE)
 	|| (immediate_type == DRAWING_MODE_POLYGON)
-	|| (immediate_type == DRAWING_MODE_POLYGON_SELECT)
+	|| (immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
 	|| (immediate_type == DRAWING_MODE_FREEHAND)
 	|| (immediate_type == DRAWING_MODE_LOOP))
 	{
@@ -49624,12 +51962,12 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_i
 		initial_y = yy;
 		im_type = IM_RECTANGLE;
 	}
-	else if(immediate_type == DRAWING_MODE_RECTANGLE_SELECT)
+	else if(immediate_type == DRAWING_MODE_RECTANGLE_PASSTHRU)
 	{
-		rectangle_select = new ImRectangleSelect(my_window, this, xx, yy, ww, hh);
+		rectangle_passthru = new ImRectanglePassThru(my_window, this, xx, yy, ww, hh);
 		initial_x = xx;
 		initial_y = yy;
-		im_type = IM_RECTANGLE_SELECT;
+		im_type = IM_RECTANGLE_PASSTHRU;
 	}
 	else if(immediate_type == DRAWING_MODE_PIXELATE)
 	{
@@ -49646,6 +51984,13 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_i
 		initial_x = xx;
 		initial_y = yy;
 		im_type = IM_ELLIPSE;
+	}
+	else if(immediate_type == DRAWING_MODE_ELLIPSE_PASSTHRU)
+	{
+		ellipse_passthru = new ImEllipsePassThru(my_window, this, xx, yy, ww, hh);
+		initial_x = xx;
+		initial_y = yy;
+		im_type = IM_ELLIPSE_PASSTHRU;
 	}
 	else if(immediate_type == DRAWING_MODE_IMAGE)
 	{
@@ -49673,8 +52018,9 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int 
 	drag_mode = DRAG_MODE_MOVE;
 	popup = NULL;
 	overall_alpha = 1.0;
+	use_as_mask = 0;
 	box(FL_NO_BOX);
-	mw_mode = MW_MODE_TRANSPARENCY;
+	mw_mode = MW_MODE_NONE;
 	scale_w = 1.0;
 	scale_h = 1.0;
 	orig_w = ww;
@@ -49683,8 +52029,9 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int 
 	text = NULL;
 	line = NULL;
 	rectangle = NULL;
-	rectangle_select = NULL;
+	rectangle_passthru = NULL;
 	ellipse = NULL;
+	ellipse_passthru = NULL;
 	freehand = NULL;
 	pixelate = NULL;
 	image_im = NULL;
@@ -49718,18 +52065,34 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 	drag_mode = DRAG_MODE_MOVE;
 	popup = NULL;
 	overall_alpha = 1.0;
+	use_as_mask = 0;
 	box(FL_NO_BOX);
-	mw_mode = MW_MODE_TRANSPARENCY;
+	mw_mode = MW_MODE_NONE;
 	scale_w = old->scale_w;
 	scale_h = old->scale_h;
-
+	extent_w = old->extent_w;
+	extent_h = old->extent_h;
+	extent_taken = old->extent_taken;
+	actively_drawing = 0;
+	crop_x = old->crop_x;
+	crop_y = old->crop_y;
+	crop_w = old->crop_w;
+	crop_h = old->crop_h;
+	angle = old->angle;
+	if(my_camera != NULL)
+	{
+		relative_x = xx - my_camera->image_sx;
+		relative_y = yy - my_camera->image_sy;
+	}
 	text = NULL;
 	line = NULL;
 	rectangle = NULL;
-	rectangle_select = NULL;
+	rectangle_passthru = NULL;
 	ellipse = NULL;
+	ellipse_passthru = NULL;
 	freehand = NULL;
 	pixelate = NULL;
+	image_im = NULL;
 	if(immediate_type == DRAWING_MODE_TEXT)
 	{
 		text = new ImText(my_window, this, xx, yy, ww, hh);
@@ -49740,7 +52103,7 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 	}
 	else if((immediate_type == DRAWING_MODE_LINE)
 	|| (immediate_type == DRAWING_MODE_POLYGON)
-	|| (immediate_type == DRAWING_MODE_POLYGON_SELECT)
+	|| (immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
 	|| (immediate_type == DRAWING_MODE_FREEHAND)
 	|| (immediate_type == DRAWING_MODE_LOOP))
 	{
@@ -49754,11 +52117,11 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 		rectangle->Copy(this, old->rectangle);
 		im_type = IM_RECTANGLE;
 	}
-	else if(immediate_type == DRAWING_MODE_RECTANGLE_SELECT)
+	else if(immediate_type == DRAWING_MODE_RECTANGLE_PASSTHRU)
 	{
-		rectangle_select = new ImRectangleSelect(my_window, this, xx, yy, ww, hh);
-		rectangle_select->Copy(this, old->rectangle_select);
-		im_type = IM_RECTANGLE_SELECT;
+		rectangle_passthru = new ImRectanglePassThru(my_window, this, xx, yy, ww, hh);
+		rectangle_passthru->Copy(this, old->rectangle_passthru);
+		im_type = IM_RECTANGLE_PASSTHRU;
 	}
 	else if(immediate_type == DRAWING_MODE_PIXELATE)
 	{
@@ -49771,6 +52134,12 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 		ellipse = new ImEllipse(my_window, this, xx, yy, ww, hh);
 		ellipse->Copy(this, old->ellipse);
 		im_type = IM_ELLIPSE;
+	}
+	else if(immediate_type == DRAWING_MODE_ELLIPSE_PASSTHRU)
+	{
+		ellipse_passthru = new ImEllipsePassThru(my_window, this, xx, yy, ww, hh);
+		ellipse_passthru->Copy(this, old->ellipse_passthru);
+		im_type = IM_ELLIPSE_PASSTHRU;
 	}
 	else if(immediate_type == DRAWING_MODE_IMAGE)
 	{
@@ -49864,6 +52233,11 @@ void	Immediate::resize(int xx, int yy, int ww, int hh)
 {
 	int old_ww = orig_w;
 	int old_hh = orig_h;
+	if(my_camera != NULL)
+	{
+		relative_x = xx - my_camera->image_sx;
+		relative_y = yy - my_camera->image_sy;
+	}
 	if((old_ww > 0) && (old_hh > 0)
 	&& (actively_drawing == 0))
 	{
@@ -49872,6 +52246,17 @@ void	Immediate::resize(int xx, int yy, int ww, int hh)
 		Fl_Group::resize(xx, yy, ww, hh);
 		scale_w = use_scale_w;
 		scale_h = use_scale_h;
+		if((immediate_type == DRAWING_MODE_LINE)
+		|| (immediate_type == DRAWING_MODE_POLYGON)
+		|| (immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
+		|| (immediate_type == DRAWING_MODE_FREEHAND)
+		|| (immediate_type == DRAWING_MODE_LOOP))
+		{
+			if(line != NULL)
+			{
+				line->resize(xx, yy, ww, hh);
+			}
+		}
 	}
 	else
 	{
@@ -49899,13 +52284,20 @@ void	Immediate::resize(int xx, int yy, int ww, int hh)
 		}
 		else if((immediate_type == DRAWING_MODE_LINE)
 		|| (immediate_type == DRAWING_MODE_POLYGON)
-		|| (immediate_type == DRAWING_MODE_POLYGON_SELECT)
+		|| (immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
 		|| (immediate_type == DRAWING_MODE_FREEHAND)
 		|| (immediate_type == DRAWING_MODE_LOOP))
 		{
 			if(line != NULL)
 			{
 				line->resize(xx, yy, ww, hh);
+			}
+		}
+		else if(immediate_type == DRAWING_MODE_PIXELATE)
+		{
+			if(pixelate != NULL)
+			{
+				pixelate->resize(xx, yy, ww, hh);
 			}
 		}
 		scale_w = 1.0;
@@ -49917,12 +52309,12 @@ void	Immediate::resize(int xx, int yy, int ww, int hh)
 
 void	immediate_popup_cb(Fl_Widget *w, void *v)
 {
-	Immediate *iw = (Immediate *)v;
-	if(iw != NULL)
+	Immediate *im = (Immediate *)v;
+	if(im != NULL)
 	{
-		if(iw->popup != NULL)
+		if(im->popup != NULL)
 		{
-			iw->popup->hide();
+			im->popup->hide();
 		}
 		Fl_Hold_Browser *browser = (Fl_Hold_Browser *)w;
 		char *str = (char *)browser->text(browser->value());
@@ -49930,53 +52322,62 @@ void	immediate_popup_cb(Fl_Widget *w, void *v)
 		{
 			if(strcmp(str, "Delete") == 0)
 			{
-				iw->Delete();
+				im->Delete();
 			}
 			else if(strcmp(str, "Hide") == 0)
 			{
-				iw->Hide();
+				im->Hide();
 			}
 			else if(strcmp(str, "Show") == 0)
 			{
-				iw->Show();
+				im->Show();
 			}
 			else if(strcmp(str, "Copy") == 0)
 			{
-				iw->Copy();
+				im->Copy();
 			}
 			else if(strcmp(str, "Zip Left") == 0)
 			{
-				iw->ZipLeft();
+				im->ZipLeft();
 			}
 			else if(strcmp(str, "Zip Right") == 0)
 			{
-				iw->ZipRight();
+				im->ZipRight();
 			}
 			else if(strcmp(str, "Zip Up") == 0)
 			{
-				iw->ZipUp();
+				im->ZipUp();
 			}
 			else if(strcmp(str, "Zip Down") == 0)
 			{
-				iw->ZipDown();
+				im->ZipDown();
+			}
+			else if(strcmp(str, "MW Frame") == 0)
+			{
+				im->mw_mode = MW_MODE_NONE;
+				im->redraw();
 			}
 			else if(strcmp(str, "MW Transparency") == 0)
 			{
-				iw->mw_mode = MW_MODE_TRANSPARENCY;
-				iw->redraw();
+				im->mw_mode = MW_MODE_TRANSPARENCY;
+				im->redraw();
 			}
 			else if(strcmp(str, "MW Stacking Order") == 0)
 			{
-				iw->mw_mode = MW_MODE_STACKING_ORDER;
-				iw->redraw();
+				im->mw_mode = MW_MODE_STACKING_ORDER;
+				im->redraw();
 			}
 			else if(strcmp(str, "Make Transparent") == 0)
 			{
-				iw->overall_alpha = 0.0;
+				im->overall_alpha = 0.0;
 			}
 			else if(strcmp(str, "Make Opaque") == 0)
 			{
-				iw->overall_alpha = 1.0;
+				im->overall_alpha = 1.0;
+			}
+			else if(strcmp(str, "Mask") == 0)
+			{
+				im->use_as_mask = 1;
 			}
 		}
 	}
@@ -50069,7 +52470,7 @@ void	Immediate::Move()
 
 	if((immediate_type == DRAWING_MODE_LINE)
 	|| (immediate_type == DRAWING_MODE_POLYGON)
-	|| (immediate_type == DRAWING_MODE_POLYGON_SELECT)
+	|| (immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
 	|| (immediate_type == DRAWING_MODE_FREEHAND)
 	|| (immediate_type == DRAWING_MODE_LOOP))
 	{
@@ -50114,6 +52515,7 @@ void	Immediate::ShowPopup()
 			popup->browser->add("Zip Up");
 			popup->browser->add("Zip Down");
 			popup->browser->add("");
+			popup->browser->add("MW Frame");
 			popup->browser->add("MW Transparency");
 			popup->browser->add("MW Stacking Order");
 			popup->browser->add("Make Transparent");
@@ -50130,129 +52532,149 @@ int	Immediate::handle(int event)
 	int flag = 0;
 	if(my_camera != NULL)
 	{
-		if(my_camera->edit_layer == layer)
+		if(my_camera == my_window->DisplayedCamera())
 		{
-			if(event == FL_ENTER)
+			if(my_camera->edit_layer == layer)
 			{
-				my_window->use_mousewheel = 0;
-				if(actively_drawing == 0)
+				if(event == FL_ENTER)
 				{
-					my_window->resize_frame->Use(FRAME_OBJECT_TYPE_IMMEDIATE, this);
-					my_window->resize_frame->show();
-				}
-				hovering = 1;
-				flag = 1;
-			}
-			else if(event == FL_LEAVE)
-			{
-				my_window->resize_frame->hide();
-				my_window->use_mousewheel = 1;
-				hovering = 0;
-				flag = 1;
-			}
-			else if(event == FL_PUSH)
-			{
-				if(Fl::event_button() == FL_LEFT_MOUSE)
-				{
-					if(my_window->resize_frame->use == this)
+					my_window->use_mousewheel = 0;
+					if(actively_drawing == 0)
 					{
-						hovering = 0;
-						dragging = 1;
-						flag = my_window->resize_frame->handle(event);
+						my_window->resize_frame->Use(FRAME_OBJECT_TYPE_IMMEDIATE, this);
+						my_window->resize_frame->show();
 					}
-					else
-					{
-						initial_x = Fl::event_x() - x();
-						initial_y = Fl::event_y() - y();
-						last_x = Fl::event_x_root();
-						last_y = Fl::event_y_root();
-						hovering = 0;
-						dragging = 1;
-						flag = 1;
-					}
-				}
-				else if(Fl::event_button() == FL_RIGHT_MOUSE)
-				{
-					ShowPopup();
+					hovering = 1;
 					flag = 1;
 				}
-			}
-			else if(event == FL_RELEASE)
-			{
-				if(Fl::event_button() == FL_LEFT_MOUSE)
+				else if(event == FL_LEAVE)
 				{
-					if(my_window->resize_frame->use == this)
-					{
-						dragging = 0;
-						flag = my_window->resize_frame->handle(event);
-					}
-					else
-					{
-						initial_x = 0;
-						initial_y = 0;
-						dragging = 0;
-						flag = 1;
-					}
+					my_window->resize_frame->hide();
+					my_window->use_mousewheel = 1;
+					my_window->resize_frame->use = NULL;
+					hovering = 0;
+					flag = 1;
 				}
-				else if(Fl::event_button() == FL_RIGHT_MOUSE)
+				else if(event == FL_PUSH)
 				{
-					ShowPopup();
-				}
-			}
-			else if(event == FL_DRAG)
-			{
-				if(dragging == 1)
-				{
-					if(Fl::event_inside(this))
+					if(Fl::event_button() == FL_LEFT_MOUSE)
 					{
 						if(my_window->resize_frame->use == this)
 						{
+							hovering = 0;
+							dragging = 1;
 							flag = my_window->resize_frame->handle(event);
 						}
+						else
+						{
+							initial_x = Fl::event_x() - x();
+							initial_y = Fl::event_y() - y();
+							last_x = Fl::event_x_root();
+							last_y = Fl::event_y_root();
+							hovering = 0;
+							dragging = 1;
+							flag = 1;
+						}
+					}
+					else if(Fl::event_button() == FL_RIGHT_MOUSE)
+					{
+						ShowPopup();
+						flag = 1;
 					}
 				}
-			}
-			else if(event == FL_MOUSEWHEEL)
-			{
-				if(mw_mode == MW_MODE_TRANSPARENCY)
+				else if(event == FL_RELEASE)
 				{
-					int nn = Fl::event_dy();
-					if(nn > 0)
+					if(Fl::event_button() == FL_LEFT_MOUSE)
 					{
-						if(overall_alpha < 1.0)
+						if(my_window->resize_frame->use == this)
 						{
-							overall_alpha += 0.01;
+							dragging = 0;
+							flag = my_window->resize_frame->handle(event);
+						}
+						else
+						{
+							initial_x = 0;
+							initial_y = 0;
+							dragging = 0;
+							flag = 1;
 						}
 					}
-					else if(nn < 0)
+					else if(Fl::event_button() == FL_RIGHT_MOUSE)
 					{
-						if(overall_alpha > 0.0)
-						{
-							overall_alpha -= 0.01;
-						}
+						ShowPopup();
 					}
 				}
-				else if(mw_mode == MW_MODE_STACKING_ORDER)
+				else if(event == FL_DRAG)
 				{
-					int nn = Fl::event_dy();
-					if(nn > 0)
+					if(dragging == 1)
 					{
-						if(layer < 7)
+						if(my_window->resize_frame->use == this)
 						{
-							layer++;
-							my_camera->edit_layer = layer;
-						}
-					}
-					else if(nn < 0)
-					{
-						if(layer > 0)
-						{
-							layer--;
-							my_camera->edit_layer = layer;
+							if((Fl::event_inside(my_window->resize_frame))
+							|| (my_window->resize_frame->operation == FRAME_OPERATION_PROPORTIONAL_RESIZE)
+							|| (my_window->resize_frame->operation == FRAME_OPERATION_FREE_RESIZE)
+							|| (my_window->resize_frame->mode != 0))
+							{
+								flag = my_window->resize_frame->handle(event);
+							}
 						}
 					}
 				}
-				flag = 1;
+				else if(event == FL_MOUSEWHEEL)
+				{
+					if(my_window->resize_frame->use == this)
+					{
+						if(mw_mode == MW_MODE_NONE)
+						{
+							if(Fl::event_inside(my_window->resize_frame))
+							{
+								flag = my_window->resize_frame->handle(event);
+							}
+						}
+					}
+					if(flag == 0)
+					{
+						if(mw_mode == MW_MODE_TRANSPARENCY)
+						{
+							int nn = Fl::event_dy();
+							if(nn > 0)
+							{
+								if(overall_alpha < 1.0)
+								{
+									overall_alpha += 0.01;
+								}
+							}
+							else if(nn < 0)
+							{
+								if(overall_alpha > 0.0)
+								{
+									overall_alpha -= 0.01;
+								}
+							}
+						}
+						else if(mw_mode == MW_MODE_STACKING_ORDER)
+						{
+							int nn = Fl::event_dy();
+							if(nn > 0)
+							{
+								if(layer < 7)
+								{
+									layer++;
+									my_camera->edit_layer = layer;
+								}
+							}
+							else if(nn < 0)
+							{
+								if(layer > 0)
+								{
+									layer--;
+									my_camera->edit_layer = layer;
+								}
+							}
+						}
+						flag = 1;
+					}
+				}
 			}
 		}
 	}
@@ -50284,7 +52706,7 @@ int	Immediate::handle(int event)
 			}
 			if((immediate_type == DRAWING_MODE_LINE)
 			|| (immediate_type == DRAWING_MODE_POLYGON)
-			|| (immediate_type == DRAWING_MODE_POLYGON_SELECT)
+			|| (immediate_type == DRAWING_MODE_POLYGON_PASSTHRU)
 			|| (immediate_type == DRAWING_MODE_FREEHAND)
 			|| (immediate_type == DRAWING_MODE_LOOP))
 			{
@@ -50353,10 +52775,10 @@ void	Immediate::CompleteRectangle(int xx, int yy)
 		rectangle->resize(use_x, use_y, use_w, use_h);
 		rectangle->redraw();
 	}
-	if(immediate_type == DRAWING_MODE_RECTANGLE_SELECT)
+	if(immediate_type == DRAWING_MODE_RECTANGLE_PASSTHRU)
 	{
-		rectangle_select->resize(use_x, use_y, use_w, use_h);
-		rectangle_select->redraw();
+		rectangle_passthru->resize(use_x, use_y, use_w, use_h);
+		rectangle_passthru->redraw();
 	}
 	if(immediate_type == DRAWING_MODE_PIXELATE)
 	{
@@ -50367,6 +52789,11 @@ void	Immediate::CompleteRectangle(int xx, int yy)
 	{
 		ellipse->resize(use_x, use_y, use_w, use_h);
 		ellipse->redraw();
+	}
+	if(immediate_type == DRAWING_MODE_ELLIPSE_PASSTHRU)
+	{
+		ellipse_passthru->resize(use_x, use_y, use_w, use_h);
+		ellipse_passthru->redraw();
 	}
 	if(immediate_type == DRAWING_MODE_IMAGE)
 	{
@@ -50383,6 +52810,7 @@ void	Immediate::CompleteRectangle(int xx, int yy)
 			int nh = orig_h * scale;
 			if((nw > 0) && (nh > 0))
 			{
+				resize(use_x, use_y, nw, nh);
 				image_im->resize(use_x, use_y, nw, nh);
 				image_im->redraw();
 			}
@@ -50429,7 +52857,7 @@ ColorSlider::ColorSlider(int xx, int yy, int ww, int hh, double val, char *lbl) 
 				reset = new MyButton(lx, ly, lw, lh);
 				reset->box(FL_NO_BOX);
 				reset->callback(color_slider_reset_cb, this);
-				reset->tooltip("Reset to default value");
+				reset->copy_tooltip("Reset to default value");
 				labelcolor(YELLOW);
 			}
 		}
@@ -50667,19 +53095,19 @@ void	instrument_command_cb(Fl_Widget *w, void *v)
 	MyButton *b = (MyButton *)w;
 	if(strcmp(b->label(), "Set") == 0)
 	{
-		b->label("Once");
+		b->copy_label("Once");
 	}
 	else if(strcmp(b->label(), "Once") == 0)
 	{
-		b->label("Repeat");
+		b->copy_label("Repeat");
 	}
 	else if(strcmp(b->label(), "Repeat") == 0)
 	{
-		b->label("Cycle");
+		b->copy_label("Cycle");
 	}
 	else if(strcmp(b->label(), "Cycle") == 0)
 	{
-		b->label("Set");
+		b->copy_label("Set");
 	}
 }
 
@@ -50707,19 +53135,19 @@ char	buf[256];
 
 		if(cam->matrix_state[loop]->command == INSTRUMENT_COMMAND_SET)
 		{
-			command[loop]->label("Set");
+			command[loop]->copy_label("Set");
 		}
 		else if(cam->matrix_state[loop]->command == INSTRUMENT_COMMAND_ONCE)
 		{
-			command[loop]->label("Once");
+			command[loop]->copy_label("Once");
 		}
 		else if(cam->matrix_state[loop]->command == INSTRUMENT_COMMAND_REPEAT)
 		{
-			command[loop]->label("Repeat");
+			command[loop]->copy_label("Repeat");
 		}
 		else if(cam->matrix_state[loop]->command == INSTRUMENT_COMMAND_CYCLE)
 		{
-			command[loop]->label("Cycle");
+			command[loop]->copy_label("Cycle");
 		}
 		sprintf(buf, "%d", cam->matrix_state[loop]->frames);
 		frames[loop]->value(buf);
@@ -50964,6 +53392,11 @@ int	loop;
 	type = in_type;
 	display = immediate_display;
 	aux_str = NULL;
+	contrast = 0.5;
+	brightness = 0.5;
+	saturation = 1.0;
+	hue = 1.0;
+	intensity = 1.0;
 	if(in_str != NULL)
 	{
 		aux_str = strdup(in_str);
@@ -50999,7 +53432,7 @@ void	review_win_play_cb(Fl_Widget *w, void *v)
 	ReviewWin *win = (ReviewWin *)v;
 	if(win->playing == 0)
 	{
-		b->label("@||");
+		b->copy_label("@||");
 		win->encode->deactivate();
 		win->playing = 1;
 		win->start_time = time(0);
@@ -51007,7 +53440,7 @@ void	review_win_play_cb(Fl_Widget *w, void *v)
 	}
 	else
 	{
-		b->label("@>");
+		b->copy_label("@>");
 		win->playing = 0;
 		win->encode->activate();
 		win->frames_shown = 0;
@@ -51020,7 +53453,7 @@ void	review_win_play_trimmed_cb(Fl_Widget *w, void *v)
 	ReviewWin *win = (ReviewWin *)v;
 	if(win->playing == 0)
 	{
-		b->label("@||");
+		b->copy_label("@||");
 		win->encode->deactivate();
 		win->playing = 1;
 		win->playing_trimmed = 1;
@@ -51029,7 +53462,7 @@ void	review_win_play_trimmed_cb(Fl_Widget *w, void *v)
 	}
 	else
 	{
-		b->label("@->");
+		b->copy_label("@->");
 		win->playing = 0;
 		win->playing_trimmed = 0;
 		win->encode->activate();
@@ -51618,14 +54051,14 @@ int	loop;
 		play = new MyButton(nxx, 2, 14, 14, "@>");
 		play->labelcolor(WHITE);
 		play->box(FL_NO_BOX);
-		play->tooltip("Play");
+		play->copy_tooltip("Play");
 		play->callback(review_win_play_cb, this);
 		nxx += 18;
 
 		play_trim = new MyButton(nxx, 2, 14, 14, "@->");
 		play_trim->labelcolor(WHITE);
 		play_trim->box(FL_NO_BOX);
-		play_trim->tooltip("Play with trims");
+		play_trim->copy_tooltip("Play with trims");
 		play_trim->callback(review_win_play_trimmed_cb, this);
 		play_trim->hide();
 		nxx += 18;
@@ -51633,35 +54066,35 @@ int	loop;
 		retreat_one = new MyRepeatButton(nxx, 2, 14, 14, "-");
 		retreat_one->labelcolor(WHITE);
 		retreat_one->box(FL_NO_BOX);
-		retreat_one->tooltip("Retreat one frame");
+		retreat_one->copy_tooltip("Retreat one frame");
 		retreat_one->callback(review_win_retreat_one_cb, this);
 		nxx += 18;
 
 		advance_one = new MyRepeatButton(nxx, 2, 14, 14, "+");
 		advance_one->labelcolor(WHITE);
 		advance_one->box(FL_NO_BOX);
-		advance_one->tooltip("Advance one frame");
+		advance_one->copy_tooltip("Advance one frame");
 		advance_one->callback(review_win_advance_one_cb, this);
 		nxx += 28;
 
 		encode = new MyButton(nxx, 4, 14, 14, "@-4square");
 		encode->labelcolor(RED);
 		encode->box(FL_NO_BOX);
-		encode->tooltip("Encode with trims");
+		encode->copy_tooltip("Encode with trims");
 		encode->callback(review_win_encode_cb, this);
 		nxx += 28;
 	
 		start_trim_button = new MyButton(nxx, 4, 14, 14, ">|");
 		start_trim_button->labelcolor(WHITE);
 		start_trim_button->box(FL_NO_BOX);
-		start_trim_button->tooltip("Start of trim");
+		start_trim_button->copy_tooltip("Start of trim");
 		start_trim_button->callback(review_win_start_trim_cb, this);
 		nxx += 28;
 	
 		end_trim_button = new MyButton(nxx, 4, 14, 14, "|<");
 		end_trim_button->labelcolor(WHITE);
 		end_trim_button->box(FL_NO_BOX);
-		end_trim_button->tooltip("End of trim");
+		end_trim_button->copy_tooltip("End of trim");
 		end_trim_button->callback(review_win_end_trim_cb, this);
 		end_trim_button->deactivate();
 		nxx += 28;
@@ -51669,7 +54102,7 @@ int	loop;
 		clear_trim_button = new MyButton(nxx, 4, 14, 14, "@undo");
 		clear_trim_button->labelcolor(WHITE);
 		clear_trim_button->box(FL_NO_BOX);
-		clear_trim_button->tooltip("Reset all trims");
+		clear_trim_button->copy_tooltip("Reset all trims");
 		clear_trim_button->callback(review_win_clear_trim_cb, this);
 		clear_trim_button->hide();
 		nxx += 48;
@@ -51677,14 +54110,14 @@ int	loop;
 		snap_one_button = new MyButton(nxx, 4, 14, 14, "@-7circle");
 		snap_one_button->labelcolor(WHITE);
 		snap_one_button->box(FL_NO_BOX);
-		snap_one_button->tooltip("Save as image");
+		snap_one_button->copy_tooltip("Save as image");
 		snap_one_button->callback(review_win_snap_one_cb, this);
 		nxx += 28;
 
 		moving_crop_button = new MyButton(nxx, 4, 14, 14, "");
 		moving_crop_button->labelcolor(WHITE);
 		moving_crop_button->box(FL_FRAME_BOX);
-		moving_crop_button->tooltip("Moving Crop");
+		moving_crop_button->copy_tooltip("Moving Crop");
 		moving_crop_button->callback(moving_crop_cb, this);
 		nxx += 28;
 	
@@ -51692,7 +54125,7 @@ int	loop;
 		add_text_button->labelcolor(WHITE);
 		add_text_button->color(BLACK);
 		add_text_button->box(FL_FRAME_BOX);
-		add_text_button->tooltip("Titles");
+		add_text_button->copy_tooltip("Titles");
 		add_text_button->callback(add_text_cb, this);
 		nxx += 28;
 	
@@ -51704,7 +54137,7 @@ int	loop;
 		speed_slider->range(0.01, 10.0);
 		speed_slider->value(1.0);
 		speed_slider->step(0.01);
-		speed_slider->tooltip("Playback and encoding speed");
+		speed_slider->copy_tooltip("Playback and encoding speed");
 		speed_slider->callback(speed_cb, this);
 
 		frame_box = new Fl_Box(w() - (240 + 180), 2, 240, 13, "");
@@ -51890,7 +54323,7 @@ int	loop;
 			current_frame = 0;
 			playing = 0;
 			playing_trimmed = 0;
-			play_trim->label("@->");
+			play_trim->copy_label("@->");
 			encode->activate();
 			frames_shown = 0;
 		}
@@ -52137,7 +54570,7 @@ int	loop;
 		{
 			lseek(fd, sizeof(int) * 4, SEEK_SET);
 			playing = 0;
-			play->label("@>");
+			play->copy_label("@>");
 			current_frame = 0;
 			frames_shown = 0;
 		}
@@ -52215,7 +54648,7 @@ int	loop;
 		}
 	}
 	sprintf(buf, "(%06d of %06d) %0.2f FPS", current_frame, frame_cnt, fps);
-	frame_box->label(buf);
+	frame_box->copy_label(buf);
 	scrub->current = current_frame;
 	scrub->redraw();
 }
@@ -52298,6 +54731,10 @@ long int	end_tc[1024];
 			end_tc[loop] = 0;
 		}
 		int fdi = open("encode_video.bin", O_RDONLY);
+		if(fdi < 0)
+		{
+			fdi = open("video.bin", O_RDONLY);
+		}
 		if(fdi > -1)
 		{
 			long int length = filelength(fdi);
@@ -52710,14 +55147,17 @@ int	loop;
 				}
 				else
 				{
-					if(dest->CheckRecurseChildren(cam, dest) == 0)
+					if(cam->source_camera != dest)
 					{
-						dest->AddImageWindow(cam);
-						if(win != NULL)
+						if(dest->CheckRecurseChildren(cam, dest) == 0)
 						{
-							if(win->immediate_drawing_window != NULL)
+							dest->AddImageWindow(cam);
+							if(win != NULL)
 							{
-								win->immediate_drawing_window->redraw();
+								if(win->immediate_drawing_window != NULL)
+								{
+									win->immediate_drawing_window->redraw();
+								}
 							}
 						}
 					}
@@ -52853,12 +55293,12 @@ void	thumb_pause_av_button_cb(Fl_Widget *w, void *v)
 			if(cam->av_window->paused == 1)
 			{
 				cam->av_window->Resume();
-				b->label("Pause");
+				b->copy_label("Pause");
 			}
 			else
 			{
 				cam->av_window->Pause();
-				b->label("Resume");
+				b->copy_label("Resume");
 			}
 		}
 	}
@@ -52877,12 +55317,12 @@ void	thumb_mute_av_button_cb(Fl_Widget *w, void *v)
 			if(cam->av_window->muted == 1)
 			{
 				cam->av_window->UnMute();
-				b->label("Mute");
+				b->copy_label("Mute");
 			}
 			else
 			{
 				cam->av_window->Mute();
-				b->label("Unmute");
+				b->copy_label("Unmute");
 			}
 		}
 	}
@@ -52945,7 +55385,7 @@ int	loop;
 			}
 		}
 	}
-	tg->alias_button->label(cam->alias);
+	tg->alias_button->copy_label(cam->alias);
 }
 
 ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl_Group(xx, yy, ww, hh)
@@ -52972,7 +55412,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	}
 	thumb_button = new ThumbButton(my_win, idx, 2, 2, 153, 86);
 	thumb_button->box(FL_NO_BOX);
-	thumb_button->tooltip("Select to view this camera");
+	thumb_button->copy_tooltip("Select to view this camera");
 	thumb_button->callback(thumbnail_cb, win);
 
 	char *str = "";
@@ -52986,8 +55426,8 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	alias_button->labelcolor(YELLOW);
 	alias_button->labelsize(11);
 	alias_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
-	alias_button->label(str);
-	alias_button->tooltip("Edit the camera alias");
+	alias_button->copy_label(str);
+	alias_button->copy_tooltip("Edit the camera alias");
 	alias_button->callback(thumbgroup_change_alias_cb, this);
 	alias_button->show();
 
@@ -52997,7 +55437,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	alias_input->textcolor(WHITE);
 	alias_input->textsize(11);
 	alias_input->cursor_color(WHITE);
-	alias_input->tooltip("Edit the camera alias");
+	alias_input->copy_tooltip("Edit the camera alias");
 	alias_input->when(FL_WHEN_ENTER_KEY);
 	alias_input->callback(thumbgroup_edit_alias_cb, this);
 	alias_input->hide();
@@ -53008,7 +55448,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	remove->color(YELLOW);
 	remove->labelcolor(WHITE);
 	remove->labelsize(8);
-	remove->tooltip("Remove the camera");
+	remove->copy_tooltip("Remove the camera");
 	remove->callback(thumb_remove_button_cb, win);
 
 	place = new MyButton(20, 4, 16, 16);
@@ -53018,7 +55458,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	place->labelcolor(WHITE);
 	place->labelsize(8);
 	place->labelsize(8);
-	place->tooltip("Place the camera on the currently viewed video");
+	place->copy_tooltip("Place the camera on the currently viewed video");
 	place->callback(thumb_place_button_cb, win);
 
 	int cy = 2;
@@ -53028,7 +55468,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	record->align(FL_ALIGN_RIGHT);
 	record->labelcolor(WHITE);
 	record->labelsize(8);
-	record->tooltip("Record indicator and button");
+	record->copy_tooltip("Record indicator and button");
 	record->callback(thumb_record_button_cb, win);
 	cy += 18;
 
@@ -53038,7 +55478,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	detect_motion->align(FL_ALIGN_RIGHT);
 	detect_motion->labelcolor(WHITE);
 	detect_motion->labelsize(8);
-	detect_motion->tooltip("Detecting motion");
+	detect_motion->copy_tooltip("Detecting motion");
 	detect_motion->callback(thumb_motion_button_cb, win);
 	detect_motion->hide();
 	
@@ -53048,7 +55488,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	detect_object->align(FL_ALIGN_RIGHT);
 	detect_object->labelcolor(WHITE);
 	detect_object->labelsize(8);
-	detect_object->tooltip("Detect and recognize objects");
+	detect_object->copy_tooltip("Detect and recognize objects");
 	detect_object->callback(thumb_object_button_cb, win);
 	detect_object->hide();
 
@@ -53058,7 +55498,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	instrument->align(FL_ALIGN_RIGHT);
 	instrument->labelcolor(WHITE);
 	instrument->labelsize(8);
-	instrument->tooltip("Instrument this camera for use with OSG");
+	instrument->copy_tooltip("Instrument this camera for use with OSG");
 	instrument->callback(thumb_instrument_button_cb, win);
 	instrument->hide();
 	
@@ -53068,7 +55508,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	set_color->align(FL_ALIGN_RIGHT);
 	set_color->labelcolor(WHITE);
 	set_color->labelsize(8);
-	set_color->tooltip("Set the background color");
+	set_color->copy_tooltip("Set the background color");
 	set_color->callback(thumb_background_button_cb, win);
 	set_color->hide();
 	
@@ -53078,7 +55518,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	set_text_color->align(FL_ALIGN_RIGHT);
 	set_text_color->labelcolor(WHITE);
 	set_text_color->labelsize(8);
-	set_text_color->tooltip("Set the text color");
+	set_text_color->copy_tooltip("Set the text color");
 	set_text_color->callback(thumb_text_color_button_cb, win);
 	set_text_color->hide();
 
@@ -53088,7 +55528,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	pause_av->align(FL_ALIGN_RIGHT);
 	pause_av->labelcolor(WHITE);
 	pause_av->labelsize(8);
-	pause_av->tooltip("Pause an AV camera");
+	pause_av->copy_tooltip("Pause an AV camera");
 	pause_av->callback(thumb_pause_av_button_cb, win);
 	pause_av->hide();
 
@@ -53098,7 +55538,7 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 	mute_av->align(FL_ALIGN_RIGHT);
 	mute_av->labelcolor(WHITE);
 	mute_av->labelsize(8);
-	mute_av->tooltip("Muta an A/V camera");
+	mute_av->copy_tooltip("Muta an A/V camera");
 	mute_av->callback(thumb_mute_av_button_cb, win);
 	mute_av->hide();
 
@@ -53109,44 +55549,44 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 		up_left = new V4L_Button(this, cx, cy, 10, 10, "");
 		up_left->box(FL_BORDER_FRAME);
 		up_left->color(YELLOW);
-		up_left->tooltip("Move up and left using v4l controls");
+		up_left->copy_tooltip("Move up and left using v4l controls");
 		cx += 11;
 		up = new V4L_Button(this, cx, cy, 10, 10, "");
 		up->box(FL_BORDER_FRAME);
 		up->color(YELLOW);
-		up->tooltip("Move up using v4l controls");
+		up->copy_tooltip("Move up using v4l controls");
 		cx += 11;
 		up_right = new V4L_Button(this, cx, cy, 10, 10, "");
 		up_right->box(FL_BORDER_FRAME);
 		up_right->color(YELLOW);
-		up_right->tooltip("Move up and right using v4l controls");
+		up_right->copy_tooltip("Move up and right using v4l controls");
 		cx = 2 + 157;
 		cy += 11;
 		left = new V4L_Button(this, cx, cy, 10, 10, "");
 		left->box(FL_BORDER_FRAME);
 		left->color(YELLOW);
-		left->tooltip("Move left using v4l controls");
+		left->copy_tooltip("Move left using v4l controls");
 		cx += 22;
 		right = new V4L_Button(this, cx, cy, 10, 10, "");
 		right->box(FL_BORDER_FRAME);
 		right->color(YELLOW);
-		right->tooltip("Move right using v4l controls");
+		right->copy_tooltip("Move right using v4l controls");
 		cx = 2 + 157;
 		cy += 11;
 		down_left = new V4L_Button(this, cx, cy, 10, 10, "");
 		down_left->box(FL_BORDER_FRAME);
 		down_left->color(YELLOW);
-		down_left->tooltip("Move down and left using v4l controls");
+		down_left->copy_tooltip("Move down and left using v4l controls");
 		cx += 11;
 		down = new V4L_Button(this, cx, cy, 10, 10, "");
 		down->box(FL_BORDER_FRAME);
 		down->color(YELLOW);
-		down->tooltip("Move down using v4l controls");
+		down->copy_tooltip("Move down using v4l controls");
 		cx += 11;
 		down_right = new V4L_Button(this, cx, cy, 10, 10, "");
 		down_right->box(FL_BORDER_FRAME);
 		down_right->color(YELLOW);
-		down_right->tooltip("Move down and right using v4l controls");
+		down_right->copy_tooltip("Move down and right using v4l controls");
 
 		cx = 42 + 157;
 		cy = 12 + 56;
@@ -53156,12 +55596,12 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 		zoom_in->align(FL_ALIGN_TOP | FL_ALIGN_CENTER);
 		zoom_in->labelcolor(WHITE);
 		zoom_in->labelsize(5);
-		zoom_in->tooltip("Zoom in using v4l controls");
+		zoom_in->copy_tooltip("Zoom in using v4l controls");
 		cy += 12;
 		zoom_out = new V4L_Button(this, cx, cy, 11, 11, "");
 		zoom_out->box(FL_BORDER_FRAME);
 		zoom_out->color(YELLOW);
-		zoom_out->tooltip("Zoom out using v4l controls");
+		zoom_out->copy_tooltip("Zoom out using v4l controls");
 
 		cx = 60 + 157;
 		cy = 12 + 56;
@@ -53171,12 +55611,12 @@ ThumbGroup::ThumbGroup(MyWin *win, int idx, int xx, int yy, int ww, int hh) : Fl
 		focus_far->align(FL_ALIGN_TOP | FL_ALIGN_CENTER);
 		focus_far->labelcolor(WHITE);
 		focus_far->labelsize(5);
-		focus_far->tooltip("Focus far using v4l controls");
+		focus_far->copy_tooltip("Focus far using v4l controls");
 		cy += 12;
 		focus_near = new V4L_Button(this, cx, cy, 11, 11, "");
 		focus_near->box(FL_BORDER_FRAME);
 		focus_near->color(YELLOW);
-		focus_near->tooltip("Focus near using v4l controls");
+		focus_near->copy_tooltip("Focus near using v4l controls");
 
 	V4L_Window->end();
 	V4L_Window->color(BLACK);
@@ -53308,6 +55748,7 @@ void	ThumbGroup::UpdateButtons(Camera *cam)
 				if(cam->V4L_Test2() == 1)
 				{
 					V4L_Window->show();
+					cam->v4l_capable = 1;
 				}
 			}
 		}
@@ -54266,14 +56707,14 @@ char	buf[256];
 	current_index->labelcolor(WHITE);
 	current_index->align(FL_ALIGN_CENTER);
 	sprintf(label_buf, "%d", current + 1);
-	current_index->label(label_buf);
+	current_index->copy_label(label_buf);
 
 	prev = new MyButton(2, 5, 20, 20, "@<");
 	prev->box(FL_FLAT_BOX);
 	prev->color(BLACK);
 	prev->labelsize(12);
 	prev->labelcolor(WHITE);
-	prev->tooltip("Advance to the next external program definition.");
+	prev->copy_tooltip("Advance to the next external program definition.");
 	prev->callback(embed_app_prev_cb, this);
 
 	next = new MyButton(w() - 21, 5, 20, 20, "@>");
@@ -54281,7 +56722,7 @@ char	buf[256];
 	next->color(BLACK);
 	next->labelsize(12);
 	next->labelcolor(WHITE);
-	next->tooltip("Go back the last external program definition.");
+	next->copy_tooltip("Go back the last external program definition.");
 	next->callback(embed_app_next_cb, this);
 
 	int y_pos = 55;
@@ -54292,7 +56733,7 @@ char	buf[256];
 	path->labelcolor(LIGHT_GRAY);
 	path->labelsize(11);
 	path->box(FL_FLAT_BOX);
-	path->tooltip("The path to the external program. Programs in $PATH can be found without a full path.");
+	path->copy_tooltip("The path to the external program. Programs in $PATH can be found without a full path.");
 	y_pos += 22;
 
 	use_w = new Fl_Input(75, y_pos, 50, 20, "Width");
@@ -54301,7 +56742,7 @@ char	buf[256];
 	use_w->color(LIGHT_GRAY);
 	use_w->labelcolor(LIGHT_GRAY);
 	use_w->labelsize(11);
-	use_w->tooltip("The width of the initial window that hold the window of the external program.");
+	use_w->copy_tooltip("The width of the initial window that hold the window of the external program.");
 	use_w->box(FL_FLAT_BOX);
 
 	use_h = new Fl_Input(175, y_pos, 50, 20, "Height");
@@ -54311,7 +56752,7 @@ char	buf[256];
 	use_h->labelcolor(LIGHT_GRAY);
 	use_h->labelsize(11);
 	use_h->box(FL_FLAT_BOX);
-	use_h->tooltip("The height of the initial window that hold the window of the external program.");
+	use_h->copy_tooltip("The height of the initial window that hold the window of the external program.");
 	y_pos += 32;
 
 	for(loop = 0;loop < 10;loop++)
@@ -54332,7 +56773,7 @@ char	buf[256];
 		arg[loop]->labelcolor(LIGHT_GRAY);
 		arg[loop]->labelsize(11);
 		arg[loop]->box(FL_FLAT_BOX);
-		arg[loop]->tooltip("Command line arguments provided to the external program. The first is designated as that program's title.");
+		arg[loop]->copy_tooltip("Command line arguments provided to the external program. The first is designated as that program's title.");
 		y_pos += 22;
 	}
 	y_pos += 22;
@@ -54342,7 +56783,7 @@ char	buf[256];
 	execute->labelcolor(YELLOW);
 	execute->labelsize(12);
 	execute->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	execute->tooltip("Execute and embed the program specified by this dialog.");
+	execute->copy_tooltip("Execute and embed the program specified by this dialog.");
 	execute->callback(embed_app_execute_cb, this);
 
 	accept = new MyButton((w() / 2) - 40, y_pos, 80, 20, "Accept");
@@ -54351,7 +56792,7 @@ char	buf[256];
 	accept->labelcolor(YELLOW);
 	accept->labelsize(12);
 	accept->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	accept->tooltip("Save all of the specifications to a file and close the dialog.");
+	accept->copy_tooltip("Save all of the specifications to a file and close the dialog.");
 	accept->callback(embed_app_accept_cb, this);
 
 	cancel = new MyButton(w() - 90, y_pos, 80, 20, "Cancel");
@@ -54360,7 +56801,7 @@ char	buf[256];
 	cancel->labelcolor(YELLOW);
 	cancel->labelsize(12);
 	cancel->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	cancel->tooltip("Close the dialog with saving the specifications to a file.");
+	cancel->copy_tooltip("Close the dialog with saving the specifications to a file.");
 	cancel->callback(hide_window_cb, this);
 
 	end();
@@ -54383,7 +56824,7 @@ void	EmbedAppSettings::Next()
 	}
 	LoadFromArray();
 	sprintf(label_buf, "%d", current + 1);
-	current_index->label(label_buf);
+	current_index->copy_label(label_buf);
 	redraw();
 }
 
@@ -54397,7 +56838,7 @@ void	EmbedAppSettings::Prev()
 	}
 	LoadFromArray();
 	sprintf(label_buf, "%d", current + 1);
-	current_index->label(label_buf);
+	current_index->copy_label(label_buf);
 	redraw();
 }
 
@@ -54601,7 +57042,7 @@ MySlider::MySlider(int xx, int yy, int ww, int hh, char *lbl, MyButton *in_reset
 					reset = new MyButton(lx, ly, lw, lh);
 					reset->box(FL_NO_BOX);
 					reset->callback(my_slider_reset_cb, this);
-					reset->tooltip("Reset to default value");
+					reset->copy_tooltip("Reset to default value");
 					labelcolor(YELLOW);
 				}
 			}
@@ -54611,7 +57052,7 @@ MySlider::MySlider(int xx, int yy, int ww, int hh, char *lbl, MyButton *in_reset
 	{
 		reset = in_reset;
 		reset->callback(my_slider_reset_cb, this);
-		reset->tooltip("Reset to default value");
+		reset->copy_tooltip("Reset to default value");
 	}
 }
 
@@ -54877,8 +57318,15 @@ void	record_all_cb(Fl_Widget *w, void *v)
 					char out_filename[4096];
 					sprintf(out_filename, "global.%s", win->use_extension);
 					Muxer *use_muxer = new Muxer(win, NULL, 1);
-					use_muxer->InitMux(win->audio, win->use_video_codec, win->use_audio_codec, "global.bin", NULL, out_filename, NULL, win->desktop_monitor, win->pulse_mixer, -1, win->original_w, win->original_h, fps, win->audio_sample_rate, win->audio_channels, -1, NULL, NULL);
-					win->AddLastMuxed(out_filename);
+					int err = use_muxer->InitMux(win->audio, win->use_video_codec, win->use_audio_codec, "global.bin", NULL, out_filename, NULL, win->desktop_monitor, win->pulse_mixer, -1, win->original_w, win->original_h, fps, win->audio_sample_rate, win->audio_channels, -1, NULL, NULL);
+					if(err == 0)
+					{
+						win->AddLastMuxed(out_filename);
+					}
+					else
+					{
+						win->SetErrorMessage("Encoding Error: Not recording.");
+					}
 					delete use_muxer;
 				}
 			}
@@ -55285,6 +57733,7 @@ char	buf[256];
 	sprintf(buf, "%d", main_win->output_width);
 	output_w->value(buf);
 	output_w->when(FL_WHEN_CHANGED);
+	output_w->copy_tooltip("Width of the outout stream");
 	output_w->callback(video_settings_resolution_cb, this);
 
 	output_h = new Fl_Int_Input(262, yp, 60, 20, "");
@@ -55298,6 +57747,7 @@ char	buf[256];
 	sprintf(buf, "%d", main_win->output_height);
 	output_h->value(buf);
 	output_h->when(FL_WHEN_CHANGED);
+	output_h->copy_tooltip("Height of the outout stream");
 	output_h->callback(video_settings_resolution_cb, this);
 	yp += (25);
 
@@ -55309,6 +57759,7 @@ char	buf[256];
 	timestamp_default->labelcolor(YELLOW);
 	timestamp_default->labelsize(12);
 	timestamp_default->value(main_win->timestamp);
+	timestamp_default->copy_tooltip("Embed a timestamp on the output");
 	timestamp_default->callback(timestamp_default_cb, this);
 
 	timestamp_format = new Fl_Input(218, yp, 462, 20, "Format");
@@ -55321,6 +57772,7 @@ char	buf[256];
 	timestamp_format->labelcolor(YELLOW);
 	timestamp_format->align(FL_ALIGN_TOP | FL_ALIGN_CENTER);
 	timestamp_format->value(main_win->timestamp_format);
+	timestamp_format->copy_tooltip("Format of the timestamp");
 	timestamp_format->callback(timestamp_format_cb, this);
 
 	timestamp_color_button = new MyButton(681, yp, 20, 20, "F");
@@ -55343,6 +57795,7 @@ char	buf[256];
 	timestamp_background_color_button->labelcolor(YELLOW);
 	timestamp_background_color_button->labelsize(9);
 	timestamp_background_color_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+	timestamp_background_color_button->copy_tooltip("Change the background color of the timestamp");
 	timestamp_background_color_button->callback(timestamp_background_color_cb, this);
 	yp += (40);
 
@@ -55377,6 +57830,7 @@ char	buf[256];
 	sprintf(buf, "%d", (int)main_win->timestamp_font_sz);
 	timestamp_font_size->value(buf);
 	timestamp_font_size->labelcolor(YELLOW);
+	timestamp_font_size->copy_tooltip("Change the font size of the timestamp");
 	timestamp_font_size->callback(timestamp_font_size_cb, this);
 
 	timestamp_position_x = new Fl_Int_Input(400, yp, 60, 20, "Timestamp Position");
@@ -55389,6 +57843,7 @@ char	buf[256];
 	sprintf(buf, "%d", (int)main_win->timestamp_position_x);
 	timestamp_position_x->value(buf);
 	timestamp_position_x->labelcolor(YELLOW);
+	timestamp_position_x->copy_tooltip("Horizontal position of the timestamp");
 	timestamp_position_x->callback(timestamp_position_cb, this);
 
 	timestamp_position_y = new Fl_Int_Input(470, yp, 60, 20, "");
@@ -55401,6 +57856,7 @@ char	buf[256];
 	sprintf(buf, "%d", (int)main_win->timestamp_position_y);
 	timestamp_position_y->value(buf);
 	timestamp_position_y->labelcolor(YELLOW);
+	timestamp_position_y->copy_tooltip("Vertical position of the timestamp");
 	timestamp_position_y->callback(timestamp_position_cb, this);
 
 	yp += 25;
@@ -55410,6 +57866,7 @@ char	buf[256];
 	fps_slider->step(0.5);
 	fps_slider->initial_value = 0.0;
 	fps_slider->labelsize(12);
+	fps_slider->copy_tooltip("Target FPS of the output");
 	fps_slider->callback(fps_slider_cb, main_win);
 
 	yp += 25;
@@ -55419,6 +57876,7 @@ char	buf[256];
 	encode_fps_slider->step(0.01);
 	encode_fps_slider->initial_value = 1.0;
 	encode_fps_slider->labelsize(12);
+	encode_fps_slider->copy_tooltip("Encoding FPS of the output");
 	encode_fps_slider->callback(encode_fps_cb, main_win);
 
 	yp += 25;
@@ -55428,6 +57886,7 @@ char	buf[256];
 	minimum_fps_slider->step(1.0);
 	minimum_fps_slider->initial_value = 20.0;
 	minimum_fps_slider->labelsize(12);
+	minimum_fps_slider->copy_tooltip("Set a minimum FPS for the output");
 	minimum_fps_slider->callback(minimum_fps_cb, main_win);
 
 	yp += 30;
@@ -55439,6 +57898,7 @@ char	buf[256];
 	realtime_encoding_button->labelsize(9);
 	realtime_encoding_button->align(FL_ALIGN_CENTER);
 	realtime_encoding_button->value(main_win->muxing);
+	realtime_encoding_button->copy_tooltip("Encode while recording");
 	realtime_encoding_button->callback(realtime_encoding_cb, main_win);
 	yp += 22;
 	embed_pip_button = new MyLightButton(200, yp, 120, 20, "Embed PIP");
@@ -55448,6 +57908,7 @@ char	buf[256];
 	embed_pip_button->labelsize(9);
 	embed_pip_button->align(FL_ALIGN_CENTER);
 	embed_pip_button->value(main_win->embed_pip);
+	embed_pip_button->copy_tooltip("Embed a picture in picture window onto the main video recording");
 	embed_pip_button->callback(embed_pip_cb, main_win);
 	yp += 22;
 	gather_codecs_button = new MyButton(200, yp, 120, 20, "Gather Codecs");
@@ -55456,6 +57917,7 @@ char	buf[256];
 	gather_codecs_button->labelcolor(YELLOW);
 	gather_codecs_button->labelsize(9);
 	gather_codecs_button->align(FL_ALIGN_CENTER);
+	gather_codecs_button->copy_tooltip("Query and test codec combinations");
 	gather_codecs_button->callback(gather_codecs_cb, main_win);
 	yp += 22;
 	create_tag_file_button = new MyLightButton(200, yp, 120, 20, "Create Tag File");
@@ -55465,6 +57927,7 @@ char	buf[256];
 	create_tag_file_button->labelsize(9);
 	create_tag_file_button->align(FL_ALIGN_CENTER);
 	create_tag_file_button->value(main_win->tag_recognized);
+	create_tag_file_button->copy_tooltip("Create an ASCII file with recognized objects found in the video");
 	create_tag_file_button->callback(create_tag_file_cb, main_win);
 	yp = row_start;
 	record_all_button = new MyLightButton(330, yp, 120, 20, "Record Main Window");
@@ -55474,6 +57937,7 @@ char	buf[256];
 	record_all_button->labelsize(9);
 	record_all_button->align(FL_ALIGN_CENTER);
 	record_all_button->value(main_win->record_all);
+	record_all_button->copy_tooltip("Record the entire main window rather than only the selected cameras");
 	record_all_button->callback(record_all_cb, main_win);
 	yp += 22;
 	frame_scaling_button = new MyLightButton(330, yp, 120, 20, "Frame Scaled Output");
@@ -55483,6 +57947,7 @@ char	buf[256];
 	frame_scaling_button->labelsize(9);
 	frame_scaling_button->align(FL_ALIGN_CENTER);
 	frame_scaling_button->value(main_win->frame_scaling);
+	frame_scaling_button->copy_tooltip("Rather than stretching the recorded camera, place frames around it to meet output size");
 	frame_scaling_button->callback(frame_scaling_cb, main_win);
 	yp += 22;
 	crop_scaling_button = new MyLightButton(330, yp, 120, 20, "Crop Scaling");
@@ -55492,6 +57957,7 @@ char	buf[256];
 	crop_scaling_button->labelsize(9);
 	crop_scaling_button->align(FL_ALIGN_CENTER);
 	crop_scaling_button->value(main_win->crop_scaling);
+	crop_scaling_button->copy_tooltip("Rather than stretching the recorded camera, crop it to the output size");
 	crop_scaling_button->callback(crop_scaling_cb, main_win);
 	yp += 22;
 	crop_output_button = new MyLightButton(330, yp, 120, 20, "Crop Output");
@@ -55501,6 +57967,7 @@ char	buf[256];
 	crop_output_button->labelsize(9);
 	crop_output_button->align(FL_ALIGN_CENTER);
 	crop_output_button->value(main_win->crop_output);
+	crop_output_button->copy_tooltip("Crop the output video");
 	crop_output_button->callback(crop_output_cb, main_win);
 	yp += 22;
 
@@ -55512,6 +57979,7 @@ char	buf[256];
 	single_stream_button->labelsize(9);
 	single_stream_button->align(FL_ALIGN_CENTER);
 	single_stream_button->value(!main_win->single_stream);
+	single_stream_button->copy_tooltip("Output multiple streams at once");
 	single_stream_button->callback(single_stream_cb, main_win);
 	yp += 22;
 	display_recording_button = new MyLightButton(460, yp, 120, 20, "Display Recording");
@@ -55521,6 +57989,7 @@ char	buf[256];
 	display_recording_button->labelsize(9);
 	display_recording_button->align(FL_ALIGN_CENTER);
 	display_recording_button->value(0);
+	display_recording_button->copy_tooltip("Always display the recording camera");
 	if(main_win->follow_mode == FOLLOW_MODE_DISPLAY_RECORDING_CAMERA)
 	{
 		display_recording_button->value(1);
@@ -55534,6 +58003,7 @@ char	buf[256];
 	recording_follow_display_button->labelsize(9);
 	recording_follow_display_button->align(FL_ALIGN_CENTER);
 	recording_follow_display_button->value(0);
+	recording_follow_display_button->copy_tooltip("Always display the recording camera");
 	if(main_win->follow_mode == FOLLOW_MODE_RECORDING_FOLLOWS_DISPLAY)
 	{
 		recording_follow_display_button->value(1);
@@ -55541,13 +58011,14 @@ char	buf[256];
 	recording_follow_display_button->callback(follow_mode_cb, this);
 	yp += 22;
 
-	html_background_transparent = new MyLightButton(460, yp, 120, 20, "HTML Background");
+	html_background_transparent = new MyLightButton(460, yp, 120, 20, "HTML Transparent");
 	html_background_transparent->box(FL_FRAME_BOX);
 	html_background_transparent->color(BLACK);
 	html_background_transparent->labelcolor(YELLOW);
 	html_background_transparent->labelsize(9);
 	html_background_transparent->align(FL_ALIGN_CENTER);
 	html_background_transparent->value(main_win->html_background);
+	html_background_transparent->copy_tooltip("Make the background of HTML sources transparent");
 	html_background_transparent->callback(html_background_transparent_cb, this);
 	yp += 25;
 
@@ -55558,6 +58029,7 @@ char	buf[256];
 	close->labelcolor(YELLOW);
 	close->labelsize(12);
 	close->callback(settings_close_cb, this);
+	close->copy_tooltip("Close this window, saving settings");
 	end();
 	resize(x(), y(), w(), yp + 50);
 }
@@ -55627,6 +58099,168 @@ void	VideoSettingsWindow::Update()
 			single_stream_button->activate();
 		}
 	}
+}
+
+// SECTION ************************************** MISC VIDEO SETTINGS WINDOW *******************************************************
+
+void	misc_slider_cb(Fl_Widget *w, void *v)
+{
+	MiscVideoSettingsWindow *misc_window = (MiscVideoSettingsWindow *)v;
+	MySlider *slide = (MySlider *)w;
+	if(slide != NULL)
+	{
+		double nn = slide->value();
+		if(slide == misc_window->contrast_slider)
+		{
+			misc_window->contrast = nn;
+		}
+		else if(slide == misc_window->brightness_slider)
+		{
+			misc_window->brightness = nn;
+		}
+		else if(slide == misc_window->saturation_slider)
+		{
+			misc_window->saturation = nn;
+		}
+		else if(slide == misc_window->hue_slider)
+		{
+			misc_window->hue = nn;
+		}
+		else if(slide == misc_window->intensity_slider)
+		{
+			misc_window->intensity = nn;
+		}
+	}
+}
+
+MiscVideoSettingsWindow::MiscVideoSettingsWindow(MyWin *in_win) : DragWindow(360, 200, 800, 795, "Video Settings")
+{
+	my_window = in_win;
+
+	contrast = 0.5;
+	brightness = 0.5;
+	saturation = 1.0;
+	hue = 1.0;
+	intensity = 1.0;
+
+	last_x = 0;
+	last_y = 0;
+	resize(x(), y(), w(), h());
+	int font_sz = 9;
+
+	int yp = 10;
+	Fl_Box *title = new Fl_Box(5, 10, w() - 10, 20, "Misc Video Settings");
+	title->box(FL_FLAT_BOX);
+	title->color(BLACK);
+	title->labelcolor(WHITE);
+	title->labelsize(13);
+	title->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	yp += 45;
+
+	contrast_slider = new MySlider(200, yp, 500, 25, "Contrast");
+	contrast_slider->range(0.0, 1.0);
+	contrast_slider->value(0.5);
+	contrast_slider->initial_value = 0.5;
+	contrast_slider->labelsize(font_sz + 1);
+	contrast_slider->labelcolor(YELLOW);
+	contrast_slider->callback(misc_slider_cb, this);
+	contrast_slider->copy_tooltip("Contrast applied to the image after it is received from the camera.");
+	yp += 25;
+	brightness_slider = new MySlider(200, yp, 500, 25, "Brightness");
+	brightness_slider->range(0.0, 1.0);
+	brightness_slider->value(0.5);
+	brightness_slider->initial_value = 0.5;
+	brightness_slider->labelsize(font_sz + 1);
+	brightness_slider->labelcolor(YELLOW);
+	brightness_slider->copy_tooltip("Brightness applied to the image after it is received from the camera.");
+	brightness_slider->callback(misc_slider_cb, this);
+	yp += 25;
+	saturation_slider = new MySlider(200, yp, 500, 25, "Saturation");
+	saturation_slider->range(0.0, 2.0);
+	saturation_slider->value(1.0);
+	saturation_slider->initial_value = 1.0;
+	saturation_slider->labelsize(font_sz + 1);
+	saturation_slider->labelcolor(YELLOW);
+	saturation_slider->copy_tooltip("Color saturation applied to the image after it is received from the camera.");
+	saturation_slider->callback(misc_slider_cb, this);
+	yp += 25;
+	hue_slider = new MySlider(200, yp, 500, 25, "Hue");
+	hue_slider->range(0.0, 2.0);
+	hue_slider->value(1.0);
+	hue_slider->initial_value = 1.0;
+	hue_slider->labelsize(font_sz + 1);
+	hue_slider->labelcolor(YELLOW);
+	hue_slider->copy_tooltip("Hue adjustment applied to the image after it is received from the camera.");
+	hue_slider->callback(misc_slider_cb, this);
+	yp += 25;
+	intensity_slider = new MySlider(200, yp, 500, 25, "Value");
+	intensity_slider->range(0.0, 2.0);
+	intensity_slider->value(1.0);
+	intensity_slider->initial_value = 1.0;
+	intensity_slider->labelsize(font_sz + 1);
+	intensity_slider->labelcolor(YELLOW);
+	intensity_slider->copy_tooltip("Color intensity applied to the image after it is received from the camera.");
+	intensity_slider->callback(misc_slider_cb, this);
+	yp += 40;
+
+	MyButton *close = new MyButton(70, yp, 100, 22, "Close");
+	close->box(FL_FRAME_BOX);
+	close->color(BLACK);
+	close->labelcolor(YELLOW);
+	close->labelsize(font_sz + 1);
+	close->copy_tooltip("Close the dialog.");
+	close->callback(hide_window_cb, this);
+	end();
+	resize(x(), y(), w(), yp + 55);
+}
+
+MiscVideoSettingsWindow::~MiscVideoSettingsWindow()
+{
+}
+
+int	MiscVideoSettingsWindow::handle(int event)
+{
+	int flag = 0;
+	flag = DragWindow::handle(event);
+	if(flag == 0)
+	{
+		if((event == FL_FOCUS)
+		|| (event == FL_UNFOCUS))
+		{
+			flag = 1;
+		}
+		else if(event == FL_KEYBOARD)
+		{
+			int key = Fl::event_key();
+			if(key == FL_Escape)
+			{
+				hide();
+				flag = 1;
+			}
+		}
+		else if(event == FL_PUSH)
+		{
+			last_x = Fl::event_x_root();
+			last_y = Fl::event_y_root();
+			flag = 1;
+		}
+		else if(event == FL_RELEASE)
+		{
+			flag = 1;
+		}
+		else if(event == FL_DRAG)
+		{
+			int xx = Fl::event_x_root();
+			int yy = Fl::event_y_root();
+			int dx = last_x - xx;
+			int dy = last_y - yy;
+			resize(x() - dx, y() - dy, w(), h());
+			last_x = xx;
+			last_y = yy;
+			flag = 1;
+		}
+	}
+	return(flag);
 }
 
 // SECTION ************************************** CAMERA SETTINGS WINDOW *******************************************************
@@ -56330,7 +58964,7 @@ char	buf[256];
 	cam_alias->textsize(font_sz);
 	cam_alias->cursor_color(WHITE);
 	cam_alias->labelcolor(YELLOW);
-	cam_alias->tooltip("Alias is used to identify a camera and should be unique and human readable.\n");
+	cam_alias->copy_tooltip("Alias is used to identify a camera and should be unique and human readable.\n");
 	cam_alias->when(FL_WHEN_CHANGED);
 	char *str = "";
 	if(cam != NULL)
@@ -56349,7 +58983,7 @@ char	buf[256];
 	display_w->textsize(font_sz);
 	display_w->cursor_color(WHITE);
 	display_w->labelcolor(YELLOW);
-	display_w->tooltip("The resolution of the displayed image from this camera.");
+	display_w->copy_tooltip("The resolution of the displayed image from this camera.");
 	if(cam != NULL)
 	{
 		sprintf(buf, "%d", (int)cam->display_width);
@@ -56365,7 +58999,7 @@ char	buf[256];
 	display_h->textsize(font_sz);
 	display_h->cursor_color(WHITE);
 	display_h->labelcolor(YELLOW);
-	display_h->tooltip("The resolution of the displayed image from this camera.");
+	display_h->copy_tooltip("The resolution of the displayed image from this camera.");
 	if(cam != NULL)
 	{
 		sprintf(buf, "%d", (int)cam->display_height);
@@ -56381,7 +59015,7 @@ char	buf[256];
 	contrast_slider->labelsize(font_sz + 1);
 	contrast_slider->labelcolor(YELLOW);
 	contrast_slider->callback(contrast_slider_cb, this);
-	contrast_slider->tooltip("Contrast applied to the image after it is received from the camera.");
+	contrast_slider->copy_tooltip("Contrast applied to the image after it is received from the camera.");
 	yp += (25);
 	brightness_slider = new MySlider(200, yp, 500, 25, "Brightness");
 	brightness_slider->range(0.0, 1.0);
@@ -56389,7 +59023,7 @@ char	buf[256];
 	brightness_slider->initial_value = 0.5;
 	brightness_slider->labelsize(font_sz + 1);
 	brightness_slider->labelcolor(YELLOW);
-	brightness_slider->tooltip("Brightness applied to the image after it is received from the camera.");
+	brightness_slider->copy_tooltip("Brightness applied to the image after it is received from the camera.");
 	brightness_slider->callback(brightness_slider_cb, this);
 	yp += (25);
 	saturation_slider = new MySlider(200, yp, 500, 25, "Saturation");
@@ -56398,7 +59032,7 @@ char	buf[256];
 	saturation_slider->initial_value = 1.0;
 	saturation_slider->labelsize(font_sz + 1);
 	saturation_slider->labelcolor(YELLOW);
-	saturation_slider->tooltip("Color saturation applied to the image after it is received from the camera.");
+	saturation_slider->copy_tooltip("Color saturation applied to the image after it is received from the camera.");
 	saturation_slider->callback(saturation_slider_cb, this);
 	yp += (25);
 	hue_slider = new MySlider(200, yp, 500, 25, "Hue");
@@ -56407,7 +59041,7 @@ char	buf[256];
 	hue_slider->initial_value = 1.0;
 	hue_slider->labelsize(font_sz + 1);
 	hue_slider->labelcolor(YELLOW);
-	hue_slider->tooltip("Hue adjustment applied to the image after it is received from the camera.");
+	hue_slider->copy_tooltip("Hue adjustment applied to the image after it is received from the camera.");
 	hue_slider->callback(hue_slider_cb, this);
 	yp += (25);
 	intensity_slider = new MySlider(200, yp, 500, 25, "Value");
@@ -56416,7 +59050,7 @@ char	buf[256];
 	intensity_slider->initial_value = 1.0;
 	intensity_slider->labelsize(font_sz + 1);
 	intensity_slider->labelcolor(YELLOW);
-	intensity_slider->tooltip("Color intensity applied to the image after it is received from the camera.");
+	intensity_slider->copy_tooltip("Color intensity applied to the image after it is received from the camera.");
 	intensity_slider->callback(intensity_slider_cb, this);
 	yp += (25);
 	red_intensity_slider = new MySlider(200, yp, 500, 25, "Red Value");
@@ -56425,7 +59059,7 @@ char	buf[256];
 	red_intensity_slider->initial_value = 1.0;
 	red_intensity_slider->labelsize(font_sz + 1);
 	red_intensity_slider->labelcolor(YELLOW);
-	red_intensity_slider->tooltip("Red intensity applied to the image after it is received from the camera.");
+	red_intensity_slider->copy_tooltip("Red intensity applied to the image after it is received from the camera.");
 	red_intensity_slider->callback(red_intensity_slider_cb, this);
 	yp += (25);
 	green_intensity_slider = new MySlider(200, yp, 500, 25, "Green Value");
@@ -56434,7 +59068,7 @@ char	buf[256];
 	green_intensity_slider->initial_value = 1.0;
 	green_intensity_slider->labelsize(font_sz + 1);
 	green_intensity_slider->labelcolor(YELLOW);
-	green_intensity_slider->tooltip("Green intensity applied to the image after it is received from the camera.");
+	green_intensity_slider->copy_tooltip("Green intensity applied to the image after it is received from the camera.");
 	green_intensity_slider->callback(green_intensity_slider_cb, this);
 	yp += (25);
 	blue_intensity_slider = new MySlider(200, yp, 500, 25, "Blue Value");
@@ -56443,7 +59077,7 @@ char	buf[256];
 	blue_intensity_slider->initial_value = 1.0;
 	blue_intensity_slider->labelsize(font_sz + 1);
 	blue_intensity_slider->labelcolor(YELLOW);
-	blue_intensity_slider->tooltip("Blue intensity applied to the image after it is received from the camera.");
+	blue_intensity_slider->copy_tooltip("Blue intensity applied to the image after it is received from the camera.");
 	blue_intensity_slider->callback(blue_intensity_slider_cb, this);
 	yp += (25);
 	alpha_intensity_slider = new MySlider(200, yp, 500, 25, "Alpha Value");
@@ -56452,7 +59086,7 @@ char	buf[256];
 	alpha_intensity_slider->initial_value = 1.0;
 	alpha_intensity_slider->labelsize(font_sz + 1);
 	alpha_intensity_slider->labelcolor(YELLOW);
-	alpha_intensity_slider->tooltip("Alpha intensity applied to the image after it is received from the camera.");
+	alpha_intensity_slider->copy_tooltip("Alpha intensity applied to the image after it is received from the camera.");
 	alpha_intensity_slider->callback(alpha_intensity_slider_cb, this);
 	yp += (25);
 	aspect_x_slider = new MySlider(200, yp, 500, 25, "Aspect Width");
@@ -56461,7 +59095,7 @@ char	buf[256];
 	aspect_x_slider->initial_value = 1.0;
 	aspect_x_slider->labelsize(font_sz + 1);
 	aspect_x_slider->labelcolor(YELLOW);
-	aspect_x_slider->tooltip("Aspect ratio adjustment. This will stretch the image is cropping is not applied.");
+	aspect_x_slider->copy_tooltip("Aspect ratio adjustment. This will stretch the image is cropping is not applied.");
 	aspect_x_slider->callback(aspect_x_slider_cb, this);
 	yp += (25);
 	aspect_y_slider = new MySlider(200, yp, 500, 25, "Aspect Height");
@@ -56470,7 +59104,7 @@ char	buf[256];
 	aspect_y_slider->initial_value = 1.0;
 	aspect_y_slider->labelsize(font_sz + 1);
 	aspect_y_slider->labelcolor(YELLOW);
-	aspect_y_slider->tooltip("Aspect ratio adjustment. This will stretch the image is cropping is not applied.");
+	aspect_y_slider->copy_tooltip("Aspect ratio adjustment. This will stretch the image is cropping is not applied.");
 	aspect_y_slider->callback(aspect_y_slider_cb, this);
 
 	yp += (25);
@@ -56480,7 +59114,7 @@ char	buf[256];
 	motion_threshold_slider->initial_value = 100.0;
 	motion_threshold_slider->labelsize(font_sz + 1);
 	motion_threshold_slider->labelcolor(YELLOW);
-	motion_threshold_slider->tooltip("The amount of change required to trigger the motion sensor.");
+	motion_threshold_slider->copy_tooltip("The amount of change required to trigger the motion sensor.");
 	motion_threshold_slider->callback(motion_threshold_slider_cb, this);
 
 	yp += (25);
@@ -56490,7 +59124,7 @@ char	buf[256];
 	recognition_threshold_slider->initial_value = 0.5;
 	recognition_threshold_slider->labelsize(font_sz + 1);
 	recognition_threshold_slider->labelcolor(YELLOW);
-	recognition_threshold_slider->tooltip("The certainty of recognition necessary to trigger recording.");
+	recognition_threshold_slider->copy_tooltip("The certainty of recognition necessary to trigger recording.");
 	recognition_threshold_slider->callback(threshold_slider_cb, this);
 
 	yp += (25);
@@ -56501,7 +59135,7 @@ char	buf[256];
 	recognition_interval_slider->initial_value = 10;
 	recognition_interval_slider->labelsize(font_sz + 1);
 	recognition_interval_slider->labelcolor(YELLOW);
-	recognition_interval_slider->tooltip("How often the object recognition looks at a frame.");
+	recognition_interval_slider->copy_tooltip("How often the object recognition looks at a frame.");
 	recognition_interval_slider->callback(recognition_interval_cb, this);
 
 	yp += (25);
@@ -56512,7 +59146,7 @@ char	buf[256];
 	capture_interval_slider->initial_value = 0.0;
 	capture_interval_slider->labelsize(font_sz + 1);
 	capture_interval_slider->labelcolor(YELLOW);
-	capture_interval_slider->tooltip("How frequently recording samples the frames arriving from this camera.");
+	capture_interval_slider->copy_tooltip("How frequently recording samples the frames arriving from this camera.");
 	capture_interval_slider->callback(capture_interval_cb, this);
 
 	yp += (25);
@@ -56523,7 +59157,7 @@ char	buf[256];
 	retrieve_interval_slider->initial_value = 10000.0;
 	retrieve_interval_slider->labelsize(font_sz + 1);
 	retrieve_interval_slider->labelcolor(YELLOW);
-	retrieve_interval_slider->tooltip("How often this camera is sampled at all.");
+	retrieve_interval_slider->copy_tooltip("How often this camera is sampled at all.");
 	retrieve_interval_slider->callback(retrieve_interval_cb, this);
 	yp += (25);
 
@@ -56533,14 +59167,14 @@ char	buf[256];
 	apply_to_all_button->color(BLACK);
 	apply_to_all_button->labelcolor(YELLOW);
 	apply_to_all_button->labelsize(font_sz + 1);
-	apply_to_all_button->tooltip("Apply subsequent changes to all active cameras.");
+	apply_to_all_button->copy_tooltip("Apply subsequent changes to all active cameras.");
 
 	load_from = new MyButton(170, yp, 100, 22, "Load");
 	load_from->box(FL_FRAME_BOX);
 	load_from->color(BLACK);
 	load_from->labelcolor(YELLOW);
 	load_from->labelsize(font_sz + 1);
-	load_from->tooltip("Load settings from a camera file. This may change all settings other than source and alias. If the incoming resolution is changed, the camera may be reset.");
+	load_from->copy_tooltip("Load settings from a camera file. This may change all settings other than source and alias. If the incoming resolution is changed, the camera may be reset.");
 	load_from->callback(load_from_saved_camera_cb, this);
 	yp += 24;
 
@@ -56549,7 +59183,7 @@ char	buf[256];
 	close->color(BLACK);
 	close->labelcolor(YELLOW);
 	close->labelsize(font_sz + 1);
-	close->tooltip("Close the dialog.");
+	close->copy_tooltip("Close the dialog.");
 	close->callback(hide_window_cb, this);
 	end();
 	resize(x(), y(), w(), yp + 60);
@@ -56613,19 +59247,41 @@ int	CameraSettingsWindow::handle(int event)
 
 void	CameraSettingsWindow::Update()
 {
+char	buf[256];
+
 	if(main_win != NULL)
 	{
 		Camera *cam = main_win->DisplayedCamera();
 		if(cam != NULL)
 		{
+			char *str = "";
+			if(cam != NULL)
+			{
+				str = cam->alias;
+				cam_alias->value(str);
+
+				sprintf(buf, "%d", (int)cam->display_width);
+				display_w->value(buf);
+
+				sprintf(buf, "%d", (int)cam->display_height);
+				display_h->value(buf);
+			}
 			contrast_slider->value(cam->contrast);
 			brightness_slider->value(cam->brightness);
 			saturation_slider->value(cam->saturation);
 			hue_slider->value(cam->hue);
 			intensity_slider->value(cam->intensity);
+			red_intensity_slider->value(cam->red_intensity);
+			green_intensity_slider->value(cam->green_intensity);
+			blue_intensity_slider->value(cam->blue_intensity);
+			alpha_intensity_slider->value(cam->alpha_intensity);
+			aspect_x_slider->value(cam->forced_aspect_x);
+			aspect_y_slider->value(cam->forced_aspect_y);
 			motion_threshold_slider->value(cam->motion_threshold);
 			recognition_threshold_slider->value(cam->recognition_threshold);
 			recognition_interval_slider->value(cam->recognize_interval);
+			capture_interval_slider->value(cam->capture_interval);
+			retrieve_interval_slider->value(cam->hot_delay);
 		}
 	}
 }
@@ -56744,7 +59400,7 @@ char	buf[256];
 		filename_format->labelcolor(YELLOW);
 		filename_format->when(FL_WHEN_CHANGED);
 		filename_format->value(cam->snapshot_filename_format);
-		filename_format->tooltip("The filename for the image file. Special codes (see below) can be inserted in the path to create dynamic filenames.");
+		filename_format->copy_tooltip("The filename for the image file. Special codes (see below) can be inserted in the path to create dynamic filenames.");
 		filename_format->callback(snapshot_filename_format_cb, this);
 		yp += 32;
 
@@ -56780,7 +59436,7 @@ char	buf[256];
 		initial_delay_slider->initial_value = 0.0;
 		initial_delay_slider->labelsize(11);
 		initial_delay_slider->labelcolor(YELLOW);
-		initial_delay_slider->tooltip("How long to wait before the snapshot is triggered.");
+		initial_delay_slider->copy_tooltip("How long to wait before the snapshot is triggered.");
 		initial_delay_slider->callback(snapshot_initial_delay_slider_cb, this);
 		yp += 30;
 
@@ -56791,7 +59447,7 @@ char	buf[256];
 		repeat_seconds_delay_slider->initial_value = 0.0;
 		repeat_seconds_delay_slider->labelsize(11);
 		repeat_seconds_delay_slider->labelcolor(YELLOW);
-		repeat_seconds_delay_slider->tooltip("For a repeating snapshot, how long to wait in seconds between each.");
+		repeat_seconds_delay_slider->copy_tooltip("For a repeating snapshot, how long to wait in seconds between each.");
 		repeat_seconds_delay_slider->callback(snapshot_repeat_delay_slider_cb, this);
 		yp += 22;
 
@@ -56802,7 +59458,7 @@ char	buf[256];
 		repeat_minutes_delay_slider->initial_value = 0.0;
 		repeat_minutes_delay_slider->labelsize(11);
 		repeat_minutes_delay_slider->labelcolor(YELLOW);
-		repeat_minutes_delay_slider->tooltip("For a repeating snapshot, how long to wait in minutes between each.");
+		repeat_minutes_delay_slider->copy_tooltip("For a repeating snapshot, how long to wait in minutes between each.");
 		repeat_minutes_delay_slider->callback(snapshot_repeat_delay_slider_cb, this);
 		yp += 30;
 
@@ -56816,7 +59472,7 @@ char	buf[256];
 		snapshot_trigger_on_button->type(FL_RADIO_BUTTON);
 		snapshot_trigger_on_button->align(FL_ALIGN_CENTER);
 		snapshot_trigger_on_button->value(1);
-		snapshot_trigger_on_button->tooltip("Trigger the snapshot when the Snapshot button is selected.");
+		snapshot_trigger_on_button->copy_tooltip("Trigger the snapshot when the Snapshot button is selected.");
 		snapshot_trigger_on_button->callback(snapshot_trigger_cb, this);
 		xp += 125;
 
@@ -56827,7 +59483,7 @@ char	buf[256];
 		snapshot_trigger_on_start->labelsize(9);
 		snapshot_trigger_on_start->type(FL_RADIO_BUTTON);
 		snapshot_trigger_on_start->align(FL_ALIGN_CENTER);
-		snapshot_trigger_on_start->tooltip("Trigger a snapshot as soon as the displayed camera is ready.");
+		snapshot_trigger_on_start->copy_tooltip("Trigger a snapshot as soon as the displayed camera is ready.");
 		snapshot_trigger_on_start->callback(snapshot_trigger_cb, this);
 		xp += 125;
 
@@ -56838,7 +59494,7 @@ char	buf[256];
 		snapshot_trigger_on_record->labelsize(9);
 		snapshot_trigger_on_record->align(FL_ALIGN_CENTER);
 		snapshot_trigger_on_record->type(FL_RADIO_BUTTON);
-		snapshot_trigger_on_record->tooltip("Trigger the snapshot when the Record button is selected.");
+		snapshot_trigger_on_record->copy_tooltip("Trigger the snapshot when the Record button is selected.");
 		snapshot_trigger_on_record->callback(snapshot_trigger_cb, this);
 		xp += 125;
 
@@ -56849,7 +59505,7 @@ char	buf[256];
 		snapshot_continuous->labelsize(9);
 		snapshot_continuous->align(FL_ALIGN_CENTER);
 		snapshot_continuous->type(FL_RADIO_BUTTON);
-		snapshot_continuous->tooltip("Trigger the snapshot continuously.");
+		snapshot_continuous->copy_tooltip("Trigger the snapshot continuously.");
 		snapshot_continuous->callback(snapshot_trigger_cb, this);
 		radio->end();
 		yp += 30;
@@ -56876,7 +59532,7 @@ char	buf[256];
 		scale_slider->initial_value = 1.0;
 		scale_slider->labelsize(11);
 		scale_slider->labelcolor(YELLOW);
-		scale_slider->tooltip("Scale the resulting image.");
+		scale_slider->copy_tooltip("Scale the resulting image.");
 		scale_slider->callback(snapshot_scale_slider_cb, this);
 		yp += 40;
 	}
@@ -56885,7 +59541,7 @@ char	buf[256];
 	close->color(BLACK);
 	close->labelcolor(YELLOW);
 	close->labelsize(11);
-	close->tooltip("Close this dialog.");
+	close->copy_tooltip("Close this dialog.");
 	close->callback(hide_window_cb, this);
 	end();
 }
@@ -58027,13 +60683,13 @@ int	loop;
 	available = new Fl_Pack(10, 45, 120, (use_cnt * 20));
 	available->box(FL_NO_BOX);
 	available->color(WHITE);
-	available->tooltip("The list of available filters. Drag filters from here to the Use bin to use that filter.");
+	available->copy_tooltip("The list of available filters. Drag filters from here to the Use bin to use that filter.");
 	available->end();
 
 	use = new Fl_Pack(140, 45, 120, (use_cnt * 20));
 	use->box(FL_NO_BOX);
 	use->color(WHITE);
-	use->tooltip("The list of filters in use appearing in the order they will be called. Drag filters up and down to change the order. Drag them back to the Avilable bin to remove the filter from use.");
+	use->copy_tooltip("The list of filters in use appearing in the order they will be called. Drag filters up and down to change the order. Drag them back to the Avilable bin to remove the filter from use.");
 	use->end();
 
 	int cnt = 0;
@@ -58045,7 +60701,7 @@ int	loop;
 			{
 				char *str = global_potential_filter[loop] + strlen("filter_");
 				FilterButton *filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, str);
-				filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+				filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 				available->add(filter_button);
 				cnt++;
 			}
@@ -58059,7 +60715,7 @@ int	loop;
 			{
 				char *str = global_potential_audio_filter[loop] + strlen("audio_filter_");
 				FilterButton *filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, str);
-				filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+				filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 				available->add(filter_button);
 				cnt++;
 			}
@@ -58068,67 +60724,67 @@ int	loop;
 	else if(filter_type == FILTER_TYPE_VIDEO_BUILT_IN)
 	{
 		FilterButton *filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Grayscale");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Threshold");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Invert");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Edge Detect");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Brightness");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Contrast");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Saturation");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Hue");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "CLAHE");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Color Intensity");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Blur");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Crop");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Scale");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Blend");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Bevel");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 		filter_button = new FilterButton(this, available->x(), available->y() + ((cnt * 20)), 120, 20, "Gradient");
-		filter_button->tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
+		filter_button->copy_tooltip("Drag this button over from the Available bin to the Use bin to install. Drag it back to the available bin to cease using it.");
 		available->add(filter_button);
 		cnt++;
 	}
@@ -58138,7 +60794,7 @@ int	loop;
 	my_accept->labelcolor(YELLOW);
 	my_accept->labelsize(12);
 	my_accept->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	my_accept->tooltip("Accept the selected filters in the order in which they appear.");
+	my_accept->copy_tooltip("Accept the selected filters in the order in which they appear.");
 	my_accept->callback(filters_accept_cb, this);
 
 	my_cancel = new MyButton(100, (55 + (22 * cnt)), 80, 18, "Cancel");
@@ -58147,7 +60803,7 @@ int	loop;
 	my_cancel->labelcolor(YELLOW);
 	my_cancel->labelsize(12);
 	my_cancel->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	my_cancel->tooltip("Cancel any changes to the filters in use.");
+	my_cancel->copy_tooltip("Cancel any changes to the filters in use.");
 	my_cancel->callback(hide_window_cb, this);
 
 	use_none = new MyButton(w() - 90, (55 + (22 * cnt)), 80, 18, "Use None");
@@ -58155,7 +60811,7 @@ int	loop;
 	use_none->color(WHITE);
 	use_none->labelcolor(YELLOW);
 	use_none->labelsize(12);
-	use_none->tooltip("Remove all filters from the Use bin.");
+	use_none->copy_tooltip("Remove all filters from the Use bin.");
 	use_none->callback(use_no_filters_cb, this);
 	cnt++;
 	end();
@@ -58266,7 +60922,7 @@ void	select_audio_cb(Fl_Widget *w, void *v)
 			&& (strcmp(use_str, "Audio File") == 0))
 			{
 				char filename[4096];
-				int r = my_file_chooser("Select an audio file", "*.{mp3,wav,flac}", "./interest.json", filename);
+				int r = my_file_chooser("Select an audio file", "*.{mp3,wav,flac}", "./", filename);
 				if(r > 0)
 				{
 					if(strlen(filename) > 0)
@@ -58276,6 +60932,16 @@ void	select_audio_cb(Fl_Widget *w, void *v)
 						free(use_str);
 						use_str = strdup(filename);
 					}
+					else
+					{
+						free(use_str);
+						use_str = strdup("");
+					}
+				}
+				else
+				{
+					free(use_str);
+					use_str = strdup("");
 				}
 			}
 			else if(strcmp(str, "NDI") == 0)
@@ -58286,33 +60952,40 @@ void	select_audio_cb(Fl_Widget *w, void *v)
 				str = strdup(buf);
 			}
 		}
-		char *cp = use_str;
-		int cnt = 0;
-		char last_cp = '\0';
-		while(*cp != '\0')
+		if(strlen(use_str) > 0)
 		{
-			if(isalnum(*cp))
+			char *cp = use_str;
+			int cnt = 0;
+			char last_cp = '\0';
+			while(*cp != '\0')
 			{
-				use_str[cnt] = *cp;
-				cnt++;
-				last_cp = *cp;
-			}
-			else
-			{
-				if(last_cp != ' ')
+				if(isalnum(*cp))
 				{
-					use_str[cnt] = ' ';
+					use_str[cnt] = *cp;
 					cnt++;
+					last_cp = *cp;
 				}
-				last_cp = ' ';
+				else
+				{
+					if(last_cp != ' ')
+					{
+						use_str[cnt] = ' ';
+						cnt++;
+					}
+					last_cp = ' ';
+				}
+				cp++;
 			}
-			cp++;
+			use_str[cnt] = '\0';
+			char final_buf[4096];
+			sprintf(final_buf, "audio://%s", str);
+			saw->my_window->new_source_window->source->value(final_buf);
+			saw->my_window->new_source_window->alias->value(use_str);
 		}
-		use_str[cnt] = '\0';
-		char final_buf[4096];
-		sprintf(final_buf, "audio://%s", str);
-		saw->my_window->new_source_window->source->value(final_buf);
-		saw->my_window->new_source_window->alias->value(use_str);
+		else
+		{
+			saw->my_window->new_source_window->source->value("");
+		}
 		free(str);
 		free(use_str);
 	}
@@ -58416,6 +61089,10 @@ SelectAudioWindow::~SelectAudioWindow()
 			NDILib->NDIlib_find_destroy(ndi_find);
 		}
 	}
+	if(my_window->new_source_window->select_audio_window != NULL)
+	{
+		my_window->new_source_window->select_audio_window = NULL;
+	}
 }
 
 void	SelectAudioWindow::draw()
@@ -58482,8 +61159,34 @@ char fourcc[5];
 		alias_str = alias;
 	}
 	int tmp = b->fmt;
-	sprintf(fourcc, "%c%c%c%c", tmp & 0xff, (tmp >> 8) & 0xff, (tmp >> 16) & 0xff, (tmp >> 24) & 0xff);
-	sprintf(buf, "camera://%s::V4L2:%s", b->path, fourcc);
+	if(tmp != 0)
+	{
+		sprintf(fourcc, "%c%c%c%c", tmp & 0xff, (tmp >> 8) & 0xff, (tmp >> 16) & 0xff, (tmp >> 24) & 0xff);
+		sprintf(buf, "camera://%s::V4L2:%s", b->path, fourcc);
+	}
+	else
+	{
+		if(strcmp(b->alias, "NDI") == 0)
+		{
+			sprintf(buf, "ndi://%s", b->path);
+		}
+		else if(strcmp(b->alias, "UYVY") == 0)
+		{
+			sprintf(buf, "ndi_uyvy://%s", b->path);
+		}
+		else if(strcmp(b->alias, "P216") == 0)
+		{
+			sprintf(buf, "ndi_p216://%s", b->path);
+		}
+		else if(strcmp(b->alias, "RGBX") == 0)
+		{
+			sprintf(buf, "ndi_rgbx://%s", b->path);
+		}
+		else if(strcmp(b->alias, "BGRX") == 0)
+		{
+			sprintf(buf, "ndi_bgrx://%s", b->path);
+		}
+	}
 	scw->my_window->new_source_window->source->value(buf);
 
 	scw->hide();
@@ -58498,7 +61201,16 @@ int	loop, inner;
 	clear_visible_focus();
 	set_non_modal();
 	int cnt = my_window->PopulateCameraCaps();
-	int y_cnt = 10;
+
+	MyButton *close = new MyButton(700, 2, 50, 18, "Close");
+	close->box(FL_FLAT_BOX);
+	close->color(BLACK);
+	close->labelcolor(YELLOW);
+	close->labelsize(11);
+	close->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+	close->callback(hide_window_cb, this);
+
+	int y_cnt = 20;
 	for(loop = 0;loop < cnt;loop++)
 	{
 		int inner;
@@ -58534,12 +61246,81 @@ int	loop, inner;
 			y_cnt += 21;
 		}
 	}
+	if(NDILib != NULL)
+	{
+		char *list[256];
+		int final_total = 0;
+		ndi_source_list(list, final_total);
+		for(loop = 0;loop < final_total;loop++)
+		{
+			if(list[loop] != NULL)
+			{
+				char *cp = NULL;
+				char *use = NULL;
+				if(strncmp(list[loop], "ndi://", strlen("ndi://")) == 0)
+				{
+					cp = list[loop] + strlen("ndi://");
+
+					Fl_Box *b = new Fl_Box(10, y_cnt, 300, 20);
+					b->copy_label(cp);
+					b->box(FL_NO_BOX);
+					b->color(BLACK);
+					b->labelcolor(WHITE);
+					b->labelsize(11);
+					b->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+					y_cnt += 21;
+
+					use = "NDI";
+				}
+				else if(strncmp(list[loop], "ndi_uyvy://", strlen("ndi_uyvy://")) == 0)
+				{
+					cp = list[loop] + strlen("ndi_uyvy://");
+					use = "UYVY";
+				}
+				else if(strncmp(list[loop], "ndi_p216://", strlen("ndi_p216://")) == 0)
+				{
+					cp = list[loop] + strlen("ndi_p216://");
+					use = "P216";
+				}
+				else if(strncmp(list[loop], "ndi_rgbx://", strlen("ndi_rgbx://")) == 0)
+				{
+					cp = list[loop] + strlen("ndi_rgbx://");
+					use = "RGBX";
+				}
+				else if(strncmp(list[loop], "ndi_bgrx://", strlen("ndi_bgrx://")) == 0)
+				{
+					cp = list[loop] + strlen("ndi_bgrx://");
+					use = "BGRX";
+				}
+				if(cp != NULL)
+				{
+					CameraFormatButton *b = new CameraFormatButton(150, y_cnt, 300, 20, use);
+					b->path = strdup(cp);
+					b->alias = use;
+					b->fmt = 0;
+					b->box(FL_FLAT_BOX);
+					b->color(DARK_BLUE);
+					b->labelcolor(YELLOW);
+					b->labelsize(11);
+					b->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+					b->callback(select_camera_format_cb, this);
+					y_cnt += 21;
+				}
+				free(list[loop]);
+			}
+		}
+	}
 	end();
 	resize(x(), y(), w(), 10 + y_cnt);
+	close->resize(w() - 52, 2, 50, 18);
 }
 
 SelectCameraWindow::~SelectCameraWindow()
 {
+	if(my_window->new_source_window->select_camera_window == this)
+	{
+		my_window->new_source_window->select_camera_window = NULL;
+	}
 }
 
 void	SelectCameraWindow::draw()
@@ -58662,7 +61443,7 @@ int	loop;
 	none_button = new MyButton(x_pos, 40, 100, 100);
 	none_button->image(none);
 	none_button->type(FL_RADIO_BUTTON);
-	none_button->tooltip("Abruptly transition from camera to camera");
+	none_button->copy_tooltip("Abruptly transition from camera to camera");
 	none_button->callback(transition_select_cb, this);
 	x_pos += 110;
 
@@ -58670,7 +61451,7 @@ int	loop;
 	blend_button = new MyButton(x_pos, 40, 100, 100);
 	blend_button->image(blend);
 	blend_button->type(FL_RADIO_BUTTON);
-	blend_button->tooltip("Dissolve images from one camera into the next");
+	blend_button->copy_tooltip("Dissolve images from one camera into the next");
 	blend_button->callback(transition_select_cb, this);
 	x_pos += 110;
 
@@ -58678,7 +61459,7 @@ int	loop;
 	to_black_button = new MyButton(x_pos, 40, 100, 100);
 	to_black_button->image(to_black);
 	to_black_button->type(FL_RADIO_BUTTON);
-	to_black_button->tooltip("Fade to black");
+	to_black_button->copy_tooltip("Fade to black");
 	to_black_button->callback(transition_select_cb, this);
 	x_pos += 110;
 
@@ -58686,7 +61467,7 @@ int	loop;
 	wipe_l2r_button = new MyButton(x_pos, 40, 100, 100);
 	wipe_l2r_button->image(wipe_l2r);
 	wipe_l2r_button->type(FL_RADIO_BUTTON);
-	wipe_l2r_button->tooltip("Wipe from left to right");
+	wipe_l2r_button->copy_tooltip("Wipe from left to right");
 	wipe_l2r_button->callback(transition_select_cb, this);
 	x_pos += 110;
 
@@ -58694,7 +61475,7 @@ int	loop;
 	wipe_r2l_button = new MyButton(x_pos, 40, 100, 100);
 	wipe_r2l_button->image(wipe_r2l);
 	wipe_r2l_button->type(FL_RADIO_BUTTON);
-	wipe_r2l_button->tooltip("Wipe from right to left");
+	wipe_r2l_button->copy_tooltip("Wipe from right to left");
 	wipe_r2l_button->callback(transition_select_cb, this);
 	x_pos += 110;
 
@@ -58702,7 +61483,7 @@ int	loop;
 	wipe_t2b_button = new MyButton(x_pos, 40, 100, 100);
 	wipe_t2b_button->image(wipe_t2b);
 	wipe_t2b_button->type(FL_RADIO_BUTTON);
-	wipe_t2b_button->tooltip("Wipe from the top to the bottom");
+	wipe_t2b_button->copy_tooltip("Wipe from the top to the bottom");
 	wipe_t2b_button->callback(transition_select_cb, this);
 	x_pos += 110;
 
@@ -58710,7 +61491,7 @@ int	loop;
 	wipe_b2t_button = new MyButton(x_pos, 40, 100, 100);
 	wipe_b2t_button->image(wipe_b2t);
 	wipe_b2t_button->type(FL_RADIO_BUTTON);
-	wipe_b2t_button->tooltip("Wipe from the bottom to the top");
+	wipe_b2t_button->copy_tooltip("Wipe from the bottom to the top");
 	wipe_b2t_button->callback(transition_select_cb, this);
 
 	MyButton *close = new MyButton(x_pos + 30, 5, 100, 30, "Close");
@@ -58718,7 +61499,7 @@ int	loop;
 	close->color(BLACK);
 	close->labelcolor(YELLOW);
 	close->labelsize(12);
-	close->tooltip("Close the window and apply any changes");
+	close->copy_tooltip("Close the window and apply any changes");
 	close->callback(transitions_close_cb, this);
 
 	selection = new Fl_Box(0, 0, 48, 48, "@#+88->");
@@ -58755,7 +61536,7 @@ int	loop;
 				transition_plugin_button[loop]->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 				transition_plugin_button[loop]->type(FL_RADIO_BUTTON);
 				transition_plugin_button[loop]->labelsize(11);
-				transition_plugin_button[loop]->tooltip("A custom transition");
+				transition_plugin_button[loop]->copy_tooltip("A custom transition");
 				transition_plugin_button[loop]->callback(transition_plugin_cb, this);
 				if(strcmp(global_potential_transition[loop], my_window->transition_plugin) == 0)
 				{
@@ -59074,7 +61855,7 @@ int	loop;
 		day[loop]->labelcolor(YELLOW);
 		day[loop]->labelsize(11);
 		day[loop]->box(FL_FRAME_BOX);
-		day[loop]->tooltip("Set the days for triggering a scheduled record.");
+		day[loop]->copy_tooltip("Set the days for triggering a scheduled record.");
 		day[loop]->callback(trigger_day_cb, this);
 		xp += 21;
 	}
@@ -59097,7 +61878,7 @@ int	loop;
 	start_time->labelcolor(YELLOW);
 	start_time->when(FL_WHEN_CHANGED);
 	start_time->value("13:01");
-	start_time->tooltip("Schedule the start time for triggering record.");
+	start_time->copy_tooltip("Schedule the start time for triggering record.");
 	start_time->callback(schedule_trigger_cb, this);
 
 	stop_time = new Fl_Input(xp + 80, yp, 60, 20, " - ");
@@ -59110,7 +61891,7 @@ int	loop;
 	stop_time->labelcolor(YELLOW);
 	stop_time->when(FL_WHEN_CHANGED);
 	stop_time->value("14:00");
-	stop_time->tooltip("Schedule the stop time for triggering record.");
+	stop_time->copy_tooltip("Schedule the stop time for triggering record.");
 	stop_time->callback(schedule_trigger_cb, this);
 	yp += 30;
 
@@ -59127,7 +61908,7 @@ int	loop;
 	darkness_slider->initial_value = 0.5;
 	darkness_slider->labelsize(11);
 	darkness_slider->labelcolor(YELLOW);
-	darkness_slider->tooltip("Set the trigger point for recording based on light/dark");
+	darkness_slider->copy_tooltip("Set the trigger point for recording based on light/dark");
 	darkness_slider->callback(darkness_slider_cb, this);
 	yp += 34;
 
@@ -59147,8 +61928,15 @@ int	loop;
 		trigger[loop]->labelcolor(YELLOW);
 		trigger[loop]->labelsize(9);
 		trigger[loop]->align(FL_ALIGN_CENTER);
-		trigger[loop]->tooltip("Trigger recording based on the named condition. If more than one conditions is set, all selected conditions must be met.");
+		trigger[loop]->copy_tooltip("Trigger recording based on the named condition. If more than one conditions is set, all selected conditions must be met.");
 		trigger[loop]->callback(record_trigger_cb, this);
+		if(loop == BUTTON_ON_DETECT_OBJECT)
+		{
+			if(main_win->net.empty()) 
+			{
+				trigger[loop]->deactivate();
+			}
+		}
 		yp += 22;
 	}
 	int nxx = 250;
@@ -59167,7 +61955,7 @@ int	loop;
 		thumbnail[loop] = new ThumbButton(in_win, loop, nxx, nyy, 153, 86);
 		thumbnail[loop]->box(FL_NO_BOX);
 		thumbnail[loop]->callback(thumbnail_cb, in_win);
-		thumbnail[loop]->tooltip("Trigger the displayed camera based on the trigger state of the selected camera.");
+		thumbnail[loop]->copy_tooltip("Trigger the displayed camera based on the trigger state of the selected camera.");
 		thumbnail[loop]->hide();
 		nyy += 90;
 	}
@@ -59175,14 +61963,14 @@ int	loop;
 	clear->box(FL_NO_BOX);
 	clear->labelcolor(YELLOW);
 	clear->labelsize(11);
-	clear->tooltip("Clear selected record trigger conditions.");
+	clear->copy_tooltip("Clear selected record trigger conditions.");
 	clear->callback(trigger_window_clear_cb, this);
 
 	done = new MyButton(w() - 100, 10, 70, 20, "Done");
 	done->box(FL_NO_BOX);
 	done->labelcolor(YELLOW);
 	done->labelsize(11);
-	done->tooltip("Close the dialog. Trigger conditions will be tested after Record is selected.");
+	done->copy_tooltip("Close the dialog. Trigger conditions will be tested after Record is selected.");
 	done->callback(trigger_window_cb, main_win);
 
 	end();
@@ -59206,7 +61994,7 @@ int	TriggerWindow::handle(int event)
 		if(key == FL_Escape)
 		{
 			main_win->trigger_select_mode = 0;
-			main_win->trigger_button->label("Trigger Conditions");
+			main_win->trigger_button->copy_label("Trigger Conditions");
 			hide();
 			flag = 1;
 		}
@@ -59266,6 +62054,17 @@ char	buf[256];
 			if((cam->record_trigger & num) == num)
 			{
 				trigger[loop + 1]->value(1);
+			}
+			if(loop == BUTTON_ON_DETECT_OBJECT)
+			{
+				if(main_win->net.empty()) 
+				{
+					trigger[loop]->deactivate();
+				}
+				else
+				{
+					trigger[loop]->activate();
+				}
 			}
 		}
 		for(loop = 0;loop < 128;loop++)
@@ -59330,6 +62129,12 @@ ImageWindow::ImageWindow(int in_index, MyWin *win, Camera *cam, Camera *in_dest,
 	dy = yy;
 	dw = ww;
 	dh = hh;
+	if(dest_camera != NULL)
+	{
+		relative_x = xx - dest_camera->image_sx;
+		relative_y = yy - dest_camera->image_sy;
+	}
+	angle = 0.0;
 	parent_scale_width = 1.0;
 	parent_scale_height = 1.0;
 	displayed_x = xx;
@@ -59351,8 +62156,8 @@ ImageWindow::ImageWindow(int in_index, MyWin *win, Camera *cam, Camera *in_dest,
 	drag_mode = DRAG_MODE_MOVE;
 	popup = NULL;
 	overall_alpha = 1.0;
-	mw_transparency = 0;
-	mw_rotate = 0;
+	use_as_mask = 0;
+	mw_mode = MW_MODE_NONE;
 	angle = 0.0;
 	flip_horizontal = 0;
 	flip_vertical = 0;
@@ -59373,6 +62178,16 @@ ImageWindow::~ImageWindow()
 		Fl::delete_widget(popup);
 		popup = NULL;
 	}
+}
+
+void	ImageWindow::resize(int xx, int yy, int ww, int hh)
+{
+	if(dest_camera != NULL)
+	{
+		relative_x = xx - dest_camera->image_sx;
+		relative_y = yy - dest_camera->image_sy;
+	}
+	MyGroup::resize(xx, yy, ww, hh);
 }
 
 int	ImageWindow::AsButton(int xx, int yy)
@@ -59408,11 +62223,20 @@ int	loop;
 			{
 				if((camera->mat.rows > 0) && (camera->mat.cols > 0))
 				{
-					int sx = x() - dest->image_sx;
-					if(sx < 0) sx = 0;
-					int sy = y() - dest->image_sy;
-					if(sy < 0) sy = 0;
-					cv::resize(camera->mat, mat, cv::Size(w(), h()));
+					cairo_t *dest_context = dest->cairo_context;
+					cairo_surface_t *dest_surface = dest->cairo_surface;
+					Mat mask;
+					if(use_as_mask == 1)
+					{
+						Mat dest_mat = dest_camera->mat;
+						mask = cv::Mat(dest_mat.rows, dest_mat.cols, CV_8UC4, cv::Scalar(0, 0, 0, 0));
+						dest_surface = cairo_image_surface_create_for_data(mask.ptr(), CAIRO_FORMAT_ARGB32, mask.cols, mask.rows, mask.step);
+						dest_context = cairo_create(dest_surface);
+						cairo_set_antialias(dest_context, CAIRO_ANTIALIAS_BEST);
+					}
+					int sx = relative_x;
+					int sy = relative_y;
+					cv::resize(camera->mat, mat, cv::Size(w(), h()), 0, 0, cv::INTER_AREA);
 					if((crop_w > 0) && (crop_h > 0))
 					{
 						crop_section(mat, mat, crop_x, crop_y, crop_w, crop_h);
@@ -59442,34 +62266,50 @@ int	loop;
 					}
 					if(dest->cairo_context != NULL)
 					{
+						int half_w = mat.cols / 2;
+						int half_h = mat.rows / 2;
+						cairo_save(dest_context);
+						cairo_translate(dest_context, sx + half_w, sy + half_h);
+						cairo_rotate(dest_context, angle);
+
 						cairo_surface_t *surface = cairo_image_surface_create_for_data(mat.ptr(), CAIRO_FORMAT_ARGB32, mat.cols, mat.rows, mat.step);
-						if((surface != NULL) && (dest->cairo_surface != NULL))
+						if((surface != NULL) && (dest_surface != NULL))
 						{
-							cairo_set_source_surface(dest->cairo_context, surface, sx, sy);
-							cairo_paint(dest->cairo_context);
+							cairo_set_source_surface(dest_context, surface, -half_w, -half_h);
+							cairo_paint(dest_context);
 							cairo_surface_destroy(surface);
 							if(frame == 1)
 							{
-								cairo_set_dash(dest->cairo_context, NULL, 0, 1);
-								cairo_set_line_width(dest->cairo_context, 2);
-								my_cairo_set_source_rgba(dest->cairo_context, camera->text_red, camera->text_green, camera->text_blue, camera->text_alpha);
-								cairo_rectangle(dest->cairo_context, sx, sy, mat.cols, mat.rows);
-								cairo_stroke(dest->cairo_context);
+								cairo_set_dash(dest_context, NULL, 0, 1);
+								cairo_set_line_width(dest_context, 2);
+								my_cairo_set_source_rgba(dest_context, camera->text_red, camera->text_green, camera->text_blue, camera->text_alpha);
+								cairo_rectangle(dest_context, -half_w, -half_h, mat.cols, mat.rows);
+								cairo_stroke(dest_context);
 							}
 						}
+						cairo_restore(dest_context);
 						resize(sx + dest->image_sx, sy + dest->image_sy, use_w, use_h);
 						if(dragging == 1)
 						{
 							if(transform == MODE_TRIMMING)
 							{
-								my_cairo_set_source_rgb(dest->cairo_context, 255, 255, 128);
+								my_cairo_set_source_rgb(dest_context, 255, 255, 128);
 								int nx1 = start_drag_x - dest->image_sx;
 								int ny1 = start_drag_y - dest->image_sy;
 								int nx2 = trim_x - start_drag_x;
 								int ny2 = trim_y - start_drag_y;
-								cairo_rectangle(dest->cairo_context, nx1, ny1, nx2, ny2);
-								cairo_stroke(dest->cairo_context);
+								cairo_rectangle(dest_context, nx1, ny1, nx2, ny2);
+								cairo_stroke(dest_context);
 							}
+						}
+					}
+					if(use_as_mask == 1)
+					{
+						cv::bitwise_and(dest->mat, mask, dest->mat);
+						if(dest_surface != NULL)
+						{
+							cairo_destroy(dest_context);
+							cairo_surface_destroy(dest_surface);
 						}
 					}
 				}
@@ -59744,15 +62584,17 @@ void	image_window_popup_cb(Fl_Widget *w, void *v)
 					iw->frame = 0;
 				}
 			}
+			else if(strcmp(str, "MW Frame") == 0)
+			{
+				iw->mw_mode = MW_MODE_NONE;
+			}
 			else if(strcmp(str, "MW Transparency") == 0)
 			{
-				iw->mw_transparency = 1;
-				iw->mw_rotate = 0;
+				iw->mw_mode = MW_MODE_TRANSPARENCY;
 			}
 			else if(strcmp(str, "MW Stacking Order") == 0)
 			{
-				iw->mw_transparency = 0;
-				iw->mw_rotate = 0;
+				iw->mw_mode = MW_MODE_STACKING_ORDER;
 			}
 			else if(strcmp(str, "Make Transparent") == 0)
 			{
@@ -59764,8 +62606,7 @@ void	image_window_popup_cb(Fl_Widget *w, void *v)
 			}
 			else if(strcmp(str, "MW Rotate") == 0)
 			{
-				iw->mw_transparency = 0;
-				iw->mw_rotate = 1;
+				iw->mw_mode = MW_MODE_ROTATION;
 			}
 			else if(strcmp(str, "Flip Horizontal") == 0)
 			{
@@ -59793,6 +62634,10 @@ void	image_window_popup_cb(Fl_Widget *w, void *v)
 			{
 				iw->FillFrame();
 			}
+			else if(strcmp(str, "Mask") == 0)
+			{
+				iw->use_as_mask = 1;
+			}
 		}
 		if(iw->popup != NULL)
 		{
@@ -59813,6 +62658,7 @@ void	ImageWindow::Restore()
 	int xx = x();
 	int yy = x();
 	overall_alpha = 1.0;
+	use_as_mask = 0;
 	angle = 0.0;
 	if(dest_camera != NULL)
 	{
@@ -59887,10 +62733,6 @@ int	loop;
 									if(popup != NULL)
 									{
 										popup->browser->clear();
-										popup->browser->add("Move");
-										popup->browser->add("Resize");
-										popup->browser->add("Crop");
-										popup->browser->add("Rotate");
 										popup->browser->add("Restore");
 										popup->browser->add("Hide");
 										popup->browser->add("Delete");
@@ -59905,6 +62747,7 @@ int	loop;
 										popup->browser->add("Grow Down");
 										popup->browser->add("");
 										popup->browser->add("Toggle Frame");
+										popup->browser->add("MW Frame");
 										popup->browser->add("MW Transparency");
 										popup->browser->add("MW Stacking Order");
 										popup->browser->add("MW Rotate");
@@ -59913,6 +62756,7 @@ int	loop;
 										popup->browser->add("Flip Horizontal");
 										popup->browser->add("Flip Vertical");
 										popup->browser->add("Fill Frame");
+										popup->browser->add("Mask");
 										popup->set_non_modal();
 										popup->Fit();
 										popup->show();
@@ -60135,12 +62979,12 @@ int	loop;
 						break;
 						case(FL_MOUSEWHEEL):
 						{
-							if(!my_window->resize_frame->visible())
+							if(mw_mode != MW_MODE_NONE)
 							{
 								int nn = Fl::event_dy();
 								if(nn > 0)
 								{
-									if(mw_rotate == 1)
+									if(mw_mode == MW_MODE_ROTATION)
 									{
 										angle += 1.0;
 										if(angle >= 360.0)
@@ -60148,14 +62992,14 @@ int	loop;
 											angle = 0.0;
 										}
 									}
-									else if(mw_transparency == 1)
+									else if(mw_mode == MW_MODE_TRANSPARENCY)
 									{
 										if(overall_alpha < 1.0)
 										{
 											overall_alpha += 0.01;
 										}
 									}
-									else
+									else if(mw_mode == MW_MODE_STACKING_ORDER)
 									{
 										if(index < 127)
 										{
@@ -60177,7 +63021,7 @@ int	loop;
 								}
 								else
 								{
-									if(mw_rotate == 1)
+									if(mw_mode == MW_MODE_ROTATION)
 									{
 										angle -= 1.0;
 										if(angle < 0.0)
@@ -60185,14 +63029,14 @@ int	loop;
 											angle = 359.0;
 										}
 									}
-									else if(mw_transparency == 1)
+									else if(mw_mode == MW_MODE_TRANSPARENCY)
 									{
 										if(overall_alpha > 0.0)
 										{
 											overall_alpha -= 0.01;
 										}
 									}
-									else
+									else if(mw_mode == MW_MODE_STACKING_ORDER)
 									{
 										if(index > 0)
 										{
@@ -60382,7 +63226,7 @@ int	loop;
 		plug_in[loop]->labelcolor(YELLOW);
 		plug_in[loop]->labelsize(11);
 		plug_in[loop]->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-		plug_in[loop]->tooltip("A FLTK function in the plug_in.so file. This plug-in will be passed the primary class for the program. From this class it gains access to nearly every class in the program.");
+		plug_in[loop]->copy_tooltip("A FLTK function in the plug_in.so file. This plug-in will be passed the primary class for the program. From this class it gains access to nearly every class in the program.");
 		plug_in[loop]->visible_focus(0);
 		y_pos += 20;
 	}
@@ -60393,7 +63237,7 @@ int	loop;
 	accept->labelcolor(YELLOW);
 	accept->labelsize(12);
 	accept->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	accept->tooltip("Accept the list of activated plug-ins. Selected plug-ins begin execution.");
+	accept->copy_tooltip("Accept the list of activated plug-ins. Selected plug-ins begin execution.");
 	accept->callback(fltk_plugin_accept_cb, this);
 
 	cancel = new MyButton(110, y_pos, 80, 20, "Cancel");
@@ -60402,7 +63246,7 @@ int	loop;
 	cancel->labelcolor(YELLOW);
 	cancel->labelsize(12);
 	cancel->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-	cancel->tooltip("Close the dialog.");
+	cancel->copy_tooltip("Close the dialog.");
 	cancel->callback(hide_window_cb, this);
 
 	y_pos += 30;
@@ -60552,7 +63396,14 @@ static long int last_time_here = 0;
 					fl_rectf(xx + 3, yy + 3, 18, 18);
 				}
 				sprintf(buf, "%06d %03d:%02d [%06.02f : %06.02f] %6.2f %03d (%d x %d) [%03ld]", my_window->recorded_frames, minutes, seconds, cam->current_fps, calc_fps, cam->fps, cam->hot_fps, cam->width, cam->height, use_here);
-				fl_color(fl_rgb_color(status_r, status_g, status_b));
+				if(cam->hot_fps < my_window->minimum_fps)
+				{
+					fl_color(fl_lighter(RED));
+				}
+				else
+				{
+					fl_color(fl_rgb_color(status_r, status_g, status_b));
+				}
 				fl_font(FL_HELVETICA, 14);
 				fl_draw(buf, xx + 30, yy + 2, w(), h(), FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 				if((strlen(my_window->video_codec_name) > 0)
@@ -60718,7 +63569,7 @@ int	loop;
 			if(nn > 0)
 			{
 				al->filename[loop] = strdup(filename);
-				b->label(al->filename[loop]);
+				b->copy_label(al->filename[loop]);
 				b->redraw();
 				if(al->play_button[loop] != NULL)
 				{
@@ -60809,7 +63660,7 @@ AudioLibraryList::AudioLibraryList(MyWin *in_win) : DragWindow(120, 500, "Audio 
 	close_button->color(BLACK);
 	close_button->labelcolor(YELLOW);
 	close_button->labelsize(9);
-	close_button->tooltip("Close the dialog.");
+	close_button->copy_tooltip("Close the dialog.");
 	close_button->callback(hide_window_cb, this);
 	grp->end();
 	grp->resizable(NULL);
@@ -60850,7 +63701,7 @@ int	loop;
 					b->labelcolor(YELLOW);
 					b->labelsize(9);
 					b->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
-					b->tooltip("Play this audio file from the library.");
+					b->copy_tooltip("Play this audio file from the library.");
 					b->path = my_window->audio_library_window->filename[loop];
 					b->callback(audio_library_list_play_cb, this);
 					scroll->add(b);
@@ -60893,7 +63744,7 @@ int	loop;
 	add_button->color(BLACK);
 	add_button->labelcolor(YELLOW);
 	add_button->labelsize(9);
-	add_button->tooltip("Add a new blank entry to the library.");
+	add_button->copy_tooltip("Add a new blank entry to the library.");
 	add_button->callback(audio_library_add_cb, this);
 
 	save_button = new MyButton((w() / 2) - 35, 470, 70, 20, "Save");
@@ -60901,7 +63752,7 @@ int	loop;
 	save_button->color(BLACK);
 	save_button->labelcolor(YELLOW);
 	save_button->labelsize(9);
-	save_button->tooltip("Save library and close the dialog. Entries with a blank name will not be saved.");
+	save_button->copy_tooltip("Save library and close the dialog. Entries with a blank name will not be saved.");
 	save_button->callback(save_audio_library_cb, this);
 
 	cancel_button = new MyButton(w() - 80, 470, 70, 20, "Cancel");
@@ -60909,7 +63760,7 @@ int	loop;
 	cancel_button->color(BLACK);
 	cancel_button->labelcolor(YELLOW);
 	cancel_button->labelsize(9);
-	cancel_button->tooltip("Close the dialog without saving.");
+	cancel_button->copy_tooltip("Close the dialog without saving.");
 	cancel_button->callback(hide_window_cb, this);
 
 	end();
@@ -60956,7 +63807,7 @@ void	AudioLibrary::Add(char *in_name, char *in_path)
 		local_play_button->labelsize(8);
 		local_play_button->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
 		local_play_button->callback(audio_library_play_cb, this);
-		local_play_button->tooltip("Play the audio file.");
+		local_play_button->copy_tooltip("Play the audio file.");
 		scroll->add(local_play_button);
 		play_button[number_of_entries] = local_play_button;
 		local_play_button->hide();
@@ -60972,7 +63823,7 @@ void	AudioLibrary::Add(char *in_name, char *in_path)
 		name_in->value(in_name);
 		name_in->cursor_color(WHITE);
 		name_in->when(FL_WHEN_CHANGED);
-		name_in->tooltip("Edit the name of this audio library entry. Entries will blank names will not be saved.");
+		name_in->copy_tooltip("Edit the name of this audio library entry. Entries will blank names will not be saved.");
 		name_in->callback(audio_library_name_change_cb, this);
 		scroll->add(name_in);
 		name_input[number_of_entries] = name_in;
@@ -60983,7 +63834,7 @@ void	AudioLibrary::Add(char *in_name, char *in_path)
 		local_path_button->labelcolor(YELLOW);
 		local_path_button->labelsize(9);
 		local_path_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
-		local_path_button->tooltip("Edit the path to the audio file. Currently .wav files are supported.");
+		local_path_button->copy_tooltip("Edit the path to the audio file. Currently .wav files are supported.");
 		local_path_button->callback(audio_library_filename_change_cb, this);
 		scroll->add(local_path_button);
 		path_button[number_of_entries] = local_path_button;
@@ -61243,6 +64094,8 @@ void	show_help()
 	printf("cowcam --source=rtsp://your_login:your_password@url_for_your_webcam.org/live\n\n");
 	printf("# Use USB camera number 4\n");
 	printf("cowcam --source=4\n\n");
+	printf("# Load a setup file at startup.\n");
+	printf("cowcam --load_setup=Setups/sample.json\n\n");
 	printf("# Set main window width to 1920, Defaults to fullscreen.\n");
 	printf("cowcam --main_width=1920\n\n");
 	printf("# Set main window height to 1080, Defaults to fullscreen.\n");
@@ -61304,7 +64157,7 @@ void	show_help()
 	printf("# Reset PTZ cameras to home position on launch.\n");
 	printf("cowcam --ptz_home.\n\n");
 	printf("# Initialize object detection. Without this object detection is not offered.\n");
-	printf("cowcam --detect\n\n");
+	printf("cowcam --object_detect\n\n");
 	printf("# Use alternate DNN/YOLO files for recognition. If anyone one of these is provided,\n");
 	printf("# the other two must also be present. The default values are:\n");
 	printf("# \t\"yolov3-openimages.cfg\"\n");
@@ -61451,11 +64304,13 @@ extern int	global_my_format_cnt;
 	char *use_ptz_alias[NUMBER_OF_INTERFACES];
 	char *use_ptz_bind_alias[NUMBER_OF_INTERFACES];
 	int	use_ptz_prefer_ndi[NUMBER_OF_INTERFACES];
+	int	use_ptz_prefer_v4l[NUMBER_OF_INTERFACES];
 	char *use_jpeg_streaming = NULL;
 	int use_streaming = 0;
 	char *use_stream_url = NULL;
 	int use_stream_only = 0;
 	int use_streaming_audio_quality = 44100;
+	char *forced_setup = NULL;
 	for(loop = 0;loop < NUMBER_OF_INTERFACES;loop++)
 	{
 		for(inner = 0;inner < NUMBER_OF_CAMERAS;inner++)
@@ -61466,6 +64321,7 @@ extern int	global_my_format_cnt;
 		use_ptz_alias[loop] = NULL;
 		use_ptz_bind_alias[loop] = NULL;
 		use_ptz_prefer_ndi[loop] = 0;
+		use_ptz_prefer_v4l[loop] = 0;
 	}
 	int use_ptz_device_path_cnt = 0;
 	char new_mux_format[256];
@@ -61505,6 +64361,8 @@ extern int	global_my_format_cnt;
 	strcpy(use_transition_plugin, "");
 	char *use_select_audio[128];
 	int select_audio_cnt = 0;
+	int record_on_start = 0;
+	char *record_on_start_alias = NULL;
 	for(loop = 0;loop < 128;loop++)
 	{
 		use_select_audio[loop] = NULL;
@@ -61624,6 +64482,20 @@ extern int	global_my_format_cnt;
 				{
 					use_record_all = 1;
 				}
+				else if(strncmp(argv[loop], "--record_on_start=", strlen("--record_on_start=")) == 0)
+				{
+					char *cp = argv[loop];
+					cp += strlen("--record_on_start=");
+					if(strlen(cp) > 0)
+					{
+						record_on_start_alias = strdup(cp);
+					}
+					record_on_start = 1;
+				}
+				else if(strncmp(argv[loop], "--record_on_start", strlen("--record_on_start")) == 0)
+				{
+					record_on_start = 1;
+				}
 				else if(strncmp(argv[loop], "--record_desktop", strlen("--record_desktop")) == 0)
 				{
 					use_record_desktop = 1;
@@ -61706,6 +64578,7 @@ extern int	global_my_format_cnt;
 						char tmp[4092];
 						strcpy(tmp, argv[loop]);
 						int prefer_ndi_ptz = 0;
+						int prefer_v4l = 0;
 						int lock_number;
 						strcpy(lock_alias, "");
 						strcpy(bind_alias, "");
@@ -61789,6 +64662,11 @@ extern int	global_my_format_cnt;
 								cp += strlen("[ndi]");
 								prefer_ndi_ptz = 1;
 							}
+							else if(strncmp(cp, "[v4l]", strlen("[v4l]")) == 0)
+							{
+								cp += strlen("[v4l]");
+								prefer_v4l = 1;
+							}
 							else
 							{
 								cp++;
@@ -61802,11 +64680,12 @@ extern int	global_my_format_cnt;
 							use_ptz_device_path[use_ptz_device_path_cnt] = strdup(orig_cp);
 							use_ptz_bind_alias[use_ptz_device_path_cnt] = strdup(bind_alias);
 							use_ptz_prefer_ndi[use_ptz_device_path_cnt] = prefer_ndi_ptz;
+							use_ptz_prefer_v4l[use_ptz_device_path_cnt] = prefer_v4l;
 							use_ptz_device_path_cnt++;
 						}
 					}
 				}
-				else if(strncmp(argv[loop], "--detect", strlen("--detect")) == 0)
+				else if(strncmp(argv[loop], "--object_detect", strlen("--object_detect")) == 0)
 				{
 					use_detect = 1;
 				}
@@ -62027,6 +64906,13 @@ extern int	global_my_format_cnt;
 					screen_scaling = atof(cp);
 					if((screen_scaling < 0.01) || (screen_scaling > 100.0)) screen_scaling = 1.0;
 				}
+				else if(strncmp(argv[loop], "--load_setup=", strlen("--load_setup=")) == 0)
+				{
+					char *cp = argv[loop] + strlen("--load_setup=");
+					forced_setup = strdup(cp);
+					use_no_audio_scan = 1;
+					use_no_scan = 1;
+				}
 				else if(strncmp(argv[loop], "--load=", strlen("--load=")) == 0)
 				{
 					char *cp = argv[loop] + strlen("--load=");
@@ -62191,6 +65077,7 @@ extern int	global_my_format_cnt;
 			use_ptz_alias[use_ptz_device_path_cnt] = strdup("");
 			use_ptz_device_path[use_ptz_device_path_cnt] = strdup(final[loop]);
 			use_ptz_prefer_ndi[use_ptz_device_path_cnt] = 0;
+			use_ptz_prefer_v4l[use_ptz_device_path_cnt] = 0;
 			use_ptz_device_path_cnt++;
 			free(final[loop]);
 		}
@@ -62220,6 +65107,19 @@ extern int	global_my_format_cnt;
 			nn = get_title_bar_height(start_win);
 		}
 		default_window_height = Fl::h() - (nn / 2);
+	}
+	if((global_my_format_cnt == 0) && (query_codecs == 1))
+	{
+		start_win->Update("Querying CODECS");
+		enumerate_codecs();
+		if(test_codecs == 1)
+		{
+			if(new_output_width == -1)
+				new_output_width = new_width;
+			if(new_output_height == -1)
+				new_output_height = new_height;
+			enumerate_test(NULL, new_output_width, new_output_height, (int)new_fps, use_streaming_audio_quality);
+		}
 	}
 	MyWin *win = new MyWin(
 		default_window_width
@@ -62259,6 +65159,7 @@ extern int	global_my_format_cnt;
 		, use_ptz_lock_alias
 		, use_ptz_bind_alias
 		, use_ptz_prefer_ndi
+		, use_ptz_prefer_v4l
 		, use_ptz_alias
 		, use_ptz_home_on_launch
 		, use_yolo_model
@@ -62302,6 +65203,9 @@ extern int	global_my_format_cnt;
 	win->hide();
 	win->callback(quit_cb, win);
 
+	int	video_found = my_find_codec_by_id(0, win->use_video_codec, win->video_codec_name);
+	int	audio_found = my_find_codec_by_id(1, win->use_audio_codec, win->audio_codec_name);
+
 	start_win->Update("Initialize object menu");
 	win->object_menu = new ObjectMenu(win);
 	win->object_menu->hide();
@@ -62311,6 +65215,9 @@ extern int	global_my_format_cnt;
 
 	win->pulse_audio_filter_window = new PulseAudioFilterWindow(win);
 	win->pulse_audio_filter_window->hide();
+
+	win->record_on_start = record_on_start;
+	win->record_on_start_alias = record_on_start_alias;
 
 	for(loop = 0;loop < select_audio_cnt;loop++)
 	{
@@ -62348,7 +65255,7 @@ extern int	global_my_format_cnt;
 	audio_filter_plugins->hide();
 	win->audio_filter_plugins_window = audio_filter_plugins;
 
-	ImmediateDrawingWindow *immediate_drawing_window = new ImmediateDrawingWindow(win, 400, 150, 120, 435, "Immediate Drawing");
+	ImmediateDrawingWindow *immediate_drawing_window = new ImmediateDrawingWindow(win, 400, 150, 120, 460, "Immediate Drawing");
 	immediate_drawing_window->hide();
 	win->immediate_drawing_window = immediate_drawing_window;
 
@@ -62373,25 +65280,14 @@ extern int	global_my_format_cnt;
 	win->add(win->resize_frame);
 	win->resize_frame->hide();
 
-	if((global_my_format_cnt == 0) && (query_codecs == 1))
-	{
-		start_win->Update("Querying CODECS");
-		enumerate_codecs();
-		if(test_codecs == 1)
-		{
-			if(new_output_width == -1)
-				new_output_width = new_width;
-			if(new_output_height == -1)
-				new_output_height = new_height;
-			enumerate_test(NULL, new_output_width, new_output_height, (int)new_fps, use_streaming_audio_quality);
-		}
-		int	video_found = my_find_codec_by_id(0, win->use_video_codec, win->video_codec_name);
-		int	audio_found = my_find_codec_by_id(1, win->use_audio_codec, win->audio_codec_name);
-	}
 	start_win->Update("Constructing settings windows");
 	VideoSettingsWindow *vsw = new VideoSettingsWindow(win);
 	vsw->hide();
 	win->video_settings_window = vsw;
+
+	MiscVideoSettingsWindow *mvsw = new MiscVideoSettingsWindow(win);
+	mvsw->hide();
+	win->misc_video_settings_window = mvsw;
 
 	AudioSettingsWindow *asw = new AudioSettingsWindow(win);
 	asw->hide();
@@ -62433,6 +65329,10 @@ extern int	global_my_format_cnt;
 	win->original_w = win->w();
 	win->original_h = win->h();
 
+	if(forced_setup != NULL)
+	{
+		win->LoadJSON(forced_setup);
+	}
 	if(start_win->message_delay > 0)
 	{
 		usleep(start_win->message_delay);
@@ -62460,6 +65360,10 @@ StartWindow::StartWindow(int in_message_delay, int xx, int yy, int ww, int hh, i
 	use_updates = 0;
 	intro_pipe_fp = NULL;
 	end();
+}
+
+StartWindow::~StartWindow()
+{
 }
 
 void	StartWindow::draw()
@@ -62502,7 +65406,7 @@ void	StartWindow::Update(char *str)
 			}
 			usleep(span);
 			fprintf(stderr, "%s\n", str);
-			text->label(str);
+			text->copy_label(str);
 			text->redraw();
 			redraw();
 			Fl::flush();
@@ -62524,7 +65428,7 @@ void	StartWindow::Update(char *str)
 int	x11_handler(Display *d, XErrorEvent *e)
 {
 #ifdef DEBUG
-	fprintf(stderr, "X11 ERROR: %d\n", e->error_code);
+	fprintf(stderr, "X11 Error: %d\n", e->error_code);
 #endif
 	return(0);
 }
@@ -62557,6 +65461,41 @@ void	DynamicallyLoadNDILibrary(char *library_path)
 		{
 			NDILib = (const NDIlib_v3 *)NDIlib_v3_load();
 		}
+	}
+}
+
+void	dump_mat(char *filename, char *name, Mat mat)
+{
+int	row, col, b;
+
+	FILE *fp = fopen(filename, "w");
+	if(fp != NULL)
+	{
+		int channels = mat.channels();
+		fprintf(fp, "#define %s_WIDTH\t%d\n", name, mat.cols);
+		fprintf(fp, "#define %s_HEIGHT\t%d\n", name, mat.rows);
+		fprintf(fp, "#define %s_DEPTH\t%d\n\n", name, mat.channels());
+		fprintf(fp, "uchar %s_bytes[] = {\n", name);
+		uchar *cp = mat.ptr();
+		for(row = 0;row < mat.rows;row++)
+		{
+			for(col = 0;col < mat.cols;col++)
+			{
+				for(b = 0;b < channels;b++)
+				{
+					uchar cc = *cp;
+					fprintf(fp, "%u", cc);
+					if((row < mat.rows - 1) || (col < mat.cols - 1) || (b < channels - 1))
+					{
+						fprintf(fp, ",");
+					}
+					cp++;
+				}
+				fprintf(fp, "\n");
+			}
+		}
+		fprintf(fp, "};\n");
+		fclose(fp);
 	}
 }
 
@@ -62683,6 +65622,7 @@ int		loop;
 		Fl::set_color(RED, 200, 0, 0);
 		Fl::set_color(BLUE, 0, 0, 200);
 		Fl::set_color(CYAN, 128, 128, 255);
+
 		if(shade_mode == SHADE_MODE_DARK)
 		{
 			Fl::set_color(DARK_GRAY, 50, 50, 50);
@@ -62721,7 +65661,14 @@ int		loop;
 			browser->textcolor(WHITE);
 		global_log_window->end();
 		global_log_window->hide();
-
+		if(folder_DEPTH == 3)
+		{
+			global_folder_mat = Mat(folder_WIDTH, folder_HEIGHT, CV_8UC3, folder_bytes);
+		}
+		else if(folder_DEPTH == 4)
+		{
+			global_folder_mat = Mat(folder_WIDTH, folder_HEIGHT, CV_8UC4, folder_bytes);
+		}
 		start_win = new StartWindow(message_delay, 0, 0, ww, hh, global_argc + 1, "Starting");
 		start_win->box(FL_FLAT_BOX);
 		start_win->show();
@@ -62744,6 +65691,7 @@ int		loop;
 					fprintf(start_win->intro_pipe_fp, "quit\n");
 					fflush(start_win->intro_pipe_fp);
 					fclose(start_win->intro_pipe_fp);
+					start_win->intro_pipe_fp = NULL;
 					global_window->show();
 					Fl::run();
 				}

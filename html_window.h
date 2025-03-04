@@ -132,8 +132,28 @@ public:
 			char cow[32768];
 			if(strlen(extra_css) < 32000)
 			{
-				sprintf(cow, "const styleSheetContent = ' %s '; var style = document.createElement(\"style\"); style.type = \"text/css\"; style.id = \"cowcow\"; style.appendChild(document.createTextNode(styleSheetContent)); document.head.appendChild(style)", extra_css);
+				if(transparent_background == 1)
+				{
+					char cow[32768];
+					sprintf(cow, "let styleSheetContent = ' * { background: transparent !important; } %s'; var style = document.createElement(\"style\"); style.type = \"text/css\"; style.id = \"cowcow\"; style.appendChild(document.createTextNode(styleSheetContent)); document.head.appendChild(style);", extra_css);
+					browser->GetMainFrame()->ExecuteJavaScript(cow, "", 0);
+					css_once = 1;
+				}
+				else
+				{
+					sprintf(cow, "let styleSheetContent = ' %s '; var style = document.createElement(\"style\"); style.type = \"text/css\"; style.id = \"cowcow\"; style.appendChild(document.createTextNode(styleSheetContent)); document.head.appendChild(style)", extra_css);
+					css_once = 1;
+				}
+			}
+		}
+		else
+		{
+			if(transparent_background == 1)
+			{
+				char cow[32768];
+				sprintf(cow, "let styleSheetContent = ' * { background: transparent !important; }'; var style = document.createElement(\"style\"); style.type = \"text/css\"; style.id = \"cowcow\"; style.appendChild(document.createTextNode(styleSheetContent)); document.head.appendChild(style);");
 				browser->GetMainFrame()->ExecuteJavaScript(cow, "", 0);
+				css_once = 1;
 			}
 		}
 		m_loaded = true;
@@ -144,6 +164,18 @@ public:
 		{
 			browser->GetMainFrame()->ExecuteJavaScript("document.body.style.backgroundColor='rgba(0, 0, 0, 0)';", "", 0);
 		}
+		if(js_once == 0)
+		{
+			if(extra_js_once != NULL)
+			{
+				browser->GetMainFrame()->ExecuteJavaScript(extra_js_once, "", 0);
+			}
+		}
+		if(extra_js_always != NULL)
+		{
+			browser->GetMainFrame()->ExecuteJavaScript(extra_js_always, "", 0);
+		}
+		js_once = 1;
 	}
 	bool OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefLoadHandler::ErrorCode errorCode, const CefString& failedUrl, CefString & errorText)
 	{
@@ -166,13 +198,17 @@ public:
 	{
 		return m_loaded;
 	}
-	int transparent_background = 0;
+	int		transparent_background = 0;
 	char	*extra_css = NULL;
+	char	*extra_js_once = NULL;
+	char	*extra_js_always = NULL;
 private:
 	int m_browser_id = -1;
 	std::atomic<bool> m_closing{false};
 	std::atomic<bool> m_loaded{false};
 	CefRefPtr<CefRenderHandler> m_handler = nullptr;
+	int css_once = 0;
+	int js_once = 0;
 
 	IMPLEMENT_REFCOUNTING(BrowserClient);
 };
@@ -180,12 +216,12 @@ private:
 class   HTML_Win
 {
 public:
-		HTML_Win(char *in_url, char *in_html, int transparent_background, char *in_extra_css, int ww, int hh);
+		HTML_Win(char *in_url, char *in_html, int transparent_background, char *in_extra_css, char *in_extra_js_once, char *in_extra_js_always, int ww, int hh);
 		~HTML_Win();
 
 	void    Draw();
 	int	initialize(int argc, char **argv);
-	int	load(char *address, char *html_contents, int transparent_background, char *extra_css);
+	int	load(char *address, char *html_contents, int transparent_background, char *extra_css, char *extra_js_once, char *extra_js_always);
 	int	shutdown();
 	void	resize(int ww, int hh);
 

@@ -218,7 +218,7 @@ unsigned int local_w, local_h;
 				if(video_frame[video_play_cnt] != NULL)
 				{
 					Mat src = Mat(local_h, local_w, CV_8UC3, video_frame[video_play_cnt]);
-					cvtColor(src, mat, COLOR_RGB2RGBA);
+					cv::cvtColor(src, mat, COLOR_RGB2RGBA);
 					cv::resize(mat, mat, Size(use_w, use_h));
 					free(video_frame[video_play_cnt]);
 					video_frame[video_play_cnt] = NULL;

@@ -142,8 +142,9 @@
 #define	DRAWING_MODE_ELLIPSE				12
 #define	DRAWING_MODE_IMAGE					13
 #define	DRAWING_MODE_PIXELATE				14
-#define	DRAWING_MODE_RECTANGLE_SELECT		15
-#define	DRAWING_MODE_POLYGON_SELECT			16
+#define	DRAWING_MODE_RECTANGLE_PASSTHRU		15
+#define	DRAWING_MODE_POLYGON_PASSTHRU		16
+#define	DRAWING_MODE_ELLIPSE_PASSTHRU		17
 
 #define	FREEHAND_SHAPE_SQUARE			0
 #define	FREEHAND_SHAPE_CIRCLE			1
@@ -266,8 +267,10 @@
 #define	INSTRUMENT_COMMAND_CYCLE		2
 #define	INSTRUMENT_COMMAND_ONCE			3
 
-#define	MW_MODE_TRANSPARENCY			0
-#define	MW_MODE_STACKING_ORDER			1
+#define	MW_MODE_NONE					0
+#define	MW_MODE_TRANSPARENCY			1
+#define	MW_MODE_ROTATION				2
+#define	MW_MODE_STACKING_ORDER			3
 
 #define	MISC_COPY_DYNAMIC				0
 #define	MISC_COPY_STATIC				1
@@ -278,6 +281,14 @@
 #define	MISC_COPY_MAGNIFY				6
 #define	MISC_COPY_RECTANGLE				7
 #define	MISC_COPY_BORDER				8
+#define	MISC_COPY_REVERSE				9
+#define	MISC_COPY_BRIGHTEN				10
+#define	MISC_COPY_DARKEN				11
+#define	MISC_COPY_HFLIP					12
+#define	MISC_COPY_VFLIP					13
+#define	MISC_COPY_SATURATE				14
+#define	MISC_COPY_DESATURATE			15
+#define	MISC_COPY_VIDEO_SETTINGS		16
 
 #define	EDITING_MISC_MOVE				0
 #define	EDITING_MISC_RESIZE				1
@@ -290,12 +301,13 @@
 
 #define	IM_RECTANGLE					0
 #define	IM_PIXELATE						1
-#define	IM_RECTANGLE_SELECT				2
+#define	IM_RECTANGLE_PASSTHRU			2
 #define	IM_IMAGE						3
 #define	IM_ELLIPSE						4
 #define	IM_FREEHAND						5
 #define	IM_LINE							6
 #define	IM_TEXT							7
+#define	IM_ELLIPSE_PASSTHRU				8
 
 #define	SNAPSHOT_TRIGGER_BUTTON			0
 #define	SNAPSHOT_TRIGGER_START			1
@@ -370,6 +382,7 @@
 #define	NDI_SEND_VIDEO_FORMAT_UYVA	3
 #define	NDI_SEND_VIDEO_FORMAT_UYVY	4
 
+#define	VISCA_INTERFACE_TYPE_ERROR	-1
 #define	VISCA_INTERFACE_TYPE_SERIAL	0
 #define	VISCA_INTERFACE_TYPE_TCP	1
 #define	VISCA_INTERFACE_TYPE_UDP	2
@@ -411,8 +424,9 @@
 
 #define	FRAME_OPERATION_PROPORTIONAL_RESIZE	0
 #define	FRAME_OPERATION_FREE_RESIZE			1
-#define	FRAME_OPERATION_CROP				2
-#define	FRAME_OPERATION_DELETE				3
+#define	FRAME_OPERATION_ROTATE				2
+#define	FRAME_OPERATION_CROP				3
+#define	FRAME_OPERATION_DELETE				4
 
 #define	FRAME_OBJECT_TYPE_IMAGE_WINDOW	0
 #define	FRAME_OBJECT_TYPE_IMMEDIATE		1
@@ -454,6 +468,7 @@ class	MyMenuButton;
 class	MyInput;
 class	MySlider;
 class	ColorSlider;
+class	MiscCopy;
 
 class	ShortcutWindow : public Fl_Window
 {
@@ -613,6 +628,7 @@ public:
 		long int	size;
 		time_t		timestamp;
 		char		*description;
+		int			is_dir;
 };
 
 class	MyScroll : public Fl_Scroll
@@ -672,6 +688,7 @@ public:
 	int				sort_style;
 	int				previewing;
 	int				view_style;
+	int				use_result;
 
 	MyInput			*path;
 	MyButton		*desktop;
@@ -744,6 +761,8 @@ public:
 	int		original_h;
 	double	proportion;
 	int		operation;
+	int		inactive;
+	int		ignore_release;
 };
 
 class	SlidingElement : public DragGroup
@@ -975,6 +994,28 @@ public:
 	int			handle(int in_event);
 };
 
+class	MiscVideoSettingsWindow : public DragWindow
+{
+public:
+		MiscVideoSettingsWindow(MyWin *in_win);
+		~MiscVideoSettingsWindow();
+	int	handle(int event);
+
+	MyWin		*my_window;
+
+	double		contrast;
+	double		brightness;
+	double		saturation;
+	double		hue;
+	double		intensity;
+
+	MySlider	*contrast_slider;
+	MySlider	*brightness_slider;
+	MySlider	*saturation_slider;
+	MySlider	*hue_slider;
+	MySlider	*intensity_slider;
+};
+
 class	MiscCopy
 {
 public:
@@ -990,6 +1031,11 @@ public:
 	int			green;
 	int			blue;
 	int			alpha;
+	double		brightness;
+	double		saturation;
+	double		hue;
+	double		intensity;
+	double		contrast;
 	Camera		*source;
 	Camera		*destination[128];
 	int			dest_x[128];
@@ -1310,16 +1356,17 @@ public:
 class	ObjectMenu : public DragWindow
 {
 public:
-				ObjectMenu(MyWin *in_win);
+					ObjectMenu(MyWin *in_win);
 
-	MyWin		*my_window;
-	int			object_page;
-	MyButton	*object_name_button[1024];
-	MyButton	*object_clear_button;
-	MyButton	*object_all_button;
-	MyButton	*object_done_button;
-	MyButton	*object_next_button;
-	MyButton	*object_prev_button;
+	MyWin			*my_window;
+	int				object_page;
+	MyButton		*object_name_button[1024];
+	MyButton		*object_clear_button;
+	MyButton		*object_all_button;
+	MyButton		*object_apply_all_button;
+	MyButton		*object_done_button;
+	MyButton		*object_next_button;
+	MyButton		*object_prev_button;
 };
 
 class	ListMenu : public Fl_Window
@@ -1518,8 +1565,9 @@ public:
 	MyButton	*loop;
 	MyButton	*freehand;
 	MyButton	*pixelate;
-	MyButton	*select_rectangle;
-	MyButton	*select_polygon;
+	MyButton	*passthru_rectangle;
+	MyButton	*passthru_ellipse;
+	MyButton	*passthru_polygon;
 	MyButton	*delete_im;
 	MyButton	*hide_im;
 	MyButton	*hide_all;
@@ -1701,6 +1749,7 @@ public:
 			box(FL_FRAME_BOX);
 			color(FL_BLACK);
 			cursor_color(FL_WHITE);
+			when(FL_WHEN_ENTER_KEY | when());
 		};
 		~MyInput()
 		{
@@ -1849,13 +1898,22 @@ public:
 			ImPixelate(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
 			~ImPixelate();
 	void	draw();
+	void	resize(int xx, int yy, int ww, int hh);
 };
 
-class	ImRectangleSelect : public ImDefault, public MyGroup
+class	ImRectanglePassThru : public ImDefault, public MyGroup
 {
 public:
-			ImRectangleSelect(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
-			~ImRectangleSelect();
+			ImRectanglePassThru(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
+			~ImRectanglePassThru();
+	void	draw();
+};
+
+class	ImEllipsePassThru : public ImDefault, public MyGroup
+{
+public:
+			ImEllipsePassThru(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
+			~ImEllipsePassThru();
 	void	draw();
 };
 
@@ -1932,8 +1990,9 @@ public:
 	ImText					*text;
 	ImLine					*line;
 	ImRectangle				*rectangle;
-	ImRectangleSelect		*rectangle_select;
+	ImRectanglePassThru		*rectangle_passthru;
 	ImEllipse				*ellipse;
+	ImEllipsePassThru		*ellipse_passthru;
 	ImFreehand				*freehand;
 	ImPixelate				*pixelate;
 	ImImage					*image_im;
@@ -1954,6 +2013,7 @@ public:
 	int		layer;
 	int		drag_mode;
 	double	overall_alpha;
+	int		use_as_mask;
 	int		mw_mode;
 	double	scale_w;
 	double	scale_h;
@@ -1962,7 +2022,14 @@ public:
 	int		extent_taken;
 	int		orig_w;
 	int		orig_h;
+	int		relative_x;
+	int		relative_y;
 	int		actively_drawing;
+	int		crop_x;
+	int		crop_y;
+	int		crop_w;
+	int		crop_h;
+	double	angle;
 };
 
 class	StoredImmediate
@@ -1992,6 +2059,7 @@ public:
 	int		drag_mode;
 	double	overall_alpha;
 	int		mw_mode;
+	int		use_as_mask;
 };
 
 class	SelectOutputWindow : public DragWindow
@@ -2021,6 +2089,7 @@ public:
 	void	Populate();
 	void	Debrief();
 	void	Scan();
+	void	NDI_Exclusive(Fl_Widget *which);
 
 	MyWin				*my_window;
 	Fl_Scroll			*scroll;
@@ -2694,6 +2763,7 @@ public:
 	void			OffsetPositionImageWindows(int off_x, int off_y);
 	void			OffsetScaleImageWindows(double factor_w, double factor_h);
 	void			RenderTextToMat(char *text, Mat *mat);
+	void			CairoClock(Mat& mat, int show_digits, int xx, int yy, int ww, int hh, int in_hour, int in_min, int in_sec);
 	void			ScrollTextList(char *);
 	void			GrabSlideshow();
 	void			GrabWindow();
@@ -2748,7 +2818,7 @@ public:
 	int				DarknessTrigger();
 	int				MotionTrigger();
 	int				ObjectTrigger();
-	void			PaintRecognizedObjects();
+	void			PaintRecognizedObjects(int test_run);
 	void			CaptureLoop();
 	void			TransferHotMat(Mat& in_mat);
 	void			Freeze();
@@ -2761,6 +2831,8 @@ public:
 	int				TriggerAlert();
 	int				DisplayAlert();
 	void			ReadVectorFile(Mat& mat, char *filename);
+	void			TestObjectDetection();
+	void			SetObjectInAllOtherCameras();
 
 	int					hot;
 	Mat					hot_mat;
@@ -2846,13 +2918,18 @@ public:
 	time_t				stop_timer;
 	time_t				initial_timer;
 	int					timer_format;
+	int					analog;
+	int					analog_size;
 	int					military_clock;
 	DetectedObject		detected_object[10];
 	int					detected_object_cnt;
 	int					detected_object_countdown;
 	int					object_index[1024];
 	char				format_code[256];
+	char				*extra_url;
 	char				*extra_css;
+	char				*extra_js_once;
+	char				*extra_js_always;
 	FILE				*slideshow_fp;
 	char				*slideshow_list[1024];
 	int					slideshow_list_cnt;
@@ -2867,6 +2944,7 @@ public:
 	int						ndi_capture;
 	int						ndi_ptz;
 	int						prefer_ndi;
+	int						prefer_v4l;
 
 	irc_session_t		*irc_session;
 	char				irc_buffer[1024];
@@ -3032,6 +3110,8 @@ public:
 	int					alert_permanent_trigger;
 	int					alert_opaque;
 	char				alert_old_buffer[32768];
+
+	int					v4l_capable;
 };
 
 class	StoredImageWindow
@@ -3351,10 +3431,12 @@ public:
 	time_t			start_seconds;
 	time_t			stop_seconds;
 	int				format;
+	int				analog;
 	
 	MyToggleButton	*use_clock;
 	MyToggleButton	*use_timer;
 	MyToggleButton	*use_military;
+	MyToggleButton	*format0;
 	MyToggleButton	*format1;
 	MyToggleButton	*format2;
 	MyToggleButton	*format3;
@@ -3407,6 +3489,15 @@ public:
 	MyWin				*my_window;
 };
 
+class	SelectX11Window : public DragWindow
+{
+public:
+		SelectX11Window(MyWin *in_win);
+		~SelectX11Window();
+
+	MyWin	*my_window;
+};
+
 class	NewSourceWindow : public DragWindow
 {
 public:		
@@ -3414,6 +3505,7 @@ public:
 			~NewSourceWindow();
 	int		handle(int event);
 	void	Show(int edit_mode);
+	void	hide();
 
 	SourceMultiline		*source;
 	Fl_Input			*alias;
@@ -3431,8 +3523,12 @@ public:
 	ColorSlider			*text_alpha;
 	Fl_Box				*color_box;
 	Fl_Box				*text_color_box;
+	SelectCameraWindow	*select_camera_window;
+	SelectX11Window		*select_x11_window;
+	SelectAudioWindow	*select_audio_window;
 
 	MyButton		*create;
+	MyButton		*reset;
 	MyButton		*cancel;
 	MyButton		*camera_select;
 	MyButton		*audio_select;
@@ -3583,6 +3679,7 @@ public:
 	int		dir;
 	int		pan_tilt_style;
 	int		prefer_ndi;
+	int		prefer_v4l;
 
 	VISCAInterface_t		*ptz_current_interface;
 	int						ptz_interface_index;
@@ -3654,6 +3751,7 @@ public:
 	MyLightButton			*ptz_pin_button;
 	Fl_Output				*ptz_bound_name_box;
 	MyButton				*ptz_alias_button;
+	MyInput					*ptz_alias_input;
 	MyButton				*ptz_contract_button;
 	Fl_Group				*ptz_contract_group;
 };
@@ -3674,6 +3772,7 @@ class	StartWindow : public Fl_Double_Window
 {
 public:
 			StartWindow(int in_message_delay, int xx, int yy, int ww, int hh, int in_argc, char *lbl);
+			~StartWindow();
 	void	draw();
 
 	void	Update(char *str);
@@ -3729,6 +3828,7 @@ public:
 			, char *in_ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS]
 			, char *in_ptz_bind_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_prefer_ndi[NUMBER_OF_INTERFACES]
+			, int in_ptz_prefer_v4l[NUMBER_OF_INTERFACES]
 			, char *in_ptz_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_home_on_launch
 			, int in_use_yolo_model
@@ -3942,10 +4042,11 @@ public:
 	void			AddImmediate(Immediate *in);
 	void			PasteImmediate();
 	void			ClearImmediate();
-	int				AddMiscCopy(Camera *in_source, int in_type, Mat local, int immediate_display, char *str, int xx, int yy, int ww, int hh, int rr = -1, int gg = -1, int bb = -1, int aa = -1);
+	int				AddMiscCopy(Camera *in_source, int in_type, Mat local, int immediate_display, char *str, int xx, int yy, int ww, int hh, int rr = -1, int gg = -1, int bb = -1, int aa = -1, double contrast = 0.5, double brightness = 0.5, double saturation = 1.0, double hue = 1.0, double intensity = 1.0);
 	int				InMiscPasted(int xx, int yy, int& r_outer, int& r_inner);
 	void			MiscPaste(int in_x = -1, int in_y = -1);
 	void			MiscRemoveAll();
+	void			MiscRemoveLast();
 	void			GrabAllCameras();
 	int				ImageWindowHit(int xx, int yy);
 	int				HandleMenuPopup(int xx, int yy);
@@ -4106,6 +4207,10 @@ public:
 	uchar		status_color_b;
 	uchar		status_color_a;
 
+	int			record_on_start;
+	int			recording_on_start;
+	char		*record_on_start_alias;
+
 	Muxer									*my_muxer[128];
 	int										muxer_cnt;
 	NDIlib_send_instance_t					ndi_send;
@@ -4244,6 +4349,9 @@ public:
 	Fl_Pack				*button_group_pack;
 	EncodeSpeedWindow	*encode_speed_window;
 
+	int					test_recognition;
+	int					button_refresh;
+
 	MenuButton	*record_button;
 	MenuButton	*power_button;
 	MenuButton	*mute_video_button;
@@ -4258,6 +4366,7 @@ public:
 	MenuButton	*encode_button;
 	MenuButton	*jpeg_streaming_button;
 	MenuButton	*show_debug_button;
+	MenuButton	*test_recognition_button;
 	MenuButton	*show_motion_debug_button;
 	MenuButton	*review_button;
 	MenuButton	*review_muxed_button;
@@ -4323,6 +4432,7 @@ public:
 	PulseAudioButton			*audio_thumbnail[128];
 	int							audio_thumbnail_cnt;
 	VideoSettingsWindow			*video_settings_window;
+	MiscVideoSettingsWindow		*misc_video_settings_window;
 	AudioSettingsWindow			*audio_settings_window;
 	CameraSettingsWindow		*camera_settings_window;
 	SnapshotSettingWindow		*snapshot_settings_window;
@@ -4428,6 +4538,7 @@ public:
 	char				*ptz_alias[NUMBER_OF_INTERFACES];
 	char				*ptz_bind_alias[NUMBER_OF_INTERFACES];
 	int					ptz_prefer_ndi[NUMBER_OF_INTERFACES];
+	int					ptz_prefer_v4l[NUMBER_OF_INTERFACES];
 	int					ptz_interface_type[NUMBER_OF_INTERFACES];
 	int					ptz_device_cnt;
 	int					ptz_zoom;
@@ -4588,6 +4699,7 @@ public:
 	char			ptz_alias[NUMBER_OF_INTERFACES][4096];
 	char			ptz_bind_alias[NUMBER_OF_INTERFACES][4096];
 	int				ptz_prefer_ndi[NUMBER_OF_INTERFACES];
+	int				ptz_prefer_v4l[NUMBER_OF_INTERFACES];
 	int				ptz_device_cnt;
 	int				ptz_zoom;
 	int				old_ptz_zoom;
@@ -4704,6 +4816,7 @@ public:
 		~ImageWindow();
 
 	int		handle(int);
+	void	resize(int xx, int yy, int ww, int hh);
 	void	Draw(Camera *dest_camera);
 	void	Rescale(Camera *cam, int xx, int yy, int proportional);
 	int		AsButton(int xx, int yy);
@@ -4745,6 +4858,8 @@ public:
 	double		displayed_y;
 	double		displayed_w;
 	double		displayed_h;
+	int			relative_x;
+	int			relative_y;
 	int			buttonize;
 	int			buttonized_x;
 	int			buttonized_y;
@@ -4758,13 +4873,13 @@ public:
 	int			trim_y;
 	int			drag_mode;
 	double		overall_alpha;
-	int			mw_transparency;
-	int			mw_rotate;
+	int			mw_mode;
 	double		angle;
 	PopupMenu	*popup;
 	int			frame;
 	int			flip_horizontal;
 	int			flip_vertical;
+	int			use_as_mask;
 };
 
 class	EmbedAppSettings : public DragWindow

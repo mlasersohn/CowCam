@@ -39,7 +39,7 @@ void	html_win_shutdown(Fl_Widget *w, void *v)
 	delete html;
 }
 
-HTML_Win::HTML_Win(char *in_url, char *in_html, int transparent_background, char *in_extra_css, int ww, int hh)
+HTML_Win::HTML_Win(char *in_url, char *in_html, int transparent_background, char *in_extra_css, char *in_extra_js_once, char *in_extra_js_always, int ww, int hh)
 {
 	width = ww;
 	height = hh;
@@ -49,7 +49,7 @@ HTML_Win::HTML_Win(char *in_url, char *in_html, int transparent_background, char
 	browser = nullptr;
 
 	raw = NULL;
-	load(in_url, in_html, transparent_background, in_extra_css);
+	load(in_url, in_html, transparent_background, in_extra_css, in_extra_js_once, in_extra_js_always);
 }
 
 HTML_Win::~HTML_Win()
@@ -138,7 +138,7 @@ int initialize_cef(int html, int argc, char *argv[])
 }
 }
 
-int HTML_Win::load(char *url, char *html_source, int transparent_background, char *in_extra_css)
+int HTML_Win::load(char *url, char *html_source, int transparent_background, char *in_extra_css, char *in_extra_js_once, char *in_extra_js_always)
 {
 	renderHandler = new RenderHandler(width, height);
 	assert(renderHandler != nullptr);
@@ -147,6 +147,8 @@ int HTML_Win::load(char *url, char *html_source, int transparent_background, cha
 	assert(browserClient != nullptr);
 	browserClient->transparent_background = transparent_background;
 	browserClient->extra_css = in_extra_css;
+	browserClient->extra_js_once = in_extra_js_once;
+	browserClient->extra_js_always = in_extra_js_always;
 
 	CefBrowserSettings browserSettings;
 	browserSettings.windowless_frame_rate = 60;
@@ -202,9 +204,9 @@ void	delete_html(HTML_Win *html)
 }
 
 extern "C" {
-HTML_Win	*MakeHTMLWindow(char *in_url, char *in_html, int transparent_background, char *in_extra_css, int ww, int hh)
+HTML_Win	*MakeHTMLWindow(char *in_url, char *in_html, int transparent_background, char *in_extra_css, char *in_extra_js_once, char *in_extra_js_always, int ww, int hh)
 {
-	HTML_Win *win = new HTML_Win(in_url, in_html, transparent_background, in_extra_css, ww, hh);
+	HTML_Win *win = new HTML_Win(in_url, in_html, transparent_background, in_extra_css, in_extra_js_once, in_extra_js_always, ww, hh);
 	return(win);
 }
 }

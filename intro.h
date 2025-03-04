@@ -12,6 +12,7 @@ public:
 	double	interval;
 	char	*image[128];
 	int		image_cnt;
+	int		ndi_notice;
 };
 
 class	ClockWindow : public IntroWindow

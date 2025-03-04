@@ -70,7 +70,7 @@ int		x, y;
 		}
 	}
 	sprintf(filename, "%s/frame_%06d.png", filename_preface, iFrame);
-	cv::cvtColor(local_mat, out, cv::COLOR_RGB2BGR);
+	cvtColor(local_mat, out, cv::COLOR_RGB2BGR);
 	cv::imwrite(filename, out);
 }
 

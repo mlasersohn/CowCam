@@ -50,6 +50,7 @@ int	loop;
 	sudden_stop = 0;
 	strcpy(message, "");
 	interval = in_interval;
+	ndi_notice = 0;
 	image_cnt = 0;
 	for(loop = 0;loop < 128;loop++)
 	{
@@ -115,6 +116,13 @@ int	loop;
 		char buf[256];
 		sprintf(buf, "Copyright %c%c 2025, Mark Lasersohn", 0xC2, 0xA9);
 		fl_draw(buf, 0, 0, w(), h() - 150, FL_ALIGN_CENTER);
+		if(ndi_notice == 1)
+		{
+			char buf[256];
+			sprintf(buf, "NDI® is a registered trademark of Vizrt NDI AB");
+			fl_font(FL_HELVETICA, 16);
+			fl_draw(buf, 0, 0, w(), h() - 90, FL_ALIGN_CENTER);
+		}
 	}
 }
 
@@ -123,10 +131,17 @@ ClockWindow::ClockWindow(int ww, int hh) : IntroWindow(ww, hh, INTERVAL)
 int	loop;
 
 	placard = 1;
+
 	stage_cnt = 0;
 	tick = 0;
 	inc = 1.0;
+
 	srand48(time(0));
+	stage_cnt = (int)(drand48() * 274.0);
+	tick = (int)(drand48() * 34.0);
+	inc = (drand48() * 1.75) + 1.0;
+fprintf(stderr, "STAGE CNT: %d TICK: %d INC: %f\n", stage_cnt, tick, inc);
+
 	int cnt = time(0) % 200;
 	for(loop = 0;loop < 8192;loop++)
 	{
@@ -251,6 +266,10 @@ int		loop;
 			win->hide();
 			Fl::delete_widget(win);
 		}
+		else if(strncmp(buf, "ndi notice:", strlen("ndi notice")) == 0)
+		{
+			win->ndi_notice = 1;
+		}
 		else if(strncmp(buf, "image:", strlen("image:")) == 0)
 		{
 			char *cp = buf + strlen("image:");
@@ -286,4 +305,6 @@ std::thread thread_id;
 	thread_id = std::thread(communication_thread, win);
 	thread_id.detach();
 	Fl::run();
+fprintf(stderr, "EXITING\n");
+	return(0);
 }
