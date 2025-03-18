@@ -207,9 +207,6 @@ cowcam --animate_panels --no_frame_scaling --streaming_only --width=1280 --heigh
 ####  Specify an audio input device
 `cowcam --audio_source=alsa_input.usb-audio-technica____AT2020_USB-00.analog-stereo`
 
-####  Load a full setup. This will overwrite most other options.
-`cowcam --load=your_file.setup`
-
 ####  Use an IP camera at a RTSP URL with login and password
 `cowcam --source=rtsp://your_login:your_password@url_for_your_webcam.org/live`
 
