@@ -54,7 +54,6 @@ void addlog(const char * fmt, ...)
 		fprintf(fp, "%s\n", buf);
 		fclose(fp);
 	}
-printf("LOG: [%s]\n", buf);
 }
 
 void dump_event(irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)

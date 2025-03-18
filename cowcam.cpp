@@ -1172,6 +1172,10 @@ NDIlib_recv_instance_t OpenNDI(NDIlib_source_t source, int format)
 			NDI_recv_create_desc.color_format = NDIlib_recv_color_format_RGBX_RGBA;
 		}
 		ndi_recv = NDILib->NDIlib_recv_create_v3(&NDI_recv_create_desc);
+
+		NDIlib_metadata_frame_t enable_hw_accel;
+		enable_hw_accel.p_data = "<ndi_hwaccel enabled=\"true\"/>";
+		NDILib->NDIlib_recv_send_metadata(ndi_recv, &enable_hw_accel);
 	}
 	return(ndi_recv);
 }
@@ -6492,7 +6496,7 @@ char out[4096];
 	}
 }
 
-FileSelector::FileSelector(char *lbl, char *in_filter, char *in_result_string, int in_select_dir, int in_new_file) : DragWindow(1000, 550, lbl)
+FileSelector::FileSelector(char *lbl, char *in_filter, char *in_result_string, int in_select_dir, int in_new_file) : Dialog(1000, 550, lbl)
 {
 int		loop;
 char	cwd[4096];
@@ -6522,13 +6526,6 @@ char	cwd[4096];
 	{
 		file_list[loop] = NULL;
 	}
-	Fl_Box *box = new Fl_Box(2, 2, w() - 4, 26, lbl);
-	box->box(FL_FLAT_BOX);
-	box->color(BLACK);
-	box->labelcolor(WHITE);
-	box->labelsize(12);
-	box->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-
 	path = new MyInput(195, 28, w() - 200, 20, "Path");
 	path->box(FL_FLAT_BOX);
 	path->color(DARK_GRAY);
@@ -6755,7 +6752,7 @@ int	loop;
 
 void	FileSelector::draw()
 {
-	DragWindow::draw();
+	Dialog::draw();
 	if(previewing == 1)
 	{
 		Preview();
@@ -6819,7 +6816,7 @@ int	FileSelector::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -7816,10 +7813,10 @@ char	path[256];
 	Fl::delete_widget(win);
 }
 
-RelabelWindow::RelabelWindow(MyWin *in_win, Fl_Button *b, int xx, int yy, int ww, int hh) : DragWindow(xx, yy, ww, hh, "Relabel")
+RelabelWindow::RelabelWindow(MyWin *in_win, Fl_Button *b, int xx, int yy, int ww, int hh) : Dialog(xx, yy, ww, hh, "Relabel")
 {
 	button = b;
-	input = new Fl_Input(70, 10, 250, 20, "New Label");
+	input = new Fl_Input(70, 30, 250, 20, "New Label");
 	input->textsize(11);
 	input->labelsize(11);
 	input->textcolor(BLACK);
@@ -8309,6 +8306,123 @@ int	DragWindow::handle(int event)
 				flag = 1;
 			}
 		}
+	}
+	return(flag);
+}
+
+void	dialog_common(Dialog *dialog, char *lbl)
+{
+	dialog->title_box = new Fl_Box(2, 2, dialog->w() - 4, 18);
+	dialog->title_box->box(FL_FLAT_BOX);
+	dialog->title_box->color(BLACK);
+	dialog->title_box->labelcolor(WHITE);
+	dialog->title_box->labelsize(11);
+	dialog->title_box->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	dialog->title_box->copy_label(lbl);
+
+	dialog->close = new MyButton(dialog->w() - 60, 2, 60, 18, "Close");
+	dialog->close->box(FL_NO_BOX);
+	dialog->close->color(BLACK);
+	dialog->close->labelcolor(YELLOW);
+	dialog->close->labelsize(9);
+	dialog->close->callback(hide_window_cb, dialog);
+	if(dialog->w() < 160)
+	{
+		dialog->close->hide();
+	}
+	dialog->expanded = 1;
+	dialog->old_w = dialog->w();
+	dialog->old_h = dialog->h();
+}
+
+Dialog::Dialog(int ww, int hh, char *lbl) : DragWindow(ww, hh + 20)
+{
+	dialog_common(this, lbl);
+}
+
+Dialog::Dialog(int xx, int yy, int ww, int hh, char *lbl) : DragWindow(xx, yy, ww, hh + 20)
+{
+	dialog_common(this, lbl);
+}
+
+Dialog::~Dialog()
+{
+}
+
+void	Dialog::resize(int xx, int yy, int ww, int hh)
+{
+	title_box->resize(title_box->x(), title_box->y(), ww - 4, title_box->h());
+	DragWindow::resize(xx, yy, ww, hh);
+	if(w() >= 160)
+	{
+		close->show();
+	}
+	else
+	{
+		close->hide();
+	}
+	close->resize(w() - 60, close->y(), close->w(), close->h());
+	close->redraw();
+}
+
+void	Dialog::draw()
+{
+	DragWindow::draw();
+}
+
+int	Dialog::handle(int event)
+{
+	int flag = 0;
+	if(event == FL_MOUSEWHEEL)
+	{
+		if(Fl::event_inside(title_box))
+		{
+			int direction = Fl::event_dy();
+			if(direction > 0)
+			{
+				if(expanded == 1)
+				{
+					old_w = w();
+					old_h = h();
+					expanded = 0;
+					resize(x(), y(), w(), title_box->h() + 2);
+					title_box->box(FL_FRAME_BOX);
+					box(FL_FLAT_BOX);
+					redraw();
+				}
+				else
+				{
+					resize(x(), 0, w(), h());
+				}
+				flag = 1;
+			}
+			else
+			{
+				if(expanded == 0)
+				{
+					expanded = 1;
+					resize(x(), y(), w(), old_h);
+					title_box->box(FL_FLAT_BOX);
+					box(FL_FRAME_BOX);
+					redraw();
+				}
+				else
+				{
+					old_w = w();
+					old_h = h();
+					expanded = 0;
+					resize(x(), Fl::h() - title_box->h() + 2, w(), title_box->h() + 2);
+					title_box->box(FL_FRAME_BOX);
+					box(FL_FLAT_BOX);
+					redraw();
+				}
+				flag = 1;
+			}
+		}
+	}
+	if(flag == 0)
+	{
+		flag = DragWindow::handle(event);
 	}
 	return(flag);
 }
@@ -9797,17 +9911,12 @@ void	general_save_button_cb(Fl_Widget *w, void *v)
 			}
 			chdir("./ImmediateDrawingFiles");
 			char filename[4096];
-			int r = my_file_chooser("Select an immediate file", "*.imd", "./ImmediateDrawingFiles", filename, 0, 1);
+			int r = my_file_chooser("Select an immediate file", "*.json", "./ImmediateDrawingFiles", filename, 0, 1);
 			if(r > 0)
 			{
 				if(strlen(filename) > 0)
 				{
-					int fd = open(filename, O_WRONLY | O_CREAT, 0777);
-					if(fd != -1)
-					{
-						cam->SaveImmediate(fd);
-						close(fd);
-					}
+					cam->SaveImmediate(filename);
 				}
 			}
 			chdir("..");
@@ -9826,17 +9935,12 @@ void	general_load_button_cb(Fl_Widget *w, void *v)
 		{
 			char filename[4096];
 			strcpy(filename, "");
-			int nn = my_file_chooser("Select an immediate drawing file", "*.imd", "./ImmediateDrawingFiles/*", filename);
+			int nn = my_file_chooser("Select an immediate drawing file", "*.json", "./ImmediateDrawingFiles", filename);
 			if(nn > 0)
 			{
 				if(strlen(filename) > 0)
 				{
-					int fd = open(filename, O_RDONLY);
-					if(fd != -1)
-					{
-						cam->LoadImmediate(fd);
-						close(fd);
-					}
+					cam->LoadImmediate(filename);
 				}
 			}
 		}
@@ -9959,7 +10063,7 @@ char	buf[256];
 	win->redraw();
 }
 
-TextEditWindow::TextEditWindow(MyWin *in_win, Camera *in_cam, MiscCopy *in_misc) : DragWindow(400, 460, "Edit Text")
+TextEditWindow::TextEditWindow(MyWin *in_win, Camera *in_cam, MiscCopy *in_misc) : Dialog(400, 460, "Edit Text")
 {
 int	loop;
 
@@ -9967,7 +10071,7 @@ int	loop;
 	my_camera = in_cam;
 	my_misc = in_misc;
 
-	int yp = 18;
+	int yp = 38;
 	strcpy(selected_font, "");
 
 	font_output = new Fl_Box(60, yp, 300, 20);
@@ -9988,7 +10092,7 @@ int	loop;
 	font_browser->callback(text_edit_window_cb, this);
 	yp += 204;
 	int nn = my_window->number_of_fonts;
-	for(loop = 1;loop < nn;loop++)
+	for(loop = 0;loop < nn;loop++)
 	{
 		int attr = 0;
 		char *str = (char *)Fl::get_font_name(loop, &attr);
@@ -10086,7 +10190,7 @@ int	loop;
 	font_blue_output->textcolor(WHITE);
 	font_blue_output->textsize(9);
 	font_blue_output->value("255");
-	yp += (12);
+	yp += 12;
 
 	font_alpha_slider = new Fl_Hor_Slider(60, yp, 100, 10, "Alpha");
 	font_alpha_slider->color(BLACK);
@@ -10107,7 +10211,7 @@ int	loop;
 	font_alpha_output->textsize(9);
 	font_alpha_output->value("255");
 
-	yp += (24);
+	yp += 24;
 	int xp = 60;
 
 	text_italic_button = new MyLightButton(xp, yp, 60, 20, "Italic");
@@ -10117,7 +10221,7 @@ int	loop;
 	text_italic_button->box(FL_FLAT_BOX);
 	text_italic_button->clear_visible_focus();
 	text_italic_button->callback(text_edit_window_cb, this);
-	xp += (60);
+	xp += 60;
 
 	text_bold_button = new MyLightButton(xp, yp, 60, 20, "Bold");
 	text_bold_button->labelsize(9);
@@ -10126,7 +10230,7 @@ int	loop;
 	text_bold_button->box(FL_FLAT_BOX);
 	text_bold_button->clear_visible_focus();
 	text_bold_button->callback(text_edit_window_cb, this);
-	xp += (60);
+	xp += 60;
 
 	text_outline_button = new MyLightButton(xp, yp, 60, 20, "Outline");
 	text_outline_button->labelsize(9);
@@ -10135,7 +10239,7 @@ int	loop;
 	text_outline_button->box(FL_FLAT_BOX);
 	text_outline_button->clear_visible_focus();
 	text_outline_button->callback(text_edit_window_cb, this);
-	yp += (48);
+	yp += 48;
 
 	xp = 60;
 	text_initial_text = new Fl_Multiline_Input(xp, yp, 300, 60, "Initial Text");
@@ -10162,11 +10266,18 @@ TextEditWindow::~TextEditWindow()
 void	hide_immediate_window_cb(Fl_Widget *w, void *v)
 {
 	ImmediateDrawingWindow *win = (ImmediateDrawingWindow *)v;
+	if(win->my_window != NULL)
+	{
+		if(win->my_window->anim_timeline != NULL)
+		{
+			win->my_window->anim_timeline->hide();
+		}
+	}
 	win->ClearSelectedWidget();
 	win->hide();
 }
 
-ImmediateDrawingWindow::ImmediateDrawingWindow(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl) : DragWindow(xx, yy, ww, hh, lbl)
+ImmediateDrawingWindow::ImmediateDrawingWindow(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl) : Dialog(xx, yy, ww, hh, lbl)
 {
 char	buf[256];
 int		ii;
@@ -10215,7 +10326,7 @@ int		ii;
 	pixelate_size = 10;
 	erase = 0;
 
-	int yp = 20;
+	int yp = 40;
 	general = new MyButton(10, yp, 100, 20, "General");
 	general->labelsize(9);
 	general->labelcolor(YELLOW);
@@ -10362,10 +10473,10 @@ int		ii;
 	done->callback(hide_immediate_window_cb, this);
 	yp += 22;
 
-	general_group = new MyGroup(120, 0, 1920, 1080);
+	general_group = new MyGroup(120, 20, 1920, 1080);
 	general_group->box(FL_NO_BOX);
 	general_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		grid_size_slider = new Fl_Hor_Slider(180, yp, 100, 10, "Grid Size");
 		grid_size_slider->color(BLACK);
 		grid_size_slider->box(FL_FRAME_BOX);
@@ -10480,17 +10591,17 @@ int		ii;
 		load_button->callback(general_load_button_cb, this);
 	general_group->end();
 	general_group->hide();
-	text_group = new MyGroup(120, 0, 1920, 1080);
+	text_group = new MyGroup(120, 20, 1920, 1080);
 	text_group->box(FL_NO_BOX);
 	text_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		font_output = new Fl_Box(120, yp, 300, 20);
 		font_output->color(BLACK);
 		font_output->box(FL_FRAME_BOX);
 		font_output->labelcolor(WHITE);
 		font_output->labelsize(9);
 		font_output->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-		yp += (24);
+		yp += 24;
 	
 		font_browser = new Fl_Hold_Browser(120, yp, 300, 200);
 		font_browser->color(BLACK);
@@ -10500,7 +10611,7 @@ int		ii;
 		font_browser->selection_color(YELLOW);
 		font_browser->scrollbar.color(BLACK);
 		font_browser->callback(drawing_font_selection_cb, this);
-		yp += (204);
+		yp += 204;
 	
 		font_sample = new FontSample(this, 120, yp, 100, 100, "Ab");
 		font_sample->color(DARK_GRAY);
@@ -10527,7 +10638,7 @@ int		ii;
 		font_size_output->textcolor(WHITE);
 		font_size_output->textsize(9);
 		font_size_output->value(" 72");
-		yp += (16);
+		yp += 16;
 	
 		font_red_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Red");
 		font_red_slider->color(BLACK);
@@ -10547,7 +10658,7 @@ int		ii;
 		font_red_output->textcolor(WHITE);
 		font_red_output->textsize(9);
 		font_red_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		font_green_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Green");
 		font_green_slider->color(BLACK);
@@ -10567,7 +10678,7 @@ int		ii;
 		font_green_output->textcolor(WHITE);
 		font_green_output->textsize(9);
 		font_green_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		font_blue_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Blue");
 		font_blue_slider->color(BLACK);
@@ -10587,7 +10698,7 @@ int		ii;
 		font_blue_output->textcolor(WHITE);
 		font_blue_output->textsize(9);
 		font_blue_output->value("255");
-		yp += (12);
+		yp += 12;
 
 		font_alpha_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Alpha");
 		font_alpha_slider->color(BLACK);
@@ -10607,7 +10718,7 @@ int		ii;
 		font_alpha_output->textcolor(WHITE);
 		font_alpha_output->textsize(9);
 		font_alpha_output->value("255");
-		yp += (16);
+		yp += 16;
 
 		xp = 240;
 		MyGroup *drawing_text_color_selection_group = new MyGroup(xp, yp, 186, 18);
@@ -10642,7 +10753,7 @@ int		ii;
 			text_outline_color_button->callback(text_color_selection_cb, this);
 			xp += 42;
 		drawing_text_color_selection_group->end();
-		yp += (24);
+		yp += 24;
 		xp = 260;
 
 		drawing_text_box = new Fl_Choice(xp, yp, 100, 16, "Box");
@@ -10657,7 +10768,7 @@ int		ii;
 		drawing_text_box->add("Flat Box");
 		drawing_text_box->add("Frame");
 		drawing_text_box->add("Framed Box");
-		yp += (18);
+		yp += 18;
 
 		xp = 230;
 		text_italic_button = new MyLightButton(xp, yp, 60, 20, "Italic");
@@ -10666,7 +10777,7 @@ int		ii;
 		text_italic_button->color(DARK_GRAY);
 		text_italic_button->box(FL_FLAT_BOX);
 		text_italic_button->clear_visible_focus();
-		xp += (60);
+		xp += 60;
 
 		text_bold_button = new MyLightButton(xp, yp, 60, 20, "Bold");
 		text_bold_button->labelsize(9);
@@ -10674,7 +10785,7 @@ int		ii;
 		text_bold_button->color(DARK_GRAY);
 		text_bold_button->box(FL_FLAT_BOX);
 		text_bold_button->clear_visible_focus();
-		xp += (60);
+		xp += 60;
 
 		text_outline_button = new MyLightButton(xp, yp, 60, 20, "Outline");
 		text_outline_button->labelsize(9);
@@ -10682,7 +10793,7 @@ int		ii;
 		text_outline_button->color(DARK_GRAY);
 		text_outline_button->box(FL_FLAT_BOX);
 		text_outline_button->clear_visible_focus();
-		yp += (28);
+		yp += 28;
 
 		xp = 140;
 		text_initial_text = new Fl_Multiline_Input(xp, yp, 250, 60, "Initial Text");
@@ -10697,10 +10808,10 @@ int		ii;
 
 	text_group->end();
 	text_group->hide();
-	line_group = new MyGroup(120, 0, 1920, 1080);
+	line_group = new MyGroup(120, 20, 1920, 1080);
 	line_group->box(FL_NO_BOX);
 	line_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		line_sample = new LineSample(this, 120, yp, 100, 100);
 		line_sample->color(DARK_GRAY);
 		line_sample->box(FL_FRAME_BOX);
@@ -10725,7 +10836,7 @@ int		ii;
 		line_size_output->textcolor(WHITE);
 		line_size_output->textsize(9);
 		line_size_output->value("  1");
-		yp += (16);
+		yp += 16;
 	
 		line_red_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Red");
 		line_red_slider->color(BLACK);
@@ -10745,7 +10856,7 @@ int		ii;
 		line_red_output->textcolor(WHITE);
 		line_red_output->textsize(9);
 		line_red_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		line_green_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Green");
 		line_green_slider->color(BLACK);
@@ -10765,7 +10876,7 @@ int		ii;
 		line_green_output->textcolor(WHITE);
 		line_green_output->textsize(9);
 		line_green_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		line_blue_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Blue");
 		line_blue_slider->color(BLACK);
@@ -10785,7 +10896,7 @@ int		ii;
 		line_blue_output->textcolor(WHITE);
 		line_blue_output->textsize(9);
 		line_blue_output->value("255");
-		yp += (12);
+		yp += 12;
 
 		line_alpha_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Alpha");
 		line_alpha_slider->color(BLACK);
@@ -10805,7 +10916,7 @@ int		ii;
 		line_alpha_output->textcolor(WHITE);
 		line_alpha_output->textsize(9);
 		line_alpha_output->value("255");
-		yp += (14);
+		yp += 14;
 
 		int start_yp = yp;
 		MyGroup *line_style_group = new MyGroup(220, yp, 60, 60);
@@ -10818,7 +10929,7 @@ int		ii;
 			line_style_solid_button->type(FL_RADIO_BUTTON);
 			line_style_solid_button->value(1);
 			line_style_solid_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 
 			line_style_dash_button = new MyToggleButton(220, yp, 60, 16, "Dash");
 			line_style_dash_button->labelsize(9);
@@ -10828,7 +10939,7 @@ int		ii;
 			line_style_dash_button->clear_visible_focus();
 			line_style_dash_button->type(FL_RADIO_BUTTON);
 			line_style_dash_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 
 			line_style_dot_button = new MyToggleButton(220, yp, 60, 16, "Dot");
 			line_style_dot_button->labelsize(9);
@@ -10838,7 +10949,7 @@ int		ii;
 			line_style_dot_button->clear_visible_focus();
 			line_style_dot_button->type(FL_RADIO_BUTTON);
 			line_style_dot_button->callback(line_style_cb, this);
-			yp += (24);
+			yp += 24;
 
 		line_style_group->end();
 		line_style_erase_button = new MyToggleButton(290, yp, 60, 16, "Erase");
@@ -10859,7 +10970,7 @@ int		ii;
 			line_type_segments_button->value(1);
 			line_type_segments_button->type(FL_RADIO_BUTTON);
 			line_type_segments_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 			line_type_curves_button = new MyToggleButton(220, yp, 60, 16, "Curves");
 			line_type_curves_button->labelsize(9);
 			line_type_curves_button->labelcolor(WHITE);
@@ -10880,7 +10991,7 @@ int		ii;
 			line_style_flat_button->type(FL_RADIO_BUTTON);
 			line_style_flat_button->value(1);
 			line_style_flat_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 			line_style_round_button = new MyToggleButton(290, yp, 60, 16, "Round");
 			line_style_round_button->labelsize(9);
 			line_style_round_button->labelcolor(WHITE);
@@ -10889,7 +11000,7 @@ int		ii;
 			line_style_round_button->clear_visible_focus();
 			line_style_round_button->type(FL_RADIO_BUTTON);
 			line_style_round_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 			line_style_square_button = new MyToggleButton(290, yp, 60, 16, "Square");
 			line_style_square_button->labelsize(9);
 			line_style_square_button->labelcolor(WHITE);
@@ -10898,7 +11009,7 @@ int		ii;
 			line_style_square_button->clear_visible_focus();
 			line_style_square_button->type(FL_RADIO_BUTTON);
 			line_style_square_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 			line_style_arrow_button = new MyToggleButton(290, yp, 60, 16, "Arrow");
 			line_style_arrow_button->labelsize(9);
 			line_style_arrow_button->labelcolor(WHITE);
@@ -10920,7 +11031,7 @@ int		ii;
 			line_style_join_miter_button->type(FL_RADIO_BUTTON);
 			line_style_join_miter_button->value(1);
 			line_style_join_miter_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 			line_style_join_round_button = new MyToggleButton(360, yp, 60, 16, "Join Round");
 			line_style_join_round_button->labelsize(9);
 			line_style_join_round_button->labelcolor(WHITE);
@@ -10929,7 +11040,7 @@ int		ii;
 			line_style_join_round_button->clear_visible_focus();
 			line_style_join_round_button->type(FL_RADIO_BUTTON);
 			line_style_join_round_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 			line_style_join_bevel_button = new MyToggleButton(360, yp, 60, 16, "Join Bevel");
 			line_style_join_bevel_button->labelsize(9);
 			line_style_join_bevel_button->labelcolor(WHITE);
@@ -10938,14 +11049,14 @@ int		ii;
 			line_style_join_bevel_button->clear_visible_focus();
 			line_style_join_bevel_button->type(FL_RADIO_BUTTON);
 			line_style_join_bevel_button->callback(line_style_cb, this);
-			yp += (18);
+			yp += 18;
 		line_join_group->end();
 	line_group->end();
 	line_group->hide();
-	rectangle_group = new MyGroup(120, 0, 1920, 1080);
+	rectangle_group = new MyGroup(120, 20, 1920, 1080);
 	rectangle_group->box(FL_NO_BOX);
 	rectangle_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		rectangle_sample = new RectangleSample(this, 120, yp, 100, 100);
 		rectangle_sample->color(DARK_GRAY);
 		rectangle_sample->box(FL_FRAME_BOX);
@@ -10970,7 +11081,7 @@ int		ii;
 		rectangle_size_output->textcolor(WHITE);
 		rectangle_size_output->textsize(9);
 		rectangle_size_output->value("  1");
-		yp += (16);
+		yp += 16;
 	
 		rectangle_red_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Red");
 		rectangle_red_slider->color(BLACK);
@@ -10990,7 +11101,7 @@ int		ii;
 		rectangle_red_output->textcolor(WHITE);
 		rectangle_red_output->textsize(9);
 		rectangle_red_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		rectangle_green_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Green");
 		rectangle_green_slider->color(BLACK);
@@ -11010,7 +11121,7 @@ int		ii;
 		rectangle_green_output->textcolor(WHITE);
 		rectangle_green_output->textsize(9);
 		rectangle_green_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		rectangle_blue_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Blue");
 		rectangle_blue_slider->color(BLACK);
@@ -11030,7 +11141,7 @@ int		ii;
 		rectangle_blue_output->textcolor(WHITE);
 		rectangle_blue_output->textsize(9);
 		rectangle_blue_output->value("255");
-		yp += (12);
+		yp += 12;
 
 		rectangle_alpha_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Alpha");
 		rectangle_alpha_slider->color(BLACK);
@@ -11050,7 +11161,7 @@ int		ii;
 		rectangle_alpha_output->textcolor(WHITE);
 		rectangle_alpha_output->textsize(9);
 		rectangle_alpha_output->value("255");
-		yp += (14);
+		yp += 14;
 
 		start_yp = yp;
 		MyGroup *rectangle_style_group = new MyGroup(250, yp, 60, 60);
@@ -11063,7 +11174,7 @@ int		ii;
 			rectangle_style_solid_button->type(FL_RADIO_BUTTON);
 			rectangle_style_solid_button->value(1);
 			rectangle_style_solid_button->callback(rectangle_style_cb, this);
-			yp += (18);
+			yp += 18;
 
 			rectangle_style_dash_button = new MyToggleButton(250, yp, 60, 16, "Dash");
 			rectangle_style_dash_button->labelsize(9);
@@ -11073,7 +11184,7 @@ int		ii;
 			rectangle_style_dash_button->clear_visible_focus();
 			rectangle_style_dash_button->type(FL_RADIO_BUTTON);
 			rectangle_style_dash_button->callback(rectangle_style_cb, this);
-			yp += (18);
+			yp += 18;
 
 			rectangle_style_dot_button = new MyToggleButton(250, yp, 60, 16, "Dot");
 			rectangle_style_dot_button->labelsize(9);
@@ -11095,7 +11206,7 @@ int		ii;
 			rectangle_style_join_miter_button->type(FL_RADIO_BUTTON);
 			rectangle_style_join_miter_button->value(1);
 			rectangle_style_join_miter_button->callback(rectangle_style_cb, this);
-			yp += (18);
+			yp += 18;
 			rectangle_style_join_round_button = new MyToggleButton(320, yp, 60, 16, "Join Round");
 			rectangle_style_join_round_button->labelsize(9);
 			rectangle_style_join_round_button->labelcolor(WHITE);
@@ -11104,7 +11215,7 @@ int		ii;
 			rectangle_style_join_round_button->clear_visible_focus();
 			rectangle_style_join_round_button->type(FL_RADIO_BUTTON);
 			rectangle_style_join_round_button->callback(rectangle_style_cb, this);
-			yp += (18);
+			yp += 18;
 			rectangle_style_join_bevel_button = new MyToggleButton(320, yp, 60, 16, "Join Bevel");
 			rectangle_style_join_bevel_button->labelsize(9);
 			rectangle_style_join_bevel_button->labelcolor(WHITE);
@@ -11113,7 +11224,7 @@ int		ii;
 			rectangle_style_join_bevel_button->clear_visible_focus();
 			rectangle_style_join_bevel_button->type(FL_RADIO_BUTTON);
 			rectangle_style_join_bevel_button->callback(rectangle_style_cb, this);
-			yp += (22);
+			yp += 22;
 		rectangle_join_group->end();
 		rectangle_filled_button = new MyToggleButton(250, yp, 60, 16, "Filled");
 		rectangle_filled_button->labelsize(9);
@@ -11123,7 +11234,7 @@ int		ii;
 		rectangle_filled_button->clear_visible_focus();
 		rectangle_filled_button->value(0);
 		rectangle_filled_button->callback(rectangle_style_cb, this);
-		yp += (22);
+		yp += 22;
 
 		rectangle_erase_button = new MyToggleButton(250, yp, 60, 16, "Erase");
 		rectangle_erase_button->labelsize(9);
@@ -11136,10 +11247,10 @@ int		ii;
 	rectangle_group->end();
 	rectangle_group->hide();
 
-	freehand_group = new MyGroup(120, 0, 1920, 1080);
+	freehand_group = new MyGroup(120, 20, 1920, 1080);
 	freehand_group->box(FL_NO_BOX);
 	freehand_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		freehand_sample = new FreehandSample(this, 120, yp, 100, 100);
 		freehand_sample->color(DARK_GRAY);
 		freehand_sample->box(FL_FRAME_BOX);
@@ -11165,7 +11276,7 @@ int		ii;
 		freehand_size_output->textcolor(WHITE);
 		freehand_size_output->textsize(9);
 		freehand_size_output->value("  1");
-		yp += (16);
+		yp += 16;
 	
 		freehand_red_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Red");
 		freehand_red_slider->color(BLACK);
@@ -11185,7 +11296,7 @@ int		ii;
 		freehand_red_output->textcolor(WHITE);
 		freehand_red_output->textsize(9);
 		freehand_red_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		freehand_green_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Green");
 		freehand_green_slider->color(BLACK);
@@ -11205,7 +11316,7 @@ int		ii;
 		freehand_green_output->textcolor(WHITE);
 		freehand_green_output->textsize(9);
 		freehand_green_output->value("255");
-		yp += (12);
+		yp += 12;
 	
 		freehand_blue_slider = new Fl_Hor_Slider(260, yp, 100, 10, "Blue");
 		freehand_blue_slider->color(BLACK);
@@ -11225,7 +11336,7 @@ int		ii;
 		freehand_blue_output->textcolor(WHITE);
 		freehand_blue_output->textsize(9);
 		freehand_blue_output->value("255");
-		yp += (14);
+		yp += 14;
 		start_yp = yp;
 		MyGroup *freehand_shape_group = new MyGroup(250, yp, 120, 120);
 			freehand_shape_square_button = new MyToggleButton(250, yp, 80, 16, "Square");
@@ -11237,7 +11348,7 @@ int		ii;
 			freehand_shape_square_button->type(FL_RADIO_BUTTON);
 			freehand_shape_square_button->value(1);
 			freehand_shape_square_button->callback(freehand_shape_cb, this);
-			yp += (18);
+			yp += 18;
 			freehand_shape_circle_button = new MyToggleButton(250, yp, 80, 16, "Circle");
 			freehand_shape_circle_button->labelsize(9);
 			freehand_shape_circle_button->labelcolor(WHITE);
@@ -11247,7 +11358,7 @@ int		ii;
 			freehand_shape_circle_button->type(FL_RADIO_BUTTON);
 			freehand_shape_circle_button->value(0);
 			freehand_shape_circle_button->callback(freehand_shape_cb, this);
-			yp += (18);
+			yp += 18;
 			freehand_shape_erase_square_button = new MyToggleButton(250, yp, 80, 16, "Erase Square");
 			freehand_shape_erase_square_button->labelsize(9);
 			freehand_shape_erase_square_button->labelcolor(WHITE);
@@ -11257,7 +11368,7 @@ int		ii;
 			freehand_shape_erase_square_button->type(FL_RADIO_BUTTON);
 			freehand_shape_erase_square_button->value(0);
 			freehand_shape_erase_square_button->callback(freehand_shape_cb, this);
-			yp += (18);
+			yp += 18;
 			freehand_shape_erase_circle_button = new MyToggleButton(250, yp, 80, 16, "Erase Circle");
 			freehand_shape_erase_circle_button->labelsize(9);
 			freehand_shape_erase_circle_button->labelcolor(WHITE);
@@ -11267,7 +11378,7 @@ int		ii;
 			freehand_shape_erase_circle_button->type(FL_RADIO_BUTTON);
 			freehand_shape_erase_circle_button->value(0);
 			freehand_shape_erase_circle_button->callback(freehand_shape_cb, this);
-			yp += (18);
+			yp += 18;
 			freehand_shape_stamp_button = new MyToggleButton(250, yp, 80, 16, "Stamp");
 			freehand_shape_stamp_button->labelsize(9);
 			freehand_shape_stamp_button->labelcolor(WHITE);
@@ -11285,7 +11396,7 @@ int		ii;
 			freehand_shape_stamp_file_button->box(FL_FLAT_BOX);
 			freehand_shape_stamp_file_button->clear_visible_focus();
 			freehand_shape_stamp_file_button->callback(freehand_shape_file_cb, this);
-			yp += (18);
+			yp += 18;
 			freehand_shape_key_button = new MyToggleButton(250, yp, 80, 16, "Key");
 			freehand_shape_key_button->labelsize(9);
 			freehand_shape_key_button->labelcolor(WHITE);
@@ -11295,21 +11406,21 @@ int		ii;
 			freehand_shape_key_button->type(FL_RADIO_BUTTON);
 			freehand_shape_key_button->value(0);
 			freehand_shape_key_button->callback(freehand_shape_cb, this);
-			yp += (18);
+			yp += 18;
 		freehand_shape_group->end();
 
 	freehand_group->end();
 	freehand_group->hide();
-	image_group = new MyGroup(120, 0, 1920, 1080);
+	image_group = new MyGroup(120, 20, 1920, 1080);
 	image_group->box(FL_NO_BOX);
 	image_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		image_sample = new RectangleSample(this, 120, yp, 320, 180);
 		image_sample->color(LIGHT_GRAY);
 		image_sample->box(FL_FRAME_BOX);
 		image_sample->labelcolor(WHITE);
 		image_sample->labelsize(1);
-		yp += (190);
+		yp += 190;
 
 		image_file_button = new MyToggleButton(120, yp, 16, 16, "@fileopen");
 		image_file_button->labelsize(9);
@@ -11327,13 +11438,13 @@ int		ii;
 		image_file_path->set_visible_focus();
 		image_file_path->when(FL_WHEN_ENTER_KEY);
 		image_file_path->callback(image_file_cb, this);
-		yp += (18);
+		yp += 18;
 	image_group->end();
 	image_group->hide();
-	pixelate_group = new MyGroup(120, 0, 1920, 1080);
+	pixelate_group = new MyGroup(120, 20, 1920, 1080);
 	pixelate_group->box(FL_NO_BOX);
 	pixelate_group->color(DARK_GRAY);
-		yp = 18;
+		yp = 38;
 		pixelate_size_slider = new Fl_Hor_Slider(160, yp, 100, 10, "Size");
 		pixelate_size_slider->color(BLACK);
 		pixelate_size_slider->box(FL_FRAME_BOX);
@@ -11395,6 +11506,10 @@ void	ImmediateDrawingWindow::ClearSelectedWidget()
 void	ImmediateDrawingWindow::hide()
 {
 	my_window->im_drawing_mode = 0;
+	if(my_window->anim_timeline != NULL)
+	{
+		my_window->anim_timeline->hide();
+	}
 	Fl_Window::hide();
 }
 
@@ -11468,7 +11583,7 @@ int	ImmediateDrawingWindow::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -11492,7 +11607,7 @@ int	loop;
 	font_browser->clear();
 	int yp = 0;
 	int nn = my_window->number_of_fonts;
-	for(loop = 1;loop < nn;loop++)
+	for(loop = 0;loop < nn;loop++)
 	{
 		int attr = 0;
 		char *str = (char *)Fl::get_font_name(loop, &attr);
@@ -11579,7 +11694,7 @@ void	color_dialog_close_cb(Fl_Widget *w, void *v)
 	cd->hide();
 }
 
-ColorDialog::ColorDialog(MyWin *in_win, int ww, int hh, char *title, int *use_r, int *use_g, int *use_b, int *use_a) : DragWindow(360, 300, ww, hh, "Color Dialog")
+ColorDialog::ColorDialog(MyWin *in_win, int ww, int hh, char *title, int *use_r, int *use_g, int *use_b, int *use_a) : Dialog(360, 300, ww, hh, "Color Dialog")
 {
 	my_window = in_win;
 	set_non_modal();
@@ -11611,15 +11726,7 @@ ColorDialog::ColorDialog(MyWin *in_win, int ww, int hh, char *title, int *use_r,
 	{
 		aa = *client_alpha;
 	}
-	if(title != NULL)
-	{
-		Fl_Box *title_box = new Fl_Box(2, 2, ww - 4, 20, title);
-		title_box->color(BLACK);
-		title_box->labelcolor(WHITE);
-		title_box->box(FL_FLAT_BOX);
-		title_box->labelsize(12);
-	}
-	int y_pos = 30;
+	int y_pos = 35;
 	red = new ColorSlider(40, y_pos, 300, 20, 128, "Red");
 	red->callback(color_dialog_cb, this);
 	y_pos += 22;
@@ -11640,11 +11747,11 @@ ColorDialog::ColorDialog(MyWin *in_win, int ww, int hh, char *title, int *use_r,
 	blue->value(bb);
 	alpha->value(aa);
 
-	sample = new Fl_Box(350, 25, 50, 50);
+	sample = new Fl_Box(350, 50, 50, 50);
 	sample->box(FL_FRAME_BOX);
 	sample->color(fl_rgb_color(rr, gg, bb));
 
-	close = new MyButton(350, 5, 50, 20, "Close");
+	close = new MyButton(350, 30, 50, 20, "Close");
 	close->box(FL_FLAT_BOX);
 	close->color(BLACK);
 	close->labelcolor(YELLOW);
@@ -11684,7 +11791,7 @@ int	ColorDialog::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -11972,6 +12079,8 @@ int		loop;
 
 	irc_session = NULL;
 	irc_done = 0;
+
+	anim_preview = 0;
 
 	ptz_lock_interface = -1;
 	ptz_lock_camera = -1;
@@ -13142,9 +13251,16 @@ Camera::~Camera()
 int	outer;
 int	loop;
 
+	power = 0;
 	hot = 0;
 	int cnt = 0;
 	Fl::remove_timeout(slideshow_cb, this);
+	if(instrument_window != NULL)
+	{
+		instrument_window->hide();
+		Fl::delete_widget(instrument_window);
+		instrument_window = NULL;
+	}
 	if(slideshow_list_cnt > 0)
 	{
 		for(loop = 0;loop < slideshow_list_cnt;loop++)
@@ -13209,6 +13325,20 @@ int	loop;
 	{
 		close(single_frame_fd);
 	}
+	if(immediate_list != NULL)
+	{
+		for(loop = 0;loop < immediate_cnt;loop++)
+		{
+			if(immediate_list[loop] != NULL)
+			{
+				Fl::delete_widget(immediate_list[loop]);
+				immediate_list[loop] = NULL;
+			}
+		}
+		immediate_cnt = 0;
+		free(immediate_list);
+		immediate_list = NULL;
+	}
 	if(cairo_context != NULL)
 	{
 		cairo_destroy(cairo_context);
@@ -13220,12 +13350,6 @@ int	loop;
 	if(shared_image != NULL)
 	{
 		x11_destroy_shared_image(shared_image, &shminfo);
-	}
-	if(immediate_list != NULL)
-	{
-		free(immediate_list);
-		immediate_list = NULL;
-		immediate_cnt = 0;
 	}
 	if(av_window != NULL)
 	{
@@ -13556,76 +13680,8 @@ int	inner;
 			if(immediate_list[loop] != NULL)
 			{
 				Immediate *im = immediate_list[loop];
-				ImDefault *use_default = NULL;
-
-				if(im->text != NULL) use_default = (ImDefault *)im->text;
-				if(im->line != NULL) use_default = (ImDefault *)im->line;
-				if(im->rectangle != NULL) use_default = (ImDefault *)im->rectangle;
-				if(im->rectangle_passthru != NULL) use_default = (ImDefault *)im->rectangle_passthru;
-				if(im->ellipse != NULL) use_default = (ImDefault *)im->ellipse;
-				if(im->ellipse_passthru != NULL) use_default = (ImDefault *)im->ellipse_passthru;
-				if(im->freehand != NULL) use_default = (ImDefault *)im->freehand;
-				if(im->pixelate != NULL) use_default = (ImDefault *)im->pixelate;
-				if(im->image_im != NULL) use_default = (ImDefault *)im->image_im;
-
 				fprintf(fp, "\t\t{\n");
-				fprintf(fp, "\t\t\t\"sx\": %d,\n", im->x());
-				fprintf(fp, "\t\t\t\"sy\": %d,\n", im->y());
-				fprintf(fp, "\t\t\t\"sw\": %d,\n", im->w());
-				fprintf(fp, "\t\t\t\"sh\": %d,\n", im->h());
-				fprintf(fp, "\t\t\t\"im type\": %d,\n", im->im_type);
-				fprintf(fp, "\t\t\t\"draw it\": %d,\n", im->draw_it);
-				fprintf(fp, "\t\t\t\"immediate type\": %d,\n", im->immediate_type);
-				fprintf(fp, "\t\t\t\"initial x\": %d,\n", im->initial_x);
-				fprintf(fp, "\t\t\t\"initial y\": %d,\n", im->initial_y);
-				fprintf(fp, "\t\t\t\"layer\": %d,\n", im->layer);
-				fprintf(fp, "\t\t\t\"overall alpha\": %f,\n", im->overall_alpha);
-				fprintf(fp, "\t\t\t\"use as mask\": %d,\n", im->use_as_mask);
-				if(use_default == im->text)
-				{
-					fprintf(fp, "\t\t\t\"text value\": \"%s\",\n", im->text->value());
-					fprintf(fp, "\t\t\t\"text font name\": \"%s\",\n", im->text->font_name);
-				}
-				fprintf(fp, "\t\t\t\"image file path\": \"%s\",\n", use_default->image_file_path);
-				fprintf(fp, "\t\t\t\"freehand filename\": \"%s\",\n", use_default->freehand_filename);
-				fprintf(fp, "\t\t\t\"width\": %d,\n", use_default->width);
-				fprintf(fp, "\t\t\t\"red\": %d,\n", use_default->red);
-				fprintf(fp, "\t\t\t\"green\": %d,\n", use_default->green);
-				fprintf(fp, "\t\t\t\"blue\": %d,\n", use_default->blue);
-				fprintf(fp, "\t\t\t\"alpha\": %d,\n", use_default->alpha);
-				fprintf(fp, "\t\t\t\"style\": %d,\n", use_default->style);
-				fprintf(fp, "\t\t\t\"shape\": %d,\n", use_default->shape);
-				fprintf(fp, "\t\t\t\"use size\": %d,\n", use_default->use_size);
-				fprintf(fp, "\t\t\t\"filled\": %d,\n", use_default->filled);
-				fprintf(fp, "\t\t\t\"box type\": %d,\n", use_default->box_type);
-				fprintf(fp, "\t\t\t\"point cnt\": %d,\n", use_default->cnt);
-				fprintf(fp, "\t\t\t\"Point\": [\n");
-				for(inner = 0;inner < use_default->cnt;inner++)
-				{
-					fprintf(fp, "\t\t\t\t{\n");
-					fprintf(fp, "\t\t\t\t\t\"xx\": %d,\n", use_default->xx[inner]);
-					fprintf(fp, "\t\t\t\t\t\"yy\": %d,\n", use_default->yy[inner]);
-					fprintf(fp, "\t\t\t\t\t\"pt type\": %d\n", use_default->pt_type[inner]);
-					if(inner == use_default->cnt - 1)
-					{
-						fprintf(fp, "\t\t\t\t}\n");
-					}
-					else
-					{
-						fprintf(fp, "\t\t\t\t},\n");
-					}
-				}
-				fprintf(fp, "\t\t\t],\n");
-				fprintf(fp, "\t\t\t\"key\": %d,\n", use_default->key);
-				fprintf(fp, "\t\t\t\"italic\": %d,\n", use_default->italic);
-				fprintf(fp, "\t\t\t\"bold\": %d,\n", use_default->bold);
-				fprintf(fp, "\t\t\t\"outline\": %d,\n", use_default->outline);
-				fprintf(fp, "\t\t\t\"font alpha\": %d,\n", use_default->font_alpha);
-				fprintf(fp, "\t\t\t\"background red\": %d,\n", use_default->background_red);
-				fprintf(fp, "\t\t\t\"background green\": %d,\n", use_default->background_green);
-				fprintf(fp, "\t\t\t\"background blue\": %d,\n", use_default->background_blue);
-				fprintf(fp, "\t\t\t\"background alpha\": %d,\n", use_default->background_alpha);
-				fprintf(fp, "\t\t\t\"outline alpha\": %d\n", use_default->outline_alpha);
+				im->SaveAsJSON(fp);
 				if(loop == immediate_cnt - 1)
 				{
 					fprintf(fp, "\t\t}\n");
@@ -14029,11 +14085,12 @@ int	inner;
 
 void	Camera::RecvNDI(Mat& in_mat)
 {
-NDIlib_video_frame_v2_t video_frame;
+NDIlib_video_frame_v2_t	video_frame;
+NDIlib_metadata_frame_t	metadata_frame;
 
 	if(NDILib != NULL)
 	{
-		int nn = NDILib->NDIlib_recv_capture_v3(ndi_recv, &video_frame, NULL, NULL, 1000);
+		int nn = NDILib->NDIlib_recv_capture_v3(ndi_recv, &video_frame, NULL, &metadata_frame, 1000);
 		switch(nn)
 		{
 			// No data
@@ -14126,6 +14183,11 @@ NDIlib_video_frame_v2_t video_frame;
 						ndi_ptz = 1;
 					}
 				}
+			}
+			break;
+			case(NDIlib_frame_type_metadata):
+			{
+				NDILib->NDIlib_recv_free_metadata(ndi_recv, &metadata_frame); 
 			}
 			break;
 			// Everything else
@@ -14398,223 +14460,79 @@ int	loop;
 	}
 }
 
-void	Camera::Save(char *filename)
+void	Camera::SaveImmediate(char *filename)
 {
-	StoredCamera *stored = new StoredCamera(this);
-	int fd = open(filename, O_CREAT | O_WRONLY, 0777);
-	if(fd > -1)
+int		loop;
+
+	FILE *fp = fopen(filename, "w");
+	if(fp != NULL)
 	{
-		write(fd, stored, sizeof(StoredCamera));
-		SaveImmediate(fd);
-		close(fd);
-	}
-	delete stored;
-}
-
-void	Camera::Save(int fd)
-{
-	StoredCamera *stored = new StoredCamera(this);
-	write(fd, stored, sizeof(StoredCamera));
-	SaveImmediate(fd);
-	delete stored;
-}
-
-void	Camera::SaveImmediate(int fd)
-{
-int				loop;
-StoredImmediate	stored;
-
-	write(fd, &immediate_cnt, sizeof(int));
-	for(loop = 0;loop < immediate_cnt;loop++)
-	{
-		if(immediate_list[loop] != NULL)
+		fprintf(fp, "{\n");
+		fprintf(fp, "\t\"immediate cnt\": %d,\n", immediate_cnt);
+		fprintf(fp, "\t\"Immediate\": [\n");
+		for(loop = 0;loop < immediate_cnt;loop++)
 		{
-			stored.Populate(immediate_list[loop]);
-			write(fd, &stored, sizeof(StoredImmediate));
-		}
-	}
-}  
-
-void	Camera::LoadImmediate(int fd)
-{
-int				loop;
-StoredImmediate	stored;
-
-	int im_cnt = 0;
-	read(fd, &im_cnt, sizeof(int));
-	for(loop = 0;loop < im_cnt;loop++)
-	{
-		int nn = read(fd, &stored, sizeof(StoredImmediate));
-		if(nn == sizeof(StoredImmediate))
-		{
-			int xx = stored.sx;
-			int yy = stored.sy;
-			int ww = stored.sw;
-			int hh = stored.sh;
-			ImmediateDrawingWindow *idw = my_window->immediate_drawing_window;
-			Immediate *immediate = new Immediate(my_window, this, xx, yy, ww, hh);
-			immediate->idw = idw;
-			stored.Depopulate(my_window, this, immediate);
-			AddImmediate(immediate);
-			my_window->add(immediate);
-		}
-	}
-}
-
-void	Camera::RestoreFromStoredCamera(StoredCamera *in)
-{
-int	loop;
-int	inner;
-
-	strcpy(path, in->path);
-	strcpy(original_path, in->original_path);
-	strcpy(alias, in->alias);
-
-	requested_x = in->requested_x;
-	requested_y = in->requested_y;
-	requested_w = in->requested_w;
-	requested_h = in->requested_h;
-	record_trigger = in->record_trigger;
-	schedule_start = in->schedule_start;
-	schedule_stop = in->schedule_stop;
-	schedule_day = in->schedule_day;
-	darkness_trigger = in->darkness_trigger;
-	font_sz = in->font_sz;
-	zoom = in->zoom;
-	width = in->width;
-	height = in->height;
-
-	flip_horizontal = in->flip_horizontal;
-	flip_vertical = in->flip_vertical;
-	brightness = in->brightness;
-	saturation = in->saturation;
-	hue = in->hue;
-	intensity = in->intensity;
-	contrast = in->contrast;
-	motion_threshold = in->motion_threshold;
-	recognition_threshold = in->recognition_threshold;
-	recognize_interval = in->recognize_interval;
-
-	zoom_box_display = in->zoom_box_display;
-	zoom_box_x = in->zoom_box_x;
-	zoom_box_y = in->zoom_box_y;
-	zoom_box_w = in->zoom_box_w;
-	zoom_box_h = in->zoom_box_h;
-
-	display_width = in->display_width;
-	display_height = in->display_height;
-
-	red = in->red;
-	green = in->green;
-	blue = in->blue;
-	alpha = in->alpha;
-	text_red = in->text_red;
-	text_green = in->text_green;
-	text_blue = in->text_blue;
-	text_alpha = in->text_alpha;
-
-	strcpy(snapshot_filename_format, in->snapshot_filename_format);
-	snapshot_initial_delay = in->snapshot_initial_delay;
-	snapshot_repeat_delay = in->snapshot_repeat_delay;
-	snapshot_trigger_condition = in->snapshot_trigger_condition;
-	snapshot_scale = in->snapshot_scale;
-
-	image_window_cnt = in->image_window_cnt;
-	int cnt = 0;
-	for(loop = 0;loop < image_window_cnt;loop++)
-	{
-		Camera *source_cam = my_window->FindCameraByPath(in->image_window[loop].source_path);
-		if(source_cam == NULL)
-		{
-			int cam_num = my_window->SetupCamera(in->image_window[loop].source_path, NULL, my_window->requested_w, my_window->requested_h, 32);
-			if(cam_num > -1)
+			if(immediate_list[loop] != NULL)
 			{
-				source_cam = my_window->camera[cam_num];
-			}
-			else
-			{
-				my_window->SetErrorMessage("Cannot Open Camera");
-			}
-		}
-		if(source_cam != NULL)
-		{
-			int dx = in->image_window[loop].dx;
-			int dy = in->image_window[loop].dy;
-			int dw = in->image_window[loop].width;
-			int dh = in->image_window[loop].height;
-			ImageWindow *iw = new ImageWindow(loop, my_window, source_cam, this, dx, dy, dw, dh);
-			image_window[cnt] = iw;
-
-			image_window[cnt]->camera = source_cam;
-			image_window[cnt]->dest_camera = this;
-
-			image_window[cnt]->width = in->image_window[loop].width;
-			image_window[cnt]->height = in->image_window[loop].height;
-			image_window[cnt]->orig_w = in->image_window[loop].orig_w;
-			image_window[cnt]->orig_h = in->image_window[loop].orig_h;
-			image_window[cnt]->dx = in->image_window[loop].dx;
-			image_window[cnt]->dy = in->image_window[loop].dy;
-			image_window[cnt]->dw = in->image_window[loop].dw;
-			image_window[cnt]->dh = in->image_window[loop].dh;
-			image_window[cnt]->layer = in->image_window[loop].layer;
-
-			image_window[cnt]->buttonize = in->image_window[loop].buttonize;
-			image_window[cnt]->buttonized_x = in->image_window[loop].buttonized_x;
-			image_window[cnt]->buttonized_y = in->image_window[loop].buttonized_y;
-			image_window[cnt]->buttonized_w = in->image_window[loop].buttonized_w;
-			image_window[cnt]->buttonized_h = in->image_window[loop].buttonized_h;
-
-			if(image_window[cnt]->buttonize == 0)
-			{
-				image_window[cnt]->show();
-			}
-			else
-			{
-				image_window[cnt]->hide();
-			}
-			my_window->add(iw);
-			cnt++;
-		}
-	}
-	immediate_cnt = 0;
-	filter_plugin_cnt = in->filter_plugin_cnt;
-	filter_cnt = in->filter_cnt;
-	for(loop = 0;loop < 128;loop++)
-	{
-		if(strlen(in->filter_plugin_name[loop]) > 0)
-		{
-			filter_plugin_name[loop] = strdup(in->filter_plugin_name[loop]);
-			for(inner = 0;inner < global_potential_filter_cnt;inner++)
-			{
-				if((global_potential_filter[inner] != NULL) && (global_potential_filter_handle[inner] != NULL))
+			   	fprintf(fp, "\t\t{\n");
+				immediate_list[loop]->SaveAsJSON(fp);
+				if(loop == immediate_cnt - 1)
 				{
-					if(strcmp(filter_plugin_name[loop], global_potential_filter[inner]) == 0)
-					{
-						filter_plugin[loop] = (void *)dlsym(global_potential_filter_handle[inner], global_potential_filter[inner]);
-					}
+					fprintf(fp, "\t\t}\n");
+				}
+				else
+				{
+					fprintf(fp, "\t\t},\n");
 				}
 			}
 		}
-		else
+		fprintf(fp, "\t]\n");
+		fprintf(fp, "}\n");
+		fclose(fp);
+	}
+}
+
+void	Camera::LoadImmediate(char *filename)
+{
+	char *buf = ReadWholeFile(filename);
+	if(buf != NULL)
+	{
+		cJSON *json = cJSON_Parse(buf);
+		if(json == NULL)
 		{
-			filter_plugin_name[loop] = NULL;
-		}
-		if(strlen(in->filter_name[loop]) > 0)
-		{
-			filter_name[loop] = strdup(in->filter_name[loop]);
-			filter_dialog[loop] = my_window->MakeFilterDialog(in->filter_name[loop]);
-			my_window->add(filter_dialog[loop]);
-			filter_dialog[loop]->show();
-			for(inner = 0;inner < 10;inner++)
+			const char *error_ptr = cJSON_GetErrorPtr();
+			if(error_ptr != NULL)
 			{
-				filter_dialog[loop]->number[inner] = in->filter_param[loop][inner];
+				fprintf(stderr, "Error: JSON Error before: %s\n", error_ptr);
 			}
 		}
 		else
 		{
-			filter_name[loop] = NULL;
-			filter_dialog[loop] = NULL;
+			int local_immediate_cnt = 0;
+			int success = json_parse_int(json, "immediate cnt", local_immediate_cnt);
+			if(local_immediate_cnt > 0)
+			{
+				cJSON *immediate = NULL;
+				cJSON *immediates = json_parse_array(json, "Immediate");
+				if(immediates != NULL)
+				{
+					int cnt = 0;
+					cJSON_ArrayForEach(immediate, immediates)
+					{
+						Immediate *im_use = my_window->ParseJSONImmediate(immediate, this);
+						AddImmediate(im_use);
+						my_window->add(im_use);
+						cnt++;
+					}
+				}
+			}
+			cJSON_Delete(json);
 		}
+		free(buf);
+	}
+	else
+	{
+		fprintf(stderr, "Error: Cannot read JSON file: %s\n", filename);
 	}
 }
 
@@ -16370,12 +16288,12 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
-    					cairo_save(cairo_context);
-    					cairo_rectangle(cairo_context, use_x, use_y, use_w, use_h);
-    					cairo_clip(cairo_context);
-    					cairo_set_source_rgba(cairo_context, 1.0, 1.0, 1.0, 0.1);
-    					cairo_paint(cairo_context);
-    					cairo_restore(cairo_context);
+						cairo_save(cairo_context);
+						cairo_rectangle(cairo_context, use_x, use_y, use_w, use_h);
+						cairo_clip(cairo_context);
+						cairo_set_source_rgba(cairo_context, 1.0, 1.0, 1.0, 0.1);
+						cairo_paint(cairo_context);
+						cairo_restore(cairo_context);
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_VIDEO_SETTINGS)
@@ -16419,12 +16337,12 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
-    					cairo_save(cairo_context);
-    					cairo_rectangle(cairo_context, use_x, use_y, use_w, use_h);
-    					cairo_clip(cairo_context);
-    					cairo_set_source_rgba(cairo_context, 0.0, 0.0, 0.0, 0.1);
-    					cairo_paint(cairo_context);
-    					cairo_restore(cairo_context);
+						cairo_save(cairo_context);
+						cairo_rectangle(cairo_context, use_x, use_y, use_w, use_h);
+						cairo_clip(cairo_context);
+						cairo_set_source_rgba(cairo_context, 0.0, 0.0, 0.0, 0.1);
+						cairo_paint(cairo_context);
+						cairo_restore(cairo_context);
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_HFLIP)
@@ -18953,7 +18871,7 @@ int	outer;
 						{
 							immediate_list[loop]->show();
 							immediate_list[loop]->redraw();
-							immediate_list[loop]->draw();
+							immediate_list[loop]->Draw();
 						}
 					}
 				}
@@ -19741,417 +19659,6 @@ void	Camera::PasteMat(Mat mat, int sx, int sy)
 		cairo_paint(cairo_context);
 		cairo_surface_destroy(surface);
 	}
-}
-
-// SECTION *********************************** STORED CAMERA *******************************************
-
-StoredCamera::StoredCamera(Camera *in)
-{
-int	loop;
-int	inner;
-
-	strcpy(path, in->path);
-	strcpy(original_path, in->original_path);
-	strcpy(alias, in->alias);
-
-	requested_x = in->requested_x;
-	requested_y = in->requested_y;
-	requested_w = in->requested_w;
-	requested_h = in->requested_h;
-	record_trigger = in->record_trigger;
-	schedule_start = in->schedule_start;
-	schedule_stop = in->schedule_stop;
-	schedule_day = in->schedule_day;
-	darkness_trigger = in->darkness_trigger;
-	font_sz = in->font_sz;
-	zoom = in->zoom;
-	width = in->width;
-	height = in->height;
-	id = in->id;
-
-	flip_horizontal = in->flip_horizontal;
-	flip_vertical = in->flip_vertical;
-	brightness = in->brightness;
-	saturation = in->saturation;
-	hue = in->hue;
-	intensity = in->intensity;
-	contrast = in->contrast;
-	motion_threshold = in->motion_threshold;
-	recognition_threshold = in->recognition_threshold;
-	recognize_interval = in->recognize_interval;
-
-	zoom_box_display = in->zoom_box_display;
-	zoom_box_x = in->zoom_box_x;
-	zoom_box_y = in->zoom_box_y;
-	zoom_box_w = in->zoom_box_w;
-	zoom_box_h = in->zoom_box_h;
-
-	display_width = in->display_width;
-	display_height = in->display_height;
-
-	red = in->red;
-	green = in->green;
-	blue = in->blue;
-	alpha = in->alpha;
-	text_red = in->text_red;
-	text_green = in->text_green;
-	text_blue = in->text_blue;
-	text_alpha = in->text_alpha;
-
-	strcpy(snapshot_filename_format, in->snapshot_filename_format);
-	snapshot_initial_delay = in->snapshot_initial_delay;
-	snapshot_repeat_delay = in->snapshot_repeat_delay;
-	snapshot_trigger_condition = in->snapshot_trigger_condition;
-	snapshot_scale = in->snapshot_scale;
-
-	image_window_cnt = in->image_window_cnt;
-	for(loop = 0;loop < image_window_cnt;loop++)
-	{
-		if(strlen(in->image_window[loop]->camera->original_path) > 0)
-		{
-			strcpy(image_window[loop].source_path, in->image_window[loop]->camera->original_path);
-		}
-		else
-		{
-			strcpy(image_window[loop].source_path, in->image_window[loop]->camera->path);
-		}
-		image_window[loop].width = in->image_window[loop]->width;
-		image_window[loop].height = in->image_window[loop]->height;
-		image_window[loop].orig_w = in->image_window[loop]->orig_w;
-		image_window[loop].orig_h = in->image_window[loop]->orig_h;
-		image_window[loop].dx = in->image_window[loop]->dx;
-		image_window[loop].dy = in->image_window[loop]->dy;
-		image_window[loop].dw = in->image_window[loop]->dw;
-		image_window[loop].dh = in->image_window[loop]->dh;
-		image_window[loop].buttonize = in->image_window[loop]->buttonize;
-		image_window[loop].buttonized_x = in->image_window[loop]->buttonized_x;
-		image_window[loop].buttonized_y = in->image_window[loop]->buttonized_y;
-		image_window[loop].buttonized_w = in->image_window[loop]->buttonized_w;
-		image_window[loop].buttonized_h = in->image_window[loop]->buttonized_h;
-		image_window[loop].layer = in->image_window[loop]->layer;
-	}
-	filter_plugin_cnt = in->filter_plugin_cnt;
-	filter_cnt = in->filter_cnt;
-	for(loop = 0;loop < 128;loop++)
-	{
-		if(in->filter_plugin_name[loop] != NULL)
-		{
-			strcpy(filter_plugin_name[loop], in->filter_plugin_name[loop]);
-		}
-		else
-		{
-			strcpy(filter_plugin_name[loop], "");
-		}
-		if(in->filter_name[loop] != NULL)
-		{
-			strcpy(filter_name[loop], in->filter_name[loop]);
-			for(inner = 0;inner < 10;inner++)
-			{
-				filter_param[loop][inner] = in->filter_dialog[loop]->number[inner];
-			}
-		}
-		else
-		{
-			strcpy(filter_name[loop], "");
-		}
-	}
-}
-
-StoredCamera::StoredCamera()
-{
-int	loop;
-int	inner;
-
-	strcpy(path, "");
-	strcpy(alias, "");
-
-	requested_x = -1;
-	requested_y = -1;
-	requested_w = 0;
-	requested_h = 0;
-	record_trigger = 0;
-	schedule_start = 0;
-	schedule_stop = 0;
-	schedule_day = 0;
-	darkness_trigger = 0.5;
-	font_sz = 0;
-	zoom = 0;
-	width = 0;
-	height = 0;
-	id = -1;
-
-	flip_horizontal = 0;
-	flip_vertical = 0;
-	brightness = 0;
-	saturation = 0;
-	hue = 0;
-	intensity = 0;
-	contrast = 0;
-	motion_threshold = 0;
-	recognition_threshold = 0;
-	recognize_interval = 0;
-
-	zoom_box_display = 0;
-	zoom_box_x = 0;
-	zoom_box_y = 0;
-	zoom_box_w = 0;
-	zoom_box_h = 0;
-
-	display_width = 0;
-	display_height = 0;
-
-	red = 0;
-	green = 0;
-	blue = 0;
-	alpha = 0;
-	text_red = 0;
-	text_green = 0;
-	text_blue = 0;
-	text_alpha = 0;
-
-	strcpy(snapshot_filename_format, "");
-	snapshot_initial_delay = 0;
-	snapshot_repeat_delay = 0;
-	snapshot_trigger_condition = 0;
-	snapshot_scale = 1.0;
-
-	image_window_cnt = 0;
-	for(loop = 0;loop < 128;loop++)
-	{
-		strcpy(image_window[loop].source_path, "");
-		image_window[loop].width = 0;
-		image_window[loop].height = 0;
-		image_window[loop].orig_w = 0;
-		image_window[loop].orig_h = 0;
-		image_window[loop].dx = 0;
-		image_window[loop].dy = 0;
-		image_window[loop].dw = 0;
-		image_window[loop].dh = 0;
-	}
-	filter_plugin_cnt = 0;
-	filter_cnt = 0;
-	for(loop = 0;loop < 128;loop++)
-	{
-		strcpy(filter_plugin_name[loop], "");
-		strcpy(filter_name[loop], "");
-		for(inner = 0;inner < 10;inner++)
-		{
-			filter_param[loop][inner] = 0.0;
-		}
-	}
-}
-
-StoredImmediate::StoredImmediate()
-{
-int	loop;
-
-	for(loop = 0;loop < 32768;loop++)
-	{
-		stored_default.xx[loop] = 0;
-		stored_default.yy[loop] = 0;
-		stored_default.pt_type[loop] = 0;
-	}
-	strcpy(stored_default.image_file_path, "");
-}
-
-
-void	StoredImmediate::Populate(Immediate *im)
-{
-int	loop;
-
-	sx = im->x();
-	sy = im->y();
-	sw = im->w();
-	sh = im->h();
-	im_type = im->im_type;
-	draw_it = im->draw_it;
-	immediate_type = im->immediate_type;
-	hovering = im->hovering;
-	dragging = im->dragging;
-	initial_x = im->initial_x;
-	initial_y = im->initial_y;
-	last_x = im->last_x;
-	last_y = im->last_y;
-	layer = im->layer;
-	drag_mode = im->drag_mode;
-	overall_alpha = im->overall_alpha;
-	use_as_mask = im->use_as_mask;
-	mw_mode = im->mw_mode;
-
-	ImDefault *use_default = NULL;
-	if(im->text != NULL) use_default = (ImDefault *)im->text;
-	if(im->line != NULL) use_default = (ImDefault *)im->line;
-	if(im->rectangle != NULL) use_default = (ImDefault *)im->rectangle;
-	if(im->rectangle_passthru != NULL) use_default = (ImDefault *)im->rectangle_passthru;
-	if(im->ellipse != NULL) use_default = (ImDefault *)im->ellipse;
-	if(im->ellipse_passthru != NULL) use_default = (ImDefault *)im->ellipse_passthru;
-	if(im->freehand != NULL) use_default = (ImDefault *)im->freehand;
-	if(im->pixelate != NULL) use_default = (ImDefault *)im->pixelate;
-	if(im->image_im != NULL) use_default = (ImDefault *)im->image_im;
-
-	strcpy(stored_value, "");
-	strcpy(stored_default.font_name, "");
-	if(use_default == im->text)
-	{
-		strncpy(stored_value, im->text->value(), 32768);
-		strncpy(stored_default.font_name, im->text->font_name, 128);
-	}
-	strncpy(stored_default.image_file_path, use_default->image_file_path, 4096);
-	strncpy(stored_default.freehand_filename, use_default->freehand_filename, 4096);
-	stored_default.width = use_default->width;
-	stored_default.red = use_default->red;
-	stored_default.green = use_default->green;
-	stored_default.blue = use_default->blue;
-	stored_default.alpha = use_default->alpha;
-
-	stored_default.style = use_default->style;
-	stored_default.shape = use_default->shape;
-	stored_default.use_size = use_default->use_size;
-	stored_default.filled = use_default->filled;
-	stored_default.selecting = use_default->selecting;
-	stored_default.erase = use_default->erase;
-	stored_default.box_type = use_default->box_type;
-	stored_default.cnt = use_default->cnt;
-	for(loop = 0;loop < use_default->cnt;loop++)
-	{
-		stored_default.xx[loop] = use_default->xx[loop];
-		stored_default.yy[loop] = use_default->yy[loop];
-		stored_default.pt_type[loop] = use_default->pt_type[loop];
-	}
-	stored_default.key = use_default->key;
-	stored_default.italic = use_default->italic;
-	stored_default.bold = use_default->bold;
-	stored_default.outline = use_default->outline;
-	stored_default.font_alpha = use_default->font_alpha;
-	stored_default.background_red = use_default->background_red;
-	stored_default.background_green = use_default->background_green;
-	stored_default.background_blue = use_default->background_blue;
-	stored_default.background_alpha = use_default->background_alpha;
-	stored_default.outline_alpha = use_default->outline_alpha;
-}
-
-void	StoredImmediate::Depopulate(MyWin *win, Camera *cam, Immediate *im)
-{
-int	loop;
-
-	im->im_type = im_type;
-	im->draw_it = draw_it;
-	im->immediate_type = immediate_type;
-	im->hovering = hovering;
-	im->dragging = dragging;
-	im->initial_x = initial_x;
-	im->initial_y = initial_y;
-	im->last_x = last_x;
-	im->last_y = last_y;
-	im->layer = layer;
-	im->drag_mode = drag_mode;
-	im->overall_alpha = overall_alpha;
-	im->use_as_mask = use_as_mask;
-	im->mw_mode = mw_mode;
-
-	ImDefault *def = NULL;
-	if(im_type == IM_RECTANGLE)
-	{
-		im->rectangle = new ImRectangle(win, im, sx, sy, sw, sh);
-		im->add(im->rectangle);
-		def = (ImDefault *)im->rectangle;
-	}
-	else if(im_type == IM_PIXELATE)
-	{
-		im->pixelate = new ImPixelate(win, im, sx, sy, sw, sh);
-		im->add(im->pixelate);
-		def = (ImDefault *)im->pixelate;
-	}
-	else if(im_type == IM_RECTANGLE_PASSTHRU)
-	{
-		im->rectangle_passthru = new ImRectanglePassThru(win, im, sx, sy, sw, sh);
-		im->add(im->rectangle_passthru);
-		def = (ImDefault *)im->pixelate;
-	}
-	else if(im_type == IM_IMAGE)
-	{
-		im->image_im = new ImImage(win, im, sx, sy, sw, sh);
-		im->add(im->image_im);
-		def = (ImDefault *)im->image_im;
-	}
-	else if(im_type == IM_ELLIPSE)
-	{
-		im->ellipse = new ImEllipse(win, im, sx, sy, sw, sh);
-		im->add(im->ellipse);
-		def = (ImDefault *)im->ellipse;
-	}
-	else if(im_type == IM_ELLIPSE_PASSTHRU)
-	{
-		im->ellipse_passthru = new ImEllipsePassThru(win, im, sx, sy, sw, sh);
-		im->add(im->ellipse_passthru);
-		def = (ImDefault *)im->ellipse_passthru;
-	}
-	else if(im_type == IM_FREEHAND)
-	{
-		im->freehand = new ImFreehand(win, im, sx, sy, sw, sh);
-		im->add(im->freehand);
-		def = (ImDefault *)im->freehand;
-	}
-	else if(im_type == IM_LINE)
-	{
-		im->line = new ImLine(win, im, immediate_type, sx, sy, sw, sh);
-		im->add(im->line);
-		def = (ImDefault *)im->line;
-	}
-	else if(im_type == IM_TEXT)
-	{
-		im->text = new ImText(win, im, sx, sy, sw, sh);
-		im->text->value(stored_value);
-		im->add(im->text);
-		def = (ImDefault *)im->text;
-	}
-	if(def != NULL)
-	{
-		def->width = stored_default.width;
-		def->red = stored_default.red;
-		def->green = stored_default.green;
-		def->blue = stored_default.blue;
-		def->alpha = stored_default.alpha;
-		def->style = stored_default.style;
-		def->shape = stored_default.shape;
-		def->use_size = stored_default.use_size;
-		def->filled = stored_default.filled;
-		def->selecting = stored_default.selecting;
-		def->erase = stored_default.erase;
-		def->box_type = stored_default.box_type;
-		def->cnt = stored_default.cnt;
-		if(def->cnt > 0)
-		{
-			def->xx = (int *)malloc(sizeof(int) * def->cnt);
-			def->yy = (int *)malloc(sizeof(int) * def->cnt);
-			def->pt_type = (int *)malloc(sizeof(int) * def->cnt);
-			for(loop = 0;loop < stored_default.cnt;loop++)
-			{
-				def->xx[loop] = stored_default.xx[loop];
-				def->yy[loop] = stored_default.yy[loop];
-				def->pt_type[loop] = stored_default.pt_type[loop];
-			}
-		}
-		def->key = stored_default.key;
-		def->italic = stored_default.italic;
-		def->bold = stored_default.bold;
-		def->outline = stored_default.outline;
-		def->font_alpha = stored_default.font_alpha;
-		def->background_red = stored_default.background_red;
-		def->background_green = stored_default.background_green;
-		def->background_blue = stored_default.background_blue;
-		def->background_alpha = stored_default.background_alpha;
-		def->outline_alpha = stored_default.outline_alpha;
-		strncpy(def->font_name, stored_default.font_name, 128);
-		strncpy(def->image_file_path, stored_default.image_file_path, 4096);
-		strncpy(def->freehand_filename, stored_default.freehand_filename, 4096);
-	}
-}
-
-StoredImDefault::StoredImDefault()
-{
-	strcpy(image_file_path, "");
-	strcpy(freehand_filename, "");
 }
 
 // SECTION *********************************** CAMERA CAPS *******************************************
@@ -22454,14 +21961,14 @@ int	loop;
 	my_win->showing_alias_window = 0;
 }
 
-AliasWindow::AliasWindow(MyWin *in_win) : DragWindow(260, 300, 490, 70, "Aliases")
+AliasWindow::AliasWindow(MyWin *in_win) : Dialog(260, 300, 490, 70, "Aliases")
 {
 	my_window = in_win;
 	last_x = 0;
 	last_y = 0;
 	resize(x(), y(), w(), h());
 
-	int yp = 10;
+	int yp = 30;
 	alias = new Fl_Input(60, yp, 404, 20, "Alias:");
 	alias->color(BLACK);
 	alias->textcolor(WHITE);
@@ -22519,7 +22026,7 @@ int	AliasWindow::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -22532,6 +22039,103 @@ void	AliasWindow::show()
 		alias->value(cam->alias);
 	}
 	Fl_Window::show();
+}
+
+// ************************************************ SECTION IMMEDIATE NAME WINDOW ************************************
+
+void	name_immediate_cb(Fl_Widget *w, void *v)
+{
+	ImmediateNameWindow *inw = (ImmediateNameWindow *)v;
+	if(inw->my_im != NULL)
+	{
+		if(inw->my_im->name != NULL)
+		{
+			free(inw->my_im->name);
+		}
+		char *name = (char *)inw->name->value();
+		if(name != NULL)
+		{
+			inw->my_im->name = strdup(name);
+		}
+	}
+	inw->hide();
+}
+
+ImmediateNameWindow::ImmediateNameWindow(MyWin *in_win, Immediate *in_im) : Dialog(260, 300, 490, 70, "Immediate Drawing Name")
+{
+	my_window = in_win;
+	my_im = in_im;
+	last_x = 0;
+	last_y = 0;
+	resize(x(), y(), w(), h());
+
+	int yp = 30;
+	name = new Fl_Input(60, yp, 404, 20, "Name:");
+	name->color(BLACK);
+	name->textcolor(WHITE);
+	name->textsize(11);
+	name->cursor_color(WHITE);
+	name->labelcolor(YELLOW);
+	name->labelsize(11);
+	name->box(FL_FRAME_BOX);
+	name->align(FL_ALIGN_LEFT);
+	name->when(FL_WHEN_ENTER_KEY);
+	name->copy_tooltip("Set the alias for the displayed camera.");
+	name->callback(name_immediate_cb, this);
+	yp += 28;
+
+	MyButton *accept = new MyButton((w() * 0.33) - 40, yp, 80, 20, "Accept");
+	accept->box(FL_FLAT_BOX);
+	accept->labelcolor(YELLOW);
+	accept->labelsize(11);
+	accept->color(BLACK);
+	accept->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	accept->copy_tooltip("Accept the alias specified above.");
+	accept->callback(name_immediate_cb, this);
+	accept->show();
+
+	MyButton *cancel = new MyButton((w() * 0.66) - 40, yp, 80, 20, "Cancel");
+	cancel->box(FL_FLAT_BOX);
+	cancel->labelcolor(YELLOW);
+	cancel->labelsize(11);
+	cancel->color(BLACK);
+	cancel->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	cancel->copy_tooltip("Close the dialog without accepting the edited alias.");
+	cancel->callback(hide_window_cb, this);
+	cancel->show();
+
+	end();
+	hide();
+}
+
+ImmediateNameWindow::~ImmediateNameWindow()
+{
+	if(my_im != NULL)
+	{
+		if(my_im->inw == this)
+		{
+			my_im->inw = NULL;
+		}
+	}
+}
+
+int	ImmediateNameWindow::handle(int event)
+{
+	int flag = 0;
+	if(event == FL_KEYBOARD)
+	{
+		int key = Fl::event_key();
+		if(key == FL_Escape)
+		{
+			hide();
+			flag = 1;
+		}
+	}
+	if(flag == 0)
+	{
+		flag = Dialog::handle(event);
+	}
+	return(flag);
 }
 
 // SECTION *********************************** SPECIFY IRC WINDOW  *******************************************
@@ -22567,11 +22171,11 @@ char	buf[32768];
 	}
 }
 
-SpecifyIRCWindow::SpecifyIRCWindow(MyWin *in_win) : DragWindow(420, 190, "Specify IRC")
+SpecifyIRCWindow::SpecifyIRCWindow(MyWin *in_win) : Dialog(420, 190, "Specify IRC")
 {
 	my_window = in_win;
 
-	int yp = 20;
+	int yp = 40;
 	server = new Fl_Input(75, yp, 320, 20, "Server");
 	server->color(BLACK);
 	server->textcolor(WHITE);
@@ -22693,11 +22297,12 @@ char	buf[32768];
 	}
 }
 
-SpecifyURLWindow::SpecifyURLWindow(MyWin *in_win) : DragWindow(420, 330, "Specify URL")
+SpecifyURLWindow::SpecifyURLWindow(MyWin *in_win) : Dialog(420, 330, "Specify URL")
 {
 	my_window = in_win;
+	int new_yp = 20;
 
-	url = new Fl_Input(40, 20, 360, 20, "URL");
+	url = new Fl_Input(40, new_yp + 20, 360, 20, "URL");
 	url->color(BLACK);
 	url->textcolor(WHITE);
 	url->textsize(11);
@@ -22707,7 +22312,7 @@ SpecifyURLWindow::SpecifyURLWindow(MyWin *in_win) : DragWindow(420, 330, "Specif
 	url->box(FL_FRAME_BOX);
 	url->align(FL_ALIGN_LEFT);
 
-	css = new Fl_Multiline_Input(20, 70, 380, 200, "CSS");
+	css = new Fl_Multiline_Input(20, new_yp + 70, 380, 200, "CSS");
 	css->color(BLACK);
 	css->textcolor(WHITE);
 	css->textsize(11);
@@ -22717,7 +22322,7 @@ SpecifyURLWindow::SpecifyURLWindow(MyWin *in_win) : DragWindow(420, 330, "Specif
 	css->box(FL_FRAME_BOX);
 	css->align(FL_ALIGN_TOP | FL_ALIGN_LEFT);
 
-	accept = new MyButton((420 / 3) - 35, 290, 70, 20, "Accept");
+	accept = new MyButton((420 / 3) - 35, new_yp + 290, 70, 20, "Accept");
 	accept->color(BLACK);
 	accept->labelcolor(YELLOW);
 	accept->labelsize(10);
@@ -22726,7 +22331,7 @@ SpecifyURLWindow::SpecifyURLWindow(MyWin *in_win) : DragWindow(420, 330, "Specif
 	accept->box(FL_FLAT_BOX);
 	accept->down_box(FL_FLAT_BOX);
 
-	cancel = new MyButton(((420 / 3) * 2) - 35, 290, 70, 20, "Cancel");
+	cancel = new MyButton(((420 / 3) * 2) - 35, new_yp + 290, 70, 20, "Cancel");
 	cancel->color(BLACK);
 	cancel->labelcolor(YELLOW);
 	cancel->labelsize(10);
@@ -22816,20 +22421,21 @@ int	SourceMultiline::handle(int event)
 
 // SECTION *********************************** SELECT X11 WINDOW  *******************************************
 
-SelectX11Window::SelectX11Window(MyWin *in_win) : DragWindow(200, 800)
+SelectX11Window::SelectX11Window(MyWin *in_win) : Dialog(200, 800, "Select X11 Window")
 {
 void			select_window_to_monitor_cb(Fl_Widget *w, void *v);
 char			*window_list[128];
 int				loop;
 char			buf[4096];
 
+	int new_yp = 20;
 	my_window = in_win;
 	int cnt = x11_iterate_windows2(fl_display, window_list);
 	if(cnt > 0)
 	{
 		int xx = Fl::event_x();
 		int yy = Fl::event_y();
-		MyButton *close_button = new MyButton(150, 2, 50, 18, "Close");
+		MyButton *close_button = new MyButton(150, new_yp + 2, 50, 18, "Close");
 		close_button->box(FL_FLAT_BOX);
 		close_button->labelcolor(YELLOW);
 		close_button->labelsize(11);
@@ -22837,7 +22443,7 @@ char			buf[4096];
 		close_button->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
 		close_button->callback(hide_window_cb, this);
 
-		Fl_Scroll *scroll = new Fl_Scroll(0, 20, 200, 780);
+		Fl_Scroll *scroll = new Fl_Scroll(0, new_yp + 20, 200, 780);
 		int ay = 4;
 		int max_w = -1000;
 		fl_font(FL_HELVETICA, 9);
@@ -22904,10 +22510,10 @@ char			buf[4096];
 		scroll->hscrollbar.hide();
 		end();
 		int sz = 800;
-		if(ay < 800) sz = ay + 20;
+		if(ay < 800) sz = ay + 20 + new_yp;
 		resize(x(), y(), max_w + 32, sz);
-		scroll->resize(0, 20, max_w + 32, sz - 20);
-		close_button->resize(150, 2, 50, 18);
+		scroll->resize(0, new_yp + 20, max_w + 32, sz - (20 + new_yp));
+		close_button->resize(150, new_yp + 2, 50, 18);
 		color(BLACK);
 		set_non_modal();
 		show();
@@ -23730,7 +23336,7 @@ void	alert_file_select_cb(Fl_Widget *w, void *v)
 {
 	char path[4096];
 	AlertWindow *aw = (AlertWindow *)v;
-	int nn = my_file_chooser("Select a file to be monitored", "*", "./*", path);
+	int nn = my_file_chooser("Select a file to be monitored", "*", "./", path);
 	if(nn > 0)
 	{
 		strcpy(aw->monitor_file, path);
@@ -23743,7 +23349,7 @@ void	alert_audio_file_select_cb(Fl_Widget *w, void *v)
 {
 	char path[4096];
 	AlertWindow *aw = (AlertWindow *)v;
-	int nn = my_file_chooser("Select an audio file to be played", "*.wav", "./*", path);
+	int nn = my_file_chooser("Select an audio file to be played", "*.wav", "./", path);
 	if(nn > 0)
 	{
 		aw->alert_audio_file->value(path);
@@ -23751,20 +23357,15 @@ void	alert_audio_file_select_cb(Fl_Widget *w, void *v)
 	}
 }
 
-AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Alert Setup")
+AlertWindow::AlertWindow(MyWin *in_win, int ww, int hh) : Dialog(ww, hh, "Alert Setup")
 {
 	my_window = in_win;
 	new_source_window = NULL;
 	strcpy(monitor_file, "");
 	set_non_modal();
+	int new_yp = 20;
 
-	Fl_Box *title = new Fl_Box(2, 2, w() - 4, 24, "Alert Settings");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelcolor(WHITE);
-	title->labelsize(12);
-	
-	int y_pos = 30;
+	int y_pos = new_yp + 10;
 	alert_file_path = new Fl_Input(80, y_pos, 400, 20, "Alert File");
 	alert_file_path->color(BLACK);
 	alert_file_path->textcolor(WHITE);
@@ -24004,7 +23605,7 @@ void	timer_window_times_cb(Fl_Widget *w, void *v)
 	tw->stop_seconds = time_str_eval(stop_str);
 }
 
-TimerWindow::TimerWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Timer Setup")
+TimerWindow::TimerWindow(MyWin *in_win, int ww, int hh) : Dialog(ww, hh, "Timer Setup")
 {
 	set_non_modal();
 	my_window = in_win;
@@ -24013,8 +23614,9 @@ TimerWindow::TimerWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Ti
 	stop_seconds = 0;
 	format = 1;
 	analog = 0;
+	int new_yp = 20;
 
-	int y_pos = 10;
+	int y_pos = new_yp + 10;
 	Fl_Group *grp = new Fl_Group(10, y_pos, 100, 44);
 	use_clock = new MyToggleButton(10, y_pos, 100, 20, "Clock");
 	use_clock->color(BLACK);
@@ -24300,7 +23902,7 @@ char	buf[8192];
 		{
 			char path[4096];
 			strcpy(path, "");
-			int nn = my_file_chooser("Select a slideshow file", "*.*", "./*", path);
+			int nn = my_file_chooser("Select a slideshow file", "*.*", "./", path);
 			if(nn > 0)
 			{
 				sprintf(buf, "slideshow://%s", path);
@@ -24340,7 +23942,7 @@ char	buf[8192];
 		{
 			char path[4096];
 			strcpy(path, "");
-			int nn = my_file_chooser("Select a slideshow file", "*.*", "./*", path, 1);
+			int nn = my_file_chooser("Select a slideshow file", "*.*", "./", path, 1);
 			if(nn > 0)
 			{
 				sprintf(buf, "slideshow://%s", path);
@@ -24408,7 +24010,7 @@ char	buf[8192];
 	{
 		char path[4096];
 		strcpy(path, "");
-		int nn = my_file_chooser("Select an OSG file", "*.*", "./*", path);
+		int nn = my_file_chooser("Select an OSG file", "*.*", "./", path);
 		if(nn > 0)
 		{
 			if(access(path, 0) == 0)
@@ -24787,7 +24389,7 @@ void	new_source_adj_text_color_cb(Fl_Widget *w, void *v)
 	nsw->redraw();
 }
 
-NewSourceWindow::NewSourceWindow(MyWin *in_win, int in_xx, int in_yy) : DragWindow(in_xx, in_yy, 680, 700, "New Source")
+NewSourceWindow::NewSourceWindow(MyWin *in_win, int in_xx, int in_yy) : Dialog(in_xx, in_yy, 690, 700, "New Source")
 {
 char	buf[256];
 int		loop;
@@ -24798,7 +24400,9 @@ int		loop;
 	select_x11_window = NULL;
 	select_audio_window = NULL;
 
-	source = new SourceMultiline(20, 20, 560, 140, "Source:");
+	int new_yp = 20;
+
+	source = new SourceMultiline(20, new_yp + 20, 560, 140, "Source:");
 	source->color(BLACK);
 	source->textcolor(WHITE);
 	source->textsize(11);
@@ -24809,7 +24413,7 @@ int		loop;
 	source->align(FL_ALIGN_TOP | FL_ALIGN_LEFT);
 	source->copy_tooltip("Source schemes are specified here. A single digit can be used to specify a camera number. If the text is not recognized as either one of the schemes or a single digit, it becoames a text source. Leaving this blank and selecting 'Create' will make a blank source.");
 
-	alias = new Fl_Input(60, 167, 520, 22, "Alias:");
+	alias = new Fl_Input(60, new_yp + 167, 520, 22, "Alias:");
 	alias->color(BLACK);
 	alias->textcolor(WHITE);
 	alias->textsize(11);
@@ -24821,7 +24425,7 @@ int		loop;
 	alias->copy_tooltip("An alias for the source. The alias takes the place of the source path, and should be unique and easily readible.");
 
 	int cx = 60;
-	width = new Fl_Float_Input(cx, 200, 50, 20, "Width:");
+	width = new Fl_Float_Input(cx, new_yp + 200, 50, 20, "Width:");
 	width->color(BLACK);
 	width->textcolor(WHITE);
 	width->cursor_color(WHITE);
@@ -24834,7 +24438,7 @@ int		loop;
 	width->value(buf);
 	width->copy_tooltip("The width resolution of the source.");
 	cx += 100;
-	height = new Fl_Float_Input(cx, 200, 50, 20, "Height:");
+	height = new Fl_Float_Input(cx, new_yp + 200, 50, 20, "Height:");
 	height->color(BLACK);
 	height->textcolor(WHITE);
 	height->cursor_color(WHITE);
@@ -24847,7 +24451,7 @@ int		loop;
 	height->value(buf);
 	height->copy_tooltip("The height resolution of the source.");
 	cx += 110;
-	font_sz = new Fl_Int_Input(cx, 200, 50, 20, "Font Size:");
+	font_sz = new Fl_Int_Input(cx, new_yp + 200, 50, 20, "Font Size:");
 	font_sz->color(BLACK);
 	font_sz->textcolor(WHITE);
 	font_sz->cursor_color(WHITE);
@@ -24861,7 +24465,7 @@ int		loop;
 	font_sz->copy_tooltip("The font size for text-based sources.");
 	cx += 110;
 
-	int y_pos = 240;
+	int y_pos = new_yp + 240;
 	red = new ColorSlider(60, y_pos, 300, 18, 0, "Red");
 	red->labelcolor(YELLOW);
 	red->callback(new_source_adj_color_cb, this);
@@ -24903,7 +24507,7 @@ int		loop;
 	text_alpha->copy_tooltip("The alpha value for the text appearing in the source, if applicable.");
 	y_pos += 20;
 
-	color_box = new Fl_Box(370, 240, 75, 75);
+	color_box = new Fl_Box(370, new_yp + 240, 75, 75);
 	color_box->box(FL_FRAME_BOX);
 	color_box->color(BLACK);
 
@@ -24923,14 +24527,14 @@ int		loop;
 	font_browser->align(FL_ALIGN_LEFT_TOP);
 	font_browser->copy_tooltip("The font for text appearing in the source, if applicable.");
 	int nn = my_window->number_of_fonts;
-	for(loop = 1;loop < nn;loop++)
+	for(loop = 0;loop < nn;loop++)
 	{
 		char *str = (char *)Fl::get_font_name(loop);
 		font_browser->add(str);
 	}
 	font_browser->select(1);
 
-	create = new MyButton(cx, 200, 60, 20, "Create");
+	create = new MyButton(cx, new_yp + 200, 60, 20, "Create");
 	create->color(DARK_GRAY);
 	create->labelcolor(YELLOW);
 	create->labelsize(9);
@@ -24939,7 +24543,7 @@ int		loop;
 	create->copy_tooltip("Creates a new source based on specified values in this dialog.");
 	cx += 70;
 
-	reset = new MyButton(cx, 200, 60, 20, "Reset");
+	reset = new MyButton(cx, new_yp + 200, 60, 20, "Reset");
 	reset->color(DARK_GRAY);
 	reset->labelcolor(YELLOW);
 	reset->labelsize(9);
@@ -24948,7 +24552,7 @@ int		loop;
 	reset->copy_tooltip("Resets fields to default values.");
 	cx += 70;
 
-	cancel = new MyButton(cx, 200, 60, 20, "Cancel");
+	cancel = new MyButton(cx, new_yp + 200, 60, 20, "Cancel");
 	cancel->color(DARK_GRAY);
 	cancel->labelcolor(YELLOW);
 	cancel->labelsize(9);
@@ -24956,7 +24560,7 @@ int		loop;
 	cancel->callback(cancel_new_source_cb, my_window);
 	cancel->copy_tooltip("Closes the dialog without creating a new source.");
 	
-	int yp = 20;
+	int yp = 20 + new_yp;
 	camera_select = new MyButton(590, yp, 80, 20, "Camera");
 	camera_select->color(DARK_GRAY);
 	camera_select->labelcolor(YELLOW);
@@ -25386,7 +24990,7 @@ void	NewSourceWindow::hide()
 	{
 		my_window->pseudo_camera_window->hide();
 	}
-	DragWindow::hide();
+	Dialog::hide();
 }
 
 int	NewSourceWindow::handle(int event)
@@ -25403,7 +25007,7 @@ int	NewSourceWindow::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -25576,16 +25180,17 @@ void	pulse_audio_filter_window_cb(Fl_Widget *b, void *v)
 	}
 }
 
-PulseAudioFilterWindow::PulseAudioFilterWindow(MyWin *in_win) : DragWindow(320, 290, "Audio Effects")
+PulseAudioFilterWindow::PulseAudioFilterWindow(MyWin *in_win) : Dialog(320, 290, "Audio Effects")
 {
 	my_window = in_win;
 	set_non_modal();
 	box(FL_FRAME_BOX);
 	color(BLACK);
+	int new_yp = 20;
 
 	mic = NULL;
 
-	int start_y = 10;
+	int start_y = 10 + new_yp;
 	low_pass_button = new MyToggleButton(90, start_y, 200, 20, "Low Pass Filter");
 	low_pass_button->color(BLACK);
 	low_pass_button->labelcolor(YELLOW);
@@ -25714,7 +25319,7 @@ void	PulseAudioFilterWindow::show()
 		compress_low_slider->value(mic->compress_low);
 		compress_percent_slider->value(mic->compress_percent);
 	}
-	DragWindow::show();
+	Dialog::show();
 }
 
 // SECTION *********************************** PULSE AUDIO *******************************************
@@ -26226,23 +25831,6 @@ int	loop;
 	fprintf(fp, "}");
 }
 
-void	PulseMicrophone::Save(int fd)
-{
-char	buf[255];
-int		loop;
-
-	write(fd, this, sizeof(PulseMicrophone));
-	for(loop = 0;loop < 128;loop++)
-	{
-		memset(buf, 0, 255);
-		if(filter_plugin_name[loop] != NULL)
-		{
-			sprintf(buf, "%s", filter_plugin_name[loop]);
-		}
-		write(fd, buf, 255);
-	}
-}
-
 void	MyWin::SaveMicrophones()
 {
 	if(access("./Microphones", 0) != 0)
@@ -26251,7 +25839,7 @@ void	MyWin::SaveMicrophones()
 	}
 	chdir("./Microphones");
 	char filename[4096];
-	int r = my_file_chooser("Save an audio source set to a file", "*.json", "./Microphones/sample.json", filename, 0, 1);
+	int r = my_file_chooser("Save an audio source set to a file", "*.json", "./Microphones", filename, 0, 1);
 	if(r > 0)
 	{
 		if(strlen(filename) > 0)
@@ -26273,31 +25861,13 @@ void	MyWin::SaveMicrophones()
 	chdir("..");
 }
 
-void	MyWin::SaveMicrophones(char *filename)
-{
-int	loop;
-
-	int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-	if(fd > -1)
-	{
-		for(loop = 0;loop < pulse_microphone_cnt;loop++)
-		{
-			if(pulse_microphone[loop] != NULL)
-			{
-				pulse_microphone[loop]->Save(fd);
-			}
-		}
-		close(fd);
-	}
-}
-
 void	MyWin::LoadMicrophones()
 {
 struct stat sz;
 
 	char path[4096];
 	strcpy(path, "");
-	int nn = my_file_chooser("Select an audio source set file", "*.json", "./Microphones/*", path);
+	int nn = my_file_chooser("Select an audio source set file", "*.json", "./Microphones", path);
 	if(nn > 0)
 	{
 		if(access(path, 0) == 0)
@@ -26322,150 +25892,6 @@ struct stat sz;
 				free(buf);
 			}
 		}
-	}
-}
-
-int	MyWin::LoadMicrophone(int fd, int orig_cnt)
-{
-int		loop;
-int		inner;
-char	buf[256];
-
-	int started_here = 0;
-	int done = 0;
-	PulseMicrophone *fake = (PulseMicrophone *)malloc(sizeof(PulseMicrophone));
-	if(fake != NULL)
-	{
-		memset(fake, 0, sizeof(PulseMicrophone));
-		if(read(fd, fake, sizeof(PulseMicrophone)) == sizeof(PulseMicrophone))
-		{
-			int found = -1;
-			for(loop = 0;((loop < orig_cnt) && (found == -1));loop++)
-			{
-				if(pulse_microphone[loop] != NULL)
-				{
-					if(strcmp(fake->name, pulse_microphone[loop]->name) == 0)
-					{
-						found = loop;
-					}
-				}
-			}
-			PulseMicrophone *mic = NULL;
-			PulseAudioButton *b = NULL;
-			if(found > -1)
-			{
-				mic = pulse_microphone[found];
-				for(inner = 0;((inner < audio_thumbnail_cnt) && (b == NULL));inner++)
-				{
-					if(audio_thumbnail[inner] != NULL)
-					{
-						if(audio_thumbnail[inner]->microphone == mic)
-						{
-							b = audio_thumbnail[inner];
-						}
-					}
-				}
-			}
-			else
-			{
-				if(pulse_mixer == NULL)
-				{
-					pulse_mixer = new PulseMixer(this, FRAMES_PER_BUFFER, audio_channels);
-					started_here = 1;
-				}
-				b = AddAudioSource(started_here, fake->name, fake->name);
-				mic = b->microphone;
-			}
-			if(mic != NULL)
-			{
-				strcpy(mic->name, fake->name);
-				mic->in_use = fake->in_use;
-				mic->volume1 = fake->volume1;
-				mic->volume2 = fake->volume2;
-				if(b != NULL)
-				{
-					b->volume1->value(mic->volume1);
-					b->volume2->value(mic->volume2);
-					if(mic->in_use == 1)
-					{
-						pulse_audio_select_cb(NULL, b);
-						b->select_button->value(1);
-					}
-				}
-				mic->low_pass = fake->low_pass;
-				mic->low_pass_frequency = fake->low_pass_frequency;
-				mic->high_pass = fake->high_pass;
-				mic->high_pass_frequency = fake->high_pass_frequency;
-				mic->reverb = fake->reverb;
-				mic->reverb_delay = fake->reverb_delay;
-				mic->reverb_decay = fake->reverb_decay;
-				mic->compress = fake->compress;
-				mic->compress_high = fake->compress_high;
-				mic->compress_low = fake->compress_low;
-				mic->compress_percent = fake->compress_percent;
-				mic->ndi_capture = fake->ndi_capture;
-				strcpy(mic->ndi_path, fake->ndi_path);
-				mic->filter_plugin_cnt = 0;
-				for(loop = 0;loop < 128;loop++)
-				{
-					if(mic->filter_plugin_name[loop] != NULL)
-					{
-						free(mic->filter_plugin_name[loop]);
-						mic->filter_plugin_name[loop] = NULL;
-					}
-				}
-				for(loop = 0;loop < 128;loop++)
-				{
-					memset(buf, 0, 255);
-					read(fd, buf, 255);
-					if(strlen(buf) > 0)
-					{
-						for(inner = 0;inner < global_potential_audio_filter_cnt;inner++)
-						{
-							mic->filter_plugin[mic->filter_plugin_cnt] = (void *)dlsym(global_potential_filter_handle[inner], buf);
-							if(mic->filter_plugin[mic->filter_plugin_cnt] != NULL)
-							{
-								mic->filter_plugin_name[mic->filter_plugin_cnt] = strdup(buf);
-								mic->filter_plugin_cnt++;
-							}
-						}
-					}
-				}
-			}
-			else
-			{
-				done = 1;
-			}
-		}
-		else
-		{
-			done = 1;
-		}
-		free(fake);
-	}
-	else
-	{
-		done = 1;
-	}
-	return(done);
-}
-
-void	MyWin::LoadMicrophones(char *filename)
-{
-char	buf[256];
-int		loop;
-int		inner;
-
-	int orig_cnt = pulse_microphone_cnt;
-	int fd = open(filename, O_RDONLY);
-	if(fd > -1)
-	{
-		int done = 0;
-		while(done == 0)
-		{
-			done = LoadMicrophone(fd, orig_cnt);
-		}
-		close(fd);
 	}
 }
 
@@ -27439,43 +26865,40 @@ int	inner;
 	lw->hide();
 }
 
-PTZ_LockWindow::PTZ_LockWindow(MyWin *in_win) : DragWindow(360, 300, 620, 600, "PTZ Lock Window")
+PTZ_LockWindow::PTZ_LockWindow(MyWin *in_win) : Dialog(360, 300, 620, 600, "PTZ Lock Window")
 {
 	my_window = in_win;
+	int new_yp = 20;
 	last_x = 0;
 	last_y = 0;
 
-	Fl_Box *title = new Fl_Box(2, 2, w() - 4, 24, "Lock PTZ to Camera");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelcolor(WHITE);
-	title->labelsize(12);
-
-	scroll = new Fl_Scroll(2, 44, 408, h() - 98, "Assigned");
+	scroll = new Fl_Scroll(2, new_yp + 34, 408, h() - 98, "Assigned");
 	scroll->box(FL_FLAT_BOX);
 	scroll->color(fl_rgb_color(20, 20, 25));
 	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->labelsize(11);
+	scroll->labelcolor(WHITE);
 	scroll->align(FL_ALIGN_TOP | FL_ALIGN_CENTER);
-		ptz_list = new MyGroup(2, 44, 200, h() - 50);
+		ptz_list = new MyGroup(2, new_yp + 34, 200, h() - 50);
 		ptz_list->box(FL_FLAT_BOX);
 		ptz_list->color(fl_rgb_color(20, 20, 25));
 		ptz_list->end();
 
-		assigned_camera_list = new ArrangeGroup(scroll, 20, 204, 44, 200, h() - 50);
+		assigned_camera_list = new ArrangeGroup(scroll, 20, 204, new_yp + 34, 200, h() - 50);
 		assigned_camera_list->box(FL_FLAT_BOX);
 		assigned_camera_list->color(fl_rgb_color(25, 25, 30));
 		assigned_camera_list->end();
 	scroll->end();
 
-	unassigned_camera_list = new ArrangeGroup(NULL, 20, 410, 44, 200, h() - 98, "Unassigned");
+	unassigned_camera_list = new ArrangeGroup(NULL, 20, 410, new_yp + 34, 200, h() - 98, "Unassigned");
 	unassigned_camera_list->box(FL_FLAT_BOX);
 	unassigned_camera_list->color(fl_rgb_color(30, 30, 35));
 	unassigned_camera_list->align(FL_ALIGN_TOP | FL_ALIGN_CENTER);
 	unassigned_camera_list->labelsize(11);
+	unassigned_camera_list->labelcolor(WHITE);
 	unassigned_camera_list->end();
 
-	MyButton *accept = new MyButton((w() / 3) - 50, h() - 47, 100, 20, "Accept");
+	MyButton *accept = new MyButton((w() / 3) - 50, h() - 37, 100, 20, "Accept");
 	accept->box(FL_FLAT_BOX);
 	accept->color(BLACK);
 	accept->labelcolor(YELLOW);
@@ -27483,7 +26906,7 @@ PTZ_LockWindow::PTZ_LockWindow(MyWin *in_win) : DragWindow(360, 300, 620, 600, "
 	accept->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
 	accept->callback(accept_ptz_lock_window_cb, this);
 
-	MyButton *cancel = new MyButton(((w() / 3) * 2) - 50, h() - 47, 100, 20, "Cancel");
+	MyButton *cancel = new MyButton(((w() / 3) * 2) - 50, h() - 37, 100, 20, "Cancel");
 	cancel->box(FL_FLAT_BOX);
 	cancel->color(BLACK);
 	cancel->labelcolor(YELLOW);
@@ -27602,7 +27025,7 @@ int	PTZ_LockWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -30466,7 +29889,7 @@ int		loop;
 	}
 }
 
-CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 815, "Codec Selection")
+CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : Dialog(630, 815, "Codec Selection")
 {
 	my_window = in_win;
 
@@ -30478,17 +29901,13 @@ CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 815,
 	audio_codec_id = (AVCodecID)0;
 	video_codec_id = (AVCodecID)0;
 
-	Fl_Box *title = new Fl_Box(2, 7, w() - 4, 20, "Containers and Codecs");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelsize(15);
-	title->labelcolor(WHITE);
+	int new_yp = 20;
 
-	container = new ListMenu(this, 10, 30, 200, 745, "Container Format");
-	video_codec = new ListMenu(this, 215, 30, 200, 745, "Video Codec");
-	audio_codec = new ListMenu(this, 420, 30, 200, 745, "Audio Codec");
+	container = new ListMenu(this, 10, new_yp + 10, 200, 745, "Container Format");
+	video_codec = new ListMenu(this, 215, new_yp + 10, 200, 745, "Video Codec");
+	audio_codec = new ListMenu(this, 420, new_yp + 10, 200, 745, "Audio Codec");
 
-	Fl_Box *warning = new Fl_Box(10, 776, 380, 34);
+	Fl_Box *warning = new Fl_Box(10, new_yp + 776, 380, 34);
 	warning->box(FL_FLAT_BOX);
 	warning->color(color());
 	warning->labelcolor(WHITE);
@@ -30496,7 +29915,7 @@ CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 815,
 	warning->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
 	warning->copy_label("Warning: Reseting the codecs will\nreset recording. A new file will be made.");
 
-	accept = new MyButton(420, 784, 80, 20, "Accept");
+	accept = new MyButton(420, new_yp + 784, 80, 20, "Accept");
 	accept->box(FL_FLAT_BOX);
 	accept->labelcolor(YELLOW);
 	accept->color(BLACK);
@@ -30504,7 +29923,7 @@ CodecSelectionWindow::CodecSelectionWindow(MyWin *in_win) : DragWindow(630, 815,
 	accept->callback(csw_outcome_accept_cb, this);
 	accept->show();
 
-	cancel = new MyButton(530, 784, 80, 20, "Cancel");
+	cancel = new MyButton(530, new_yp + 784, 80, 20, "Cancel");
 	cancel->box(FL_FLAT_BOX);
 	cancel->labelcolor(YELLOW);
 	cancel->color(BLACK);
@@ -30757,11 +30176,14 @@ int	loop;
 	cksw->redraw();
 }
 
-CommandKeySettingsWindow::CommandKeySettingsWindow(MyWin *in_win, int ww, int hh) : DragWindow(ww, hh, "Key Bindings")
+CommandKeySettingsWindow::CommandKeySettingsWindow(MyWin *in_win, int ww, int hh) : Dialog(ww, hh, "Key Bindings")
 {
 	my_window = in_win;
 	int cnt = 0;
-	int y_pos = 20;
+
+	int new_yp = 20;
+
+	int y_pos = 20 + new_yp;
 	box(FL_FRAME_BOX);
 	color(BLACK);
 	char *str = NULL;
@@ -30955,7 +30377,7 @@ CommandKeySettingsWindow::CommandKeySettingsWindow(MyWin *in_win, int ww, int hh
 
 	command_key_cnt = cnt;
 
-	int ny_pos = 21;
+	int ny_pos = 21 + new_yp;
 	accept = new MyButton(280, ny_pos, 80, 16, "Accept");
 	accept->box(FL_FLAT_BOX);
 	accept->color(YELLOW);
@@ -31150,12 +30572,14 @@ void	monitor_window_popup_cb(Fl_Widget *w, void *v)
 	}
 }
 
-MonitorWindow::MonitorWindow(MyWin *in_win, int ww, int hh, char *lbl) : DragWindow(ww, hh, lbl)
+MonitorWindow::MonitorWindow(MyWin *in_win, int ww, int hh, char *lbl) : Dialog(ww, hh, lbl)
 {
 	my_window = in_win;
 	depth = 0;
 	popup = NULL;
 	size = 1;
+	int new_yp = 20;
+	vertical_offset = new_yp;
 
 	end();
 	set_non_modal();
@@ -31165,21 +30589,27 @@ MonitorWindow::~MonitorWindow()
 {
 }
 
+void	MonitorWindow::hide()
+{
+	my_window->monitor_video_button->copy_label("Monitor Video");
+	Dialog::hide();
+}
+
 void	MonitorWindow::draw()
 {
-	DragWindow::draw();
+	Dialog::draw();
 	if(depth > 0)
 	{
 		int ww = mat.cols / size;
 		int hh = mat.rows / size;
 		cv::resize(mat, mat, cv::Size(ww, hh));
 		unsigned char *data_ptr = mat.ptr();
-		fl_draw_image(data_ptr, 0, 0, w(), h(), depth);
+		fl_draw_image(data_ptr, 0, vertical_offset, w(), h(), depth);
 	}
 	else
 	{
 		fl_color(BLACK);
-		fl_rectf(0, 0, w(), h());
+		fl_rectf(0, vertical_offset, w(), h());
 	}
 	fl_color(WHITE);
 	fl_rect(0, 0, w(), h());
@@ -31199,7 +30629,7 @@ int		MonitorWindow::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -31581,18 +31011,14 @@ void	audio_settings_window_accept_cb(Fl_Widget *w, void *v)
 	asw->hide();
 }
 
-AudioSettingsWindow::AudioSettingsWindow(MyWin *in_win) : DragWindow(230, 174, "Audio Settings Window")
+AudioSettingsWindow::AudioSettingsWindow(MyWin *in_win) : Dialog(230, 174, "Audio Settings Window")
 {
 int	loop;
 
 	my_window = in_win;
 
-	int yp = 30;
-	Fl_Box *box = new Fl_Box(2, 2, w() - 4, 20, "Audio Settings");
-	box->box(FL_FLAT_BOX);
-	box->color(BLACK);
-	box->labelcolor(WHITE);
-	box->labelsize(11);
+	int new_yp = 20;
+	int yp = new_yp + 20;
 	
 	sample_rate = new MyMenuButton(100, yp, 100, 16, "Sample Rate");
 	sample_rate->add("8000");
@@ -31670,7 +31096,7 @@ void	AudioSettingsWindow::show()
 {
 	SetToMyWin();
 	set_non_modal();
-	DragWindow::show();
+	Dialog::show();
 }
 
 void	AudioSettingsWindow::SetToMyWin()
@@ -31838,11 +31264,15 @@ char	buf[256];
 	ndi_win->hide();
 }
 
-NDISourceListWindow::NDISourceListWindow(MyWin *in_win) : DragWindow(300, 400, "NDI Source")
+NDISourceListWindow::NDISourceListWindow(MyWin *in_win) : Dialog(300, 400, "NDI Source")
 {
 	my_window = in_win;
 	end();
 	ndi_find = NULL;
+
+	int new_yp = 20;
+	vertical_offset = new_yp;
+	ndi_source_button_cnt = 0;
 }
 
 NDISourceListWindow::~NDISourceListWindow()
@@ -31852,6 +31282,22 @@ NDISourceListWindow::~NDISourceListWindow()
 		NDILib->NDIlib_find_destroy(ndi_find);
 		ndi_find = NULL;
 	}
+}
+
+void	NDISourceListWindow::clear()
+{
+int	loop;
+
+	for(loop = 0;loop < ndi_source_button_cnt;loop++)
+	{
+		if(ndi_source_button[loop] != NULL)
+		{
+			remove(ndi_source_button[loop]);
+			Fl::delete_widget(ndi_source_button[loop]);
+			ndi_source_button[loop] = NULL;
+		}
+	}
+	ndi_source_button_cnt = 0;
 }
 
 void	NDISourceListWindow::Update()
@@ -31873,11 +31319,11 @@ int	inner;
 		NDIlib_find_instance_t ndi_find = NDILib->NDIlib_find_create_v2(&NDI_find_create_desc);
 		NDILib->NDIlib_find_wait_for_sources(ndi_find, 1000);
 		sources = NDILib->NDIlib_find_get_current_sources(ndi_find, &num_sources);
-		int yp = 10;
+		int yp = 10 + vertical_offset;
 		int cnt = 0;
 		if((num_sources > 0) && (num_sources < 33))
 		{
-			resize(x(), y(), w(), ((num_sources * 5) * 18) + 42);
+			resize(x(), y(), w(), ((num_sources * 5) * 18) + 42 + vertical_offset);
 			for(loop = 0;loop < num_sources;loop++)
 			{
 				for(inner = 0;inner < 5;inner++)
@@ -31918,7 +31364,7 @@ int	inner;
 		}
 		else
 		{
-			resize(x(), y(), w(), 42);
+			resize(x(), y(), w(), 42 + vertical_offset);
 		}
 		ndi_source_button[cnt] = new MyButton(10, yp, w() - 20, 20, "Close");
 		ndi_source_button[cnt]->box(FL_FLAT_BOX);
@@ -31928,6 +31374,8 @@ int	inner;
 		ndi_source_button[cnt]->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 		ndi_source_button[cnt]->callback(hide_window_cb, this);
 		add(ndi_source_button[cnt]);
+		cnt++;
+		ndi_source_button_cnt = cnt;
 	}
 }
 
@@ -32000,7 +31448,7 @@ void	source_select_cols_and_rows_cb(Fl_Widget *w, void *v)
 	}
 }
 
-SourceSelectWindow::SourceSelectWindow(MyWin *win, int ww, int hh, char *lbl) : DragWindow(ww, hh, lbl)
+SourceSelectWindow::SourceSelectWindow(MyWin *win, int ww, int hh, char *lbl) : Dialog(ww, hh, lbl)
 {
 int	loop;
 
@@ -32009,17 +31457,14 @@ int	loop;
 	rows_nn = 2;
 	cur_row = 0;
 	cur_col = 0;
+	int new_yp = 20;
+	vertical_offset = new_yp;
+
 	for(loop = 0;loop < 128;loop++)
 	{
 		list[loop] = NULL;
 	}
-	Fl_Box *title_box = new Fl_Box(2, 2, w() - 4, 20, "Select sources");
-	title_box->color(BLACK);
-	title_box->labelsize(12);
-	title_box->labelcolor(WHITE);
-	title_box->box(FL_FLAT_BOX);
-
-	cols = new Fl_Int_Input(100, 24, 60, 20, "Columns");
+	cols = new Fl_Int_Input(100, new_yp + 14, 60, 20, "Columns");
 	cols->color(BLACK);
 	cols->textcolor(WHITE);
 	cols->textsize(11);
@@ -32030,7 +31475,7 @@ int	loop;
 	cols->value("2");
 	cols->callback(source_select_cols_and_rows_cb, this);
 
-	rows = new Fl_Int_Input(280, 24, 60, 20, "Rows");
+	rows = new Fl_Int_Input(280, new_yp + 14, 60, 20, "Rows");
 	rows->color(BLACK);
 	rows->textcolor(WHITE);
 	rows->textsize(11);
@@ -32041,11 +31486,11 @@ int	loop;
 	rows->value("2");
 	rows->callback(source_select_cols_and_rows_cb, this);
 
-	scroll = new Fl_Scroll((w() / 2) - 150, 182, 300, 550);
+	scroll = new Fl_Scroll((w() / 2) - 150, new_yp + 182, 300, 550);
 	scroll->box(FL_FRAME_BOX);
 	scroll->color(BLACK);
 	scroll->type(Fl_Scroll::VERTICAL);
-	pack = new Fl_Pack((w() / 2) - 150, 182, 300, 100);
+	pack = new Fl_Pack((w() / 2) - 150, new_yp + 182, 300, 100);
 	pack->box(FL_NO_BOX);
 	pack->type(Fl_Pack::VERTICAL);
 	scroll->scrollbar.hide();
@@ -32080,12 +31525,12 @@ void	SourceSelectWindow::draw()
 {
 int	outer, inner;
 
-	DragWindow::draw();
+	Dialog::draw();
 	if((cols_nn > 0) && (rows_nn > 0))
 	{
 		fl_color(WHITE);
 		int xx = (w() / 2) - 50;
-		int yy = 60;
+		int yy = 60 + vertical_offset;
 		fl_rect(xx, yy, 100, 100);
 		int x_sz = 100 / cols_nn;
 		int y_sz = 100 / rows_nn;
@@ -32158,7 +31603,7 @@ int		SourceSelectWindow::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -32351,7 +31796,7 @@ void	play_audio_file_button_cb(Fl_Widget *w, void *v)
 	MyWin *win = (MyWin *)v;
 	char path[4096];
 	strcpy(path, "");
-	int nn = my_file_chooser("Select an audio file", "*.{wav,mp3,flac}", "./AudioLibrary/*", path);
+	int nn = my_file_chooser("Select an audio file", "*.{wav,mp3,flac}", "./AudioLibrary", path);
 	if(nn > 0)
 	{
 		if(access(path, 0) == 0)
@@ -32769,6 +32214,10 @@ void	quit_cb(Fl_Widget *w, void *v)
 	{
 		win->immediate_drawing_window->hide();
 	}
+	if(win->anim_timeline != NULL)
+	{
+		win->anim_timeline->hide();
+	}
 	win->hide();
 	delete win;
 }
@@ -32810,7 +32259,7 @@ void	monitor_video_button_cb(Fl_Widget *w, void *v)
 	}
 	else
 	{
-		w->copy_label("Hide Monitor");
+		w->copy_label("Close Monitor");
 		win->monitor_window->show();
 	}
 }
@@ -33136,11 +32585,19 @@ void	immediate_drawing_button_cb(Fl_Widget *w, void *v)
 		win->immediate_drawing_window->set_non_modal();
 		win->immediate_drawing_window->show();
 		win->immediate_drawing_window->take_focus();
+		if(win->anim_timeline != NULL)
+		{
+			win->anim_timeline->show();
+		}
 	}
 	else
 	{
 		win->im_drawing_mode = 0;
 		win->immediate_drawing_window->hide();
+		if(win->anim_timeline != NULL)
+		{
+			win->anim_timeline->hide();
+		}
 	}
 }
 
@@ -33188,9 +32645,8 @@ void	save_camera_button_cb(Fl_Widget *w, void *v)
 		{
 			mkdir("./Cameras", 0755);
 		}
-		chdir("./Cameras");
 		char filename[4096];
-		int r = my_file_chooser("Select a camera file", "*.json", "./Cameras/sample.json", filename, 0, 1);
+		int r = my_file_chooser("Select a camera file", "*.json", "./Cameras", filename, 0, 1);
 		if(r > 0)
 		{
 			if(strlen(filename) > 0)
@@ -33207,7 +32663,6 @@ void	save_camera_button_cb(Fl_Widget *w, void *v)
 				}
 			}
 		}
-		chdir("..");
 	}
 }
 
@@ -33215,7 +32670,8 @@ void	load_camera_button_cb(Fl_Widget *w, void *v)
 {
 	MyWin *win = (MyWin *)v;
 	char filename[4096];
-	int nn = my_file_chooser("Select a camera file", "*.json", "./Cameras/*", filename);
+	int restore = 0;
+	int nn = my_file_chooser("Select a camera file", "*.json", "./Cameras", filename);
 	if(nn > 0)
 	{
 		win->LoadJSONCamera(filename);
@@ -33452,7 +32908,7 @@ void	save_setup_button_cb(Fl_Widget *w, void *v)
 	}
 	chdir("./Setups");
 	char filename[4096];
-	int r = my_file_chooser("Select a setup file", "*.json", "./Setups/sample.json", filename, 0, 1);
+	int r = my_file_chooser("Select a setup file", "*.json", "./Setups", filename, 0, 1);
 	if(r > 0)
 	{
 		if(strlen(filename) > 0)
@@ -33476,7 +32932,7 @@ void	load_setup_button_cb(Fl_Widget *w, void *v)
 {
 	MyWin *win = (MyWin *)v;
 	char filename[4096];
-	int r = my_file_chooser("Select a setup file,", "*.json", "./Setups", filename);
+	int r = my_file_chooser("Select a setup file", "*.json", "./Setups", filename);
 	if(r > 0)
 	{
 		if(strlen(filename) > 0)
@@ -33739,7 +33195,6 @@ MyWin::MyWin(
 	, int use_detect
 	, int use_timestamp
 	, int use_frame_scaling
-	, char *load_file
 	, int use_retain_commands
 	, int use_retain_cameras
 	, int use_retain_audio
@@ -33901,6 +33356,7 @@ int	outer;
 	no_audio_scan = in_no_audio_scan;
 	use_old = in_use_old;
 	video_settings_window = NULL;
+	misc_video_settings_window = NULL;
 	camera_settings_window = NULL;
 	snapshot_settings_window = NULL;
 	gui_settings_window = NULL;
@@ -33920,6 +33376,7 @@ int	outer;
 	record_on_start = 0;
 	recording_on_start = 0;
 	record_on_start_alias = NULL;
+	text_edit_window = NULL;
 
 	Fl::get_color(WHITE, status_color_r, status_color_g, status_color_b);
 	status_color_a = 0;
@@ -34296,6 +33753,11 @@ int	outer;
 	{
 		current_fps_window->resize(initial_current_fps_x, initial_current_fps_y, current_fps_window->w(), current_fps_window->h());
 	}
+	int at_xx = (w() / 2) - 500;
+	int at_yy = (h() - 120);
+	anim_timeline = new AnimTimeline(this, at_xx, at_yy, 1000, 50);
+	anim_timeline->hide();
+
 	start_win->Update("Initialize audio thumbnails");
 	audio_thumbnail_group = new SlidingElement(this, OPEN_DOWN, 0, 0, w() - 600, 180);
 	audio_thumbnail_group->resizable(0);
@@ -34383,12 +33845,7 @@ int	outer;
 	progress_scrubber = new ProgressScrubber(this, NULL, 0, 0, Fl::w(), Fl::h());
 	progress_scrubber->end();
 
-	number_of_fonts = Fl::set_fonts();
-	if(load_file != NULL)
-	{
-		start_win->Update("Load Setup");
-		Load(load_file);
-	}
+	number_of_fonts = Fl::set_fonts(NULL);
 	Fl::add_clipboard_notify(clipboard_notify, this);
 	start_win->Update("Read external programs");
 	ReadInExternalPrograms();
@@ -34408,6 +33865,12 @@ int	outer;
 MyWin::~MyWin()
 {
 	Shutdown();
+	if(anim_timeline != NULL)
+	{
+		anim_timeline->hide();
+		Fl::delete_widget(anim_timeline);
+		anim_timeline = NULL;
+	}
 	if(record_on_start_alias != NULL)
 	{
 		free(record_on_start_alias);
@@ -34419,6 +33882,12 @@ MyWin::~MyWin()
 		shape = NULL;
 	}
 	shape_cnt = 0;
+	if(text_edit_window != NULL)
+	{
+		text_edit_window->hide();
+		Fl::delete_widget(text_edit_window);
+		text_edit_window = NULL;
+	}
 	if(pulse_audio_filter_window != NULL)
 	{
 		pulse_audio_filter_window->hide();
@@ -34442,6 +33911,12 @@ MyWin::~MyWin()
 		video_settings_window->hide();
 		Fl::delete_widget(video_settings_window);
 		video_settings_window = NULL;
+	}
+	if(misc_video_settings_window != NULL)
+	{
+		misc_video_settings_window->hide();
+		Fl::delete_widget(misc_video_settings_window);
+		misc_video_settings_window = NULL;
 	}
 	if(audio_settings_window != NULL)
 	{
@@ -34845,76 +34320,8 @@ int	inner;
 			if(immediate_list[loop] != NULL)
 			{
 				Immediate *im = immediate_list[loop];
-				ImDefault *use_default = NULL;
-
-				if(im->text != NULL) use_default = (ImDefault *)im->text;
-				if(im->line != NULL) use_default = (ImDefault *)im->line;
-				if(im->rectangle != NULL) use_default = (ImDefault *)im->rectangle;
-				if(im->rectangle_passthru != NULL) use_default = (ImDefault *)im->rectangle_passthru;
-				if(im->ellipse != NULL) use_default = (ImDefault *)im->ellipse;
-				if(im->ellipse_passthru != NULL) use_default = (ImDefault *)im->ellipse_passthru;
-				if(im->freehand != NULL) use_default = (ImDefault *)im->freehand;
-				if(im->pixelate != NULL) use_default = (ImDefault *)im->pixelate;
-				if(im->image_im != NULL) use_default = (ImDefault *)im->image_im;
-
 				fprintf(fp, "\t\t{\n");
-				fprintf(fp, "\t\t\t\"sx\": %d,\n", im->x());
-				fprintf(fp, "\t\t\t\"sy\": %d,\n", im->y());
-				fprintf(fp, "\t\t\t\"sw\": %d,\n", im->w());
-				fprintf(fp, "\t\t\t\"sh\": %d,\n", im->h());
-				fprintf(fp, "\t\t\t\"im type\": %d,\n", im->im_type);
-				fprintf(fp, "\t\t\t\"draw it\": %d,\n", im->draw_it);
-				fprintf(fp, "\t\t\t\"immediate type\": %d,\n", im->immediate_type);
-				fprintf(fp, "\t\t\t\"initial x\": %d,\n", im->initial_x);
-				fprintf(fp, "\t\t\t\"initial y\": %d,\n", im->initial_y);
-				fprintf(fp, "\t\t\t\"layer\": %d,\n", im->layer);
-				fprintf(fp, "\t\t\t\"overall alpha\": %f,\n", im->overall_alpha);
-				fprintf(fp, "\t\t\t\"use as mask\": %d,\n", im->use_as_mask);
-				if(use_default == im->text)
-				{
-					fprintf(fp, "\t\t\t\"text value\": \"%s\",\n", im->text->value());
-					fprintf(fp, "\t\t\t\"text font name\": \"%s\",\n", im->text->font_name);
-				}
-				fprintf(fp, "\t\t\t\"image file path\": \"%s\",\n", use_default->image_file_path);
-				fprintf(fp, "\t\t\t\"freehand filename\": \"%s\",\n", use_default->freehand_filename);
-				fprintf(fp, "\t\t\t\"width\": %d,\n", use_default->width);
-				fprintf(fp, "\t\t\t\"red\": %d,\n", use_default->red);
-				fprintf(fp, "\t\t\t\"green\": %d,\n", use_default->green);
-				fprintf(fp, "\t\t\t\"blue\": %d,\n", use_default->blue);
-				fprintf(fp, "\t\t\t\"alpha\": %d,\n", use_default->alpha);
-				fprintf(fp, "\t\t\t\"style\": %d,\n", use_default->style);
-				fprintf(fp, "\t\t\t\"shape\": %d,\n", use_default->shape);
-				fprintf(fp, "\t\t\t\"use size\": %d,\n", use_default->use_size);
-				fprintf(fp, "\t\t\t\"filled\": %d,\n", use_default->filled);
-				fprintf(fp, "\t\t\t\"box type\": %d,\n", use_default->box_type);
-				fprintf(fp, "\t\t\t\"point cnt\": %d,\n", use_default->cnt);
-				fprintf(fp, "\t\t\t\"Point\": [\n");
-				for(inner = 0;inner < use_default->cnt;inner++)
-				{
-					fprintf(fp, "\t\t\t\t{\n");
-					fprintf(fp, "\t\t\t\t\t\"xx\": %d,\n", use_default->xx[inner]);
-					fprintf(fp, "\t\t\t\t\t\"yy\": %d,\n", use_default->yy[inner]);
-					fprintf(fp, "\t\t\t\t\t\"pt type\": %d\n", use_default->pt_type[inner]);
-					if(inner == use_default->cnt - 1)
-					{
-						fprintf(fp, "\t\t\t\t}\n");
-					}
-					else
-					{
-						fprintf(fp, "\t\t\t\t},\n");
-					}
-				}
-				fprintf(fp, "\t\t\t],\n");
-				fprintf(fp, "\t\t\t\"key\": %d,\n", use_default->key);
-				fprintf(fp, "\t\t\t\"italic\": %d,\n", use_default->italic);
-				fprintf(fp, "\t\t\t\"bold\": %d,\n", use_default->bold);
-				fprintf(fp, "\t\t\t\"outline\": %d,\n", use_default->outline);
-				fprintf(fp, "\t\t\t\"font alpha\": %d,\n", use_default->font_alpha);
-				fprintf(fp, "\t\t\t\"background red\": %d,\n", use_default->background_red);
-				fprintf(fp, "\t\t\t\"background green\": %d,\n", use_default->background_green);
-				fprintf(fp, "\t\t\t\"background blue\": %d,\n", use_default->background_blue);
-				fprintf(fp, "\t\t\t\"background alpha\": %d,\n", use_default->background_alpha);
-				fprintf(fp, "\t\t\t\"outline alpha\": %d\n", use_default->outline_alpha);
+				im->SaveAsJSON(fp);
 				if(loop == immediate_cnt - 1)
 				{
 					fprintf(fp, "\t\t}\n");
@@ -35860,7 +35267,7 @@ PulseAudioButton	*MyWin::ParseJSONMicrophone(cJSON *json)
 	if(json != NULL)
 	{
 		char *name = json_parse_string(json, "name");
-		PulseAudioButton *b = AddAudioSource(0, name, name);
+		PulseAudioButton *b = AddAudioSource(0, strdup(name), strdup(name));
 		out = b;
 	}
 	return(out);
@@ -36327,6 +35734,10 @@ int sh;
 	success = json_parse_int(immediate, "initial x", im->initial_x);
 	success = json_parse_int(immediate, "initial y", im->initial_y);
 	success = json_parse_int(immediate, "layer", im->layer);
+	success = json_parse_int(immediate, "crop x", im->crop_x);
+	success = json_parse_int(immediate, "crop y", im->crop_y);
+	success = json_parse_int(immediate, "crop w", im->crop_w);
+	success = json_parse_int(immediate, "crop h", im->crop_h);
 	success = json_parse_double(immediate, "overall alpha", im->overall_alpha);
 	success = json_parse_int(immediate, "use as mask", im->use_as_mask);
 	if(im->text != NULL)
@@ -36337,6 +35748,31 @@ int sh;
 			im->text->value(text_value);
 		}
 	}
+	int anim_cnt = 0;
+	cJSON *anim = NULL;
+	cJSON *anims = json_parse_array(immediate, "Anim");
+	if(anims != NULL)
+	{
+		cJSON_ArrayForEach(anim, anims)
+		{
+			if(anim_cnt < 1024)
+			{
+				im->anim[anim_cnt] = new ImAnim();
+				success = json_parse_int(anim, "frame", im->anim[anim_cnt]->frame);
+				success = json_parse_double(anim, "xx", im->anim[anim_cnt]->xx);
+				success = json_parse_double(anim, "yy", im->anim[anim_cnt]->yy);
+				success = json_parse_double(anim, "ww", im->anim[anim_cnt]->ww);
+				success = json_parse_double(anim, "hh", im->anim[anim_cnt]->hh);
+				success = json_parse_double(anim, "angle", im->anim[anim_cnt]->angle);
+				success = json_parse_double(anim, "red", im->anim[anim_cnt]->red);
+				success = json_parse_double(anim, "green", im->anim[anim_cnt]->green);
+				success = json_parse_double(anim, "blue", im->anim[anim_cnt]->blue);
+				success = json_parse_double(anim, "alpha", im->anim[anim_cnt]->alpha);
+				anim_cnt++;
+			}
+		}
+	}
+	im->anim_cnt = anim_cnt;
 	if(def != NULL)
 	{
 		char *text_font_name = json_parse_string(immediate, "text font name");
@@ -36365,6 +35801,11 @@ int sh;
 		success = json_parse_int(immediate, "filled", def->filled);
 		success = json_parse_int(immediate, "box type", def->box_type);
 		success = json_parse_int(immediate, "point cnt", def->cnt);
+
+		im->anim_red = def->red;
+		im->anim_green = def->green;
+		im->anim_blue = def->blue;
+		im->anim_alpha = def->alpha;
 
 		cJSON *point = NULL;
 		cJSON *points = json_parse_array(immediate, "Point");
@@ -37540,94 +36981,6 @@ int	loop;
 	}
 }
 
-void	MyWin::Save(char *filename)
-{
-int	loop;
-
-	int fd = open(filename, O_CREAT | O_WRONLY, 0655);
-	if(fd > -1)
-	{
-		StoredMyWin *stored = new StoredMyWin(this);
-		int camera_cnt = 0;
-		for(loop = 0;loop < source_cnt;loop++)
-		{
-			Camera *cam = camera[loop];
-			if(cam != NULL)
-			{
-				camera_cnt++;
-			}
-		}
-		write(fd, &camera_cnt, sizeof(int));
-		for(loop = 0;loop < camera_cnt;loop++)
-		{
-			Camera *cam = camera[loop];
-			if(cam != NULL)
-			{
-				cam->Save(fd);
-			}
-		}
-		int mic_cnt = 0;
-		for(loop = 0;loop < pulse_microphone_cnt;loop++)
-		{
-			if(pulse_microphone[loop] != NULL)
-			{
-				mic_cnt++;
-			}
-		}
-		write(fd, &mic_cnt, sizeof(int));
-		for(loop = 0;loop < mic_cnt;loop++)
-		{
-			if(pulse_microphone[loop] != NULL)
-			{
-				pulse_microphone[loop]->Save(fd);
-			}
-		}
-		stored->Save(fd);
-		delete stored;
-		close(fd);
-	}
-}
-
-void	MyWin::Load(char *filename)
-{
-int	loop;
-
-	actively_loading = 1;
-	int fd = open(filename, O_RDONLY);
-	if(fd > -1)
-	{
-		StoredMyWin *stored = new StoredMyWin();
-		int camera_cnt = 0;
-		read(fd, &camera_cnt, sizeof(int));
-		Cleanup();
-		source_cnt = 0;
-		for(loop = 0;loop < camera_cnt;loop++)
-		{
-			LoadCamera(fd);
-		}
-		int orig_cnt = pulse_microphone_cnt;
-		int mic_cnt = 0;
-		read(fd, &mic_cnt, sizeof(int));
-		for(loop = 0;loop < mic_cnt;loop++)
-		{
-			LoadMicrophone(fd, orig_cnt);
-		}
-		stored->Load(fd);
-		RestoreFromStored(stored);
-		delete stored;
-		close(fd);
-		if(ptz_device_cnt > 0)
-		{
-			for(loop = 0;loop < PTZ_WINDOW_LIMIT;loop++)
-			{
-				SetupPTZWindow(loop);
-				add(ptz_window[loop]);
-			}
-		}
-	}
-	actively_loading = 0;
-}
-
 void	MyWin::Cleanup()
 {
 int	loop;
@@ -37655,279 +37008,6 @@ int	loop;
 			ptz_window[loop] = NULL;
 		}
 	}
-}
-
-void	MyWin::RestoreFromStored(StoredMyWin *in_win)
-{
-void	my_window_cb(void *v);
-int		loop;
-int		inner;
-
-	source_cnt = 0;
-	for(loop = 0;loop < in_win->source_cnt;loop++)
-	{
-		if(in_win->source[loop] != NULL)
-		{
-			if(strlen(in_win->source[loop]) > 0)
-			{
-				source[loop] = strdup(in_win->source[loop]);
-			}
-		}
-	}
-	source_cnt = in_win->source_cnt;
-	audio_source_cnt = 0;
-	for(loop = 0;loop < in_win->audio_source_cnt;loop++)
-	{
-		if(in_win->audio_source[loop] != NULL)
-		{
-			if(strlen(in_win->audio_source[loop]) > 0)
-			{
-				audio_source[loop] = strdup(in_win->audio_source[loop]);
-			}
-		}
-	}
-	source_cnt = in_win->source_cnt;
-	for(loop = 0;loop < 10;loop++)
-	{
-		split_bx[loop] = in_win->split_bx[loop];
-		split_by[loop] = in_win->split_by[loop];
-		split_rx[loop] = in_win->split_rx[loop];
-		split_ry[loop] = in_win->split_ry[loop];
-	}
-	requested_w = in_win->requested_w;
-	requested_h = in_win->requested_h;
-	output_width = in_win->output_width;
-	output_height = in_win->output_height;
-	display_width = in_win->display_width;
-	display_height = in_win->display_height;
-	speed_factor = in_win->speed_factor;
-	image_sx = in_win->image_sx;
-	image_sy = in_win->image_sy;
-	frame_scaling = in_win->frame_scaling;
-	crop_scaling = in_win->crop_scaling;
-	crop_output = in_win->crop_output;
-	crop_output_x = in_win->crop_output_x;
-	crop_output_y = in_win->crop_output_y;
-	use_mousewheel = in_win->use_mousewheel;
-	muxing = in_win->muxing;
-	no_scan = in_win->no_scan;
-	no_audio_scan = in_win->no_audio_scan;
-
-	retain_commands = in_win->retain_commands;
-	retain_cameras = in_win->retain_cameras;
-	retain_audio = in_win->retain_audio;
-	retain_ptz = in_win->retain_ptz;
-
-	strcpy(yolo_cfg_filename, in_win->yolo_cfg_filename);
-	strcpy(yolo_weights_filename, in_win->yolo_weights_filename);
-	strcpy(yolo_names_filename, in_win->yolo_names_filename);
-
-	forced_fps = in_win->forced_fps;
-	forced_interval = in_win->forced_interval;
-	restore_forced_interval = in_win->forced_interval;
-	minimum_fps = in_win->minimum_fps;
-	if(strlen(in_win->jpeg_streaming) > 0)
-	{
-		jpeg_streaming = strdup(in_win->jpeg_streaming);
-	}
-	else
-	{
-		jpeg_streaming = NULL;
-	}
-	jpeg_streaming_port = in_win->jpeg_streaming_port;
-	streaming = in_win->streaming;
-	strcpy(stream_url, in_win->stream_url);
-	stream_only = in_win->stream_only;
-	streaming_audio_quality = in_win->streaming_audio_quality;
-	embed_pip = in_win->embed_pip;
-	pip_x_position = in_win->pip_x_position;
-	pip_y_position = in_win->pip_y_position;
-	pip_red = in_win->pip_red;
-	pip_green = in_win->pip_green;
-	pip_blue = in_win->pip_blue;
-	pip_size = in_win->pip_size;
-	multipip = in_win->multipip;
-	grid_size = in_win->grid_size;
-	if(strlen(in_win->desktop_monitor) > 0)
-	{
-		desktop_monitor = strdup(in_win->desktop_monitor);
-	}
-	else
-	{
-		desktop_monitor = NULL;
-	}
-	audio = in_win->audio;
-	mute_audio = in_win->mute_audio;
-	strcpy(mux_format, in_win->mux_format);
-
-	encoding = in_win->encoding;
-	visible_debug = in_win->visible_debug;
-	for(loop = 0;loop < 100;loop++)
-	{
-		interest_x[loop] = in_win->interest_x[loop];
-		interest_y[loop] = in_win->interest_y[loop];
-	}
-	interest_cnt = in_win->interest_cnt;
-	timestamp = in_win->timestamp;
-	drag_start_x = in_win->drag_start_x;
-	drag_start_y = in_win->drag_start_y;
-	motion_debug = in_win->motion_debug;
-	split = in_win->split;
-
-	record_all = in_win->record_all;
-	record_desktop = in_win->record_desktop;
-	desktop_x = in_win->desktop_x;
-	desktop_y = in_win->desktop_y;
-	desktop_w = in_win->desktop_w;
-	desktop_h = in_win->desktop_h;
-	single_stream = in_win->single_stream;
-	follow_mode = in_win->follow_mode;
-	transition = in_win->transition;
-	strcpy(transition_plugin, in_win->transition_plugin);
-	
-	for(loop = 0;loop < NUMBER_OF_INTERFACES;loop++)
-	{
-		if(strlen(in_win->ptz_device_path[loop]) > 0)
-		{
-			ptz_device_path[loop] = strdup(in_win->ptz_device_path[loop]);
-			for(inner = 0;inner < NUMBER_OF_CAMERAS;inner++)
-			{
-				if(strlen(in_win->ptz_lock_alias[loop][inner]) > 0)
-				{
-					ptz_lock_alias[loop][inner] = strdup(in_win->ptz_lock_alias[loop][inner]);
-				}
-				else
-				{
-					ptz_lock_alias[loop][inner] = NULL;
-				}
-			}
-			if(strlen(in_win->ptz_alias[loop]) > 0)
-			{
-				ptz_alias[loop] = strdup(in_win->ptz_alias[loop]);
-			}
-			else
-			{
-				ptz_alias[loop] = NULL;
-			}
-			if(strlen(in_win->ptz_bind_alias[loop]) > 0)
-			{
-				ptz_bind_alias[loop] = strdup(in_win->ptz_bind_alias[loop]);
-			}
-			else
-			{
-				ptz_bind_alias[loop] = NULL;
-			}
-		}
-		else
-		{
-			ptz_device_path[loop] = NULL;
-		}
-	}
-	ptz_device_cnt = in_win->ptz_device_cnt;
-	ptz_zoom = in_win->ptz_zoom;
-	old_ptz_zoom = in_win->old_ptz_zoom;
-	ptz_panning = in_win->ptz_panning;
-	ptz_zooming = in_win->ptz_zooming;
-	ptz_focusing = in_win->ptz_focusing;
-	use_pan_speed = in_win->use_pan_speed;
-	use_tilt_speed = in_win->use_tilt_speed;
-	ptz_follow = in_win->ptz_follow;
-	ptz_little_speed = in_win->ptz_little_speed;
-	ptz_little_mode = in_win->ptz_little_mode;
-	ptz_reverse_horizontal = in_win->ptz_reverse_horizontal;
-	ptz_reverse_vertical = in_win->ptz_reverse_vertical;
-	ptz_joystick = in_win->ptz_joystick;
-	transmitting = in_win->transmitting;
-	image_memory = in_win->image_memory;
-
-	use_video_codec = in_win->use_video_codec;
-	use_audio_codec = in_win->use_audio_codec;
-	strcpy(use_extension, in_win->use_extension);
-	strcpy(use_container, in_win->use_container);
-	int	video_found = my_find_codec_by_id(0, use_video_codec, video_codec_name);
-	int	audio_found = my_find_codec_by_id(1, use_audio_codec, audio_codec_name);
-
-	for(loop = 0;loop < 128;loop++)
-	{
-		output_name[loop] = NULL;
-		output_path[loop] = NULL;
-		output_active[loop] = 0;
-	}
-	recognize_class_cnt = 0;
-	ReadClasses();
-	if(init_detect == 1)
-	{
-		SetupObjectDetection();
-	}
-	if((audio == 1) && (audio_thumbnail_cnt == 0))
-	{
-		pulse_mixer = NULL;
-		if(no_audio_scan == 0)
-		{
-			ScanPulse(0);
-		}
-		else
-		{
-			OpenNamedPulse();
-		}
-	}
-	HideButtons();
-	ShowButtons();
-	Fl::add_timeout(0.1, my_window_cb, this);
-}
-
-void	MyWin::LoadCamera(char *filename)
-{
-	StoredCamera *stored = new StoredCamera();
-	int fd = open(filename, O_RDONLY);
-	if(fd > -1)
-	{
-		read(fd, stored, sizeof(StoredCamera));
-		int cam_num = SetupCamera(stored->original_path, stored->alias, stored->width, stored->height, stored->font_sz);
-		if(cam_num > -1)
-		{
-			Camera *cam = camera[cam_num];
-			if(cam != NULL)
-			{
-				cam->RestoreFromStoredCamera(stored);
-				cam->LoadImmediate(fd);
-			}
-		}
-		else
-		{
-			SetErrorMessage("Cannot Open Camera");
-		}
-	}
-	delete stored;
-}
-
-void	MyWin::LoadCamera(int fd)
-{
-	StoredCamera *stored = new StoredCamera();
-	read(fd, stored, sizeof(StoredCamera));
-	int cam_num = -1;
-	if(strlen(stored->original_path) > 0)
-	{
-		cam_num = SetupCamera(stored->original_path, stored->alias, stored->width, stored->height, stored->font_sz);
-	}
-	else
-	{
-		cam_num = SetupCamera(stored->path, stored->alias, stored->width, stored->height, stored->font_sz);
-	}
-	if(cam_num > -1)
-	{
-		Camera *cam = camera[cam_num];
-		if(cam != NULL)
-		{
-			cam->RestoreFromStoredCamera(stored);
-			cam->LoadImmediate(fd);
-		}
-	}
-	else
-	{
-		SetErrorMessage("Cannot Open Camera");
-	}
-	delete stored;
 }
 
 int	MyWin::SetCodec()
@@ -42741,8 +41821,14 @@ int	loop;
 						if(win->misc_copy[win->editing_misc_outer] != NULL)
 						{
 							MiscCopy *misc = win->misc_copy[win->editing_misc_outer];
-							TextEditWindow *text_edit_window = new TextEditWindow(win, cam, misc);
-							text_edit_window->show();
+							if(win->text_edit_window != NULL)
+							{
+								win->text_edit_window->hide();
+								Fl::delete_widget(win->text_edit_window);
+								win->text_edit_window = NULL;
+							}
+							win->text_edit_window = new TextEditWindow(win, cam, misc);
+							win->text_edit_window->show();
 						}
 					}
 				}
@@ -43175,18 +42261,15 @@ static int 	stat_me = 0;
 						flag = HandleKeyboard(event, cam);
 						if(key == 'b')
 						{
-							void ndi_source_list(char *list[256], int& final_total);
-							char *list[256];
-							int final_total = 0;
-							ndi_source_list(list, final_total);
-							for(loop = 0;loop < final_total;loop++)
+							if(cam->anim_preview == 0)
 							{
-								printf("%d: [%s]\n", loop, list[loop]);
-								if(list[loop] != NULL)
-								{
-									free(list[loop]);
-								}
+								cam->anim_preview = 1;
 							}
+							else
+							{
+								cam->anim_preview = 0;
+							}
+							flag = 1;
 						}
 					}
 					break;
@@ -45511,7 +44594,18 @@ int			outer;
 								{
 									if(split == 0)
 									{
-										DrawAudioGraph(cam);
+										int no_go = 0;
+										if(anim_timeline != NULL)
+										{
+											if(anim_timeline->visible())
+											{
+												no_go = 1;
+											}
+										}
+										if(no_go == 0)
+										{
+											DrawAudioGraph(cam);
+										}
 									}
 								}
 								if(cam == DisplayedCamera())
@@ -47079,7 +46173,7 @@ int	loop;
 	if(interest_cnt > 0)
 	{
 		char filename[4096];
-		int r = my_file_chooser("Select an interest file", "*.json", "./interest.json", filename, 0, 1);
+		int r = my_file_chooser("Select an interest file", "*.json", "./", filename, 0, 1);
 		if(r > 0)
 		{
 			if(strlen(filename) > 0)
@@ -47829,7 +46923,7 @@ int	loop;
 				if((nxx + 253) > w())
 				{
 					nxx = 600;
-					nyy += (40);
+					nyy += 40;
 				}
 				char *use_str = NULL;
 				if(alias == NULL)
@@ -48890,7 +47984,7 @@ int	loop;
 	y_pos += y_inc;
 
 	open_standalone_button = new MenuButton(button_group, font_sz, 8, y_pos, button_sz, button_height, "Standalone Display");
-	open_standalone_button->copy_tooltip("Open a window displaying the currently displayed camera, without controls.,");
+	open_standalone_button->copy_tooltip("Open a window displaying the currently displayed camera, without controls.");
 	open_standalone_button->callback(open_standalone_cb, this);
 	y_pos += y_inc;
 
@@ -49522,7 +48616,7 @@ void	set_output_repopulate_cb(void *v)
 	win->redraw();
 }
 
-EditOutputWindow::EditOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh) : DragWindow(xx, yy, ww, hh, "Set Output")
+EditOutputWindow::EditOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh) : Dialog(xx, yy, ww, hh, "Edit Outputs")
 {
 void	hide_window_cb(Fl_Widget *w, void *v);
 
@@ -49532,13 +48626,8 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	my_window->LoadOutputPathList("outputs.txt");
 	int cnt = my_window->output_path_cnt;
 
-	int y_pos = 5;
-	Fl_Box *title_box = new Fl_Box(2, y_pos, w() - 4, 20, "Edit Outputs");
-	title_box->color(BLACK);
-	title_box->labelsize(12);
-	title_box->labelcolor(WHITE);
-	title_box->box(FL_FLAT_BOX);
-	y_pos += 30;
+	int new_yp = 20;
+	int y_pos = new_yp + 5;
 
 	Fl_Box *box1 = new Fl_Box(2, y_pos, 50, 20, "Active");
 	box1->color(BLACK);
@@ -49592,7 +48681,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 		"%S = current time in seconds\n\n"
 		"So: \"video_%Y_%M_%D_%h_%m_%s\" will produce \"video_2024_1_22_13_6_31.flv\" on January 22nd, 2024");
 
-	MyButton *add = new MyButton(75, hh - 35, 80, 20, "Add");
+	MyButton *add = new MyButton(75, hh - 25, 80, 20, "Add");
 	add->box(FL_NO_BOX);
 	add->color(WHITE);
 	add->labelcolor(YELLOW);
@@ -49601,7 +48690,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	add->copy_tooltip("Add another output path");
 	add->callback(set_output_add_cb, this);
 
-	MyButton *accept = new MyButton(470, hh - 35, 80, 20, "Accept");
+	MyButton *accept = new MyButton(470, hh - 25, 80, 20, "Accept");
 	accept->box(FL_NO_BOX);
 	accept->color(WHITE);
 	accept->labelcolor(YELLOW);
@@ -49610,7 +48699,7 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	accept->copy_tooltip("Accept the current output paths and close");
 	accept->callback(set_output_accept_cb, this);
 
-	MyButton *cancel = new MyButton(540, hh - 35, 80, 20, "Cancel");
+	MyButton *cancel = new MyButton(540, hh - 25, 80, 20, "Cancel");
 	cancel->box(FL_NO_BOX);
 	cancel->color(WHITE);
 	cancel->labelcolor(YELLOW);
@@ -49630,7 +48719,7 @@ int	EditOutputWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -49799,21 +48888,16 @@ int	loop;
 	}
 }
 
-SelectOutputWindow::SelectOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh) : DragWindow(xx, yy, ww, hh, "Select Output")
+SelectOutputWindow::SelectOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh) : Dialog(xx, yy, ww, hh, "Select Output")
 {
 void	hide_window_cb(Fl_Widget *w, void *v);
 
 	my_window = in_win;
 	last_x = 0;
 	last_y = 0;
+	int new_yp = 20;
 
-	Fl_Box *box = new Fl_Box(0, 0, 130, 20, "Outputs");
-	box->color(BLACK);
-	box->box(FL_FLAT_BOX);
-	box->labelcolor(WHITE);
-	box->labelsize(11);
-
-	pack = new Fl_Pack(5, 25, 120, hh - 60);
+	pack = new Fl_Pack(5, new_yp + 5, 120, hh - 60);
 	pack->box(FL_FRAME);
 	pack->color(GRAY);
 	pack->end();
@@ -49838,7 +48922,7 @@ int	SelectOutputWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -49923,14 +49007,15 @@ int	loop;
 
 // SECTION ************************************** OBJECT MENU **********************************************
 
-ObjectMenu::ObjectMenu(MyWin *in_win) : DragWindow(360, 60, 600, 920, "Objects")
+ObjectMenu::ObjectMenu(MyWin *in_win) : Dialog(360, 60, 600, 920, "Objects")
 {
 int		loop;
 char	*sorted_list[1024];
 
 	my_window = in_win;
+	int new_yp = 20;
 	int nxx = 10;
-	int nyy = 10;
+	int nyy = 10 + new_yp;
 	Fl_Box *object_box = new Fl_Box(0, 0, 600, 920);
 	object_box->box(FL_FRAME_BOX);
 	object_box->color(BLACK);
@@ -49955,7 +49040,7 @@ char	*sorted_list[1024];
 		nyy += 17;
 		if(nyy > 890)
 		{
-			nyy = 10;
+			nyy = 10 + new_yp;
 			nxx += 200;
 			if(nxx > 700)
 			{
@@ -49963,11 +49048,11 @@ char	*sorted_list[1024];
 			}
 		}
 	}
-	Fl_Box *box = new Fl_Box(w() - 190, 15, 180, 130);
+	Fl_Box *box = new Fl_Box(w() - 190, 15 + new_yp, 180, 130);
 	box->color(DARK_GRAY);
 	box->box(FL_FRAME_BOX);
 
-	int yp = 25;
+	int yp = 25 + new_yp;
 	object_clear_button = new MyButton(w() - 180, yp, 120, 20, "Clear");
 	object_clear_button->box(FL_NO_BOX);
 	object_clear_button->color(BLACK);
@@ -50027,258 +49112,6 @@ char	*sorted_list[1024];
 	object_prev_button->callback(prev_page_objects_cb, this);
 	object_prev_button->hide();
 	end();
-}
-
-// SECTION ************************************** STORED MY WINDOW **********************************************
-
-StoredMyWin::StoredMyWin()
-{
-}
-
-StoredMyWin::StoredMyWin(MyWin *in_win)
-{
-int	loop;
-int	inner;
-
-	for(loop = 0;loop < in_win->source_cnt;loop++)
-	{
-		int go = 1;
-		Camera *cam = in_win->camera[loop];
-		if(cam != NULL)
-		{
-			if(strlen(cam->original_path) > 0)
-			{
-				strcpy(source[loop], cam->original_path);
-				go = 0;
-			}
-		}
-		if(go == 1)
-		{
-			if(in_win->source[loop] != NULL)
-			{
-				strcpy(source[loop], in_win->source[loop]);
-			}
-			else
-			{
-				strcpy(source[loop], "");
-			}
-		}
-	}
-	for(loop = in_win->source_cnt;loop < 128;loop++)
-	{
-		strcpy(source[loop], "");
-	}
-	source_cnt = in_win->source_cnt;
-	for(loop = 0;loop < 128;loop++)
-	{
-		strcpy(audio_source[loop], "");
-	}
-	audio_source_cnt = 0;
-	for(loop = 0;loop < 128;loop++)
-	{
-		if(in_win->audio_thumbnail[loop] != NULL)
-		{
-			PulseAudioButton *audio = in_win->audio_thumbnail[loop];
-			if(strlen(audio->device_name) > 0)
-			{
-				strcpy(audio_source[loop], audio->device_name);
-				audio_source_cnt++;
-			}
-		}
-	}
-	for(loop = 0;loop < 10;loop++)
-	{
-		split_bx[loop] = in_win->split_bx[loop];
-		split_by[loop] = in_win->split_by[loop];
-		split_rx[loop] = in_win->split_rx[loop];
-		split_ry[loop] = in_win->split_ry[loop];
-	}
-	requested_w = in_win->requested_w;
-	requested_h = in_win->requested_h;
-	output_width = in_win->output_width;
-	output_height = in_win->output_height;
-	display_width = in_win->display_width;
-	display_height = in_win->display_height;
-	image_sx = in_win->image_sx;
-	image_sy = in_win->image_sy;
-	use_mousewheel = in_win->use_mousewheel;
-	muxing = in_win->muxing;
-	no_scan = in_win->no_scan;
-	no_audio_scan = in_win->no_audio_scan;
-	speed_factor = in_win->speed_factor;
-
-	strcpy(yolo_cfg_filename, in_win->yolo_cfg_filename);
-	strcpy(yolo_weights_filename, in_win->yolo_weights_filename);
-	strcpy(yolo_names_filename, in_win->yolo_names_filename);
-
-	forced_fps = in_win->forced_fps;
-	forced_interval = in_win->forced_interval;
-	restore_forced_interval = in_win->forced_interval;
-	minimum_fps = in_win->minimum_fps;
-	if(in_win->jpeg_streaming != NULL)
-	{
-		strcpy(jpeg_streaming, in_win->jpeg_streaming);
-	}
-	else
-	{
-		strcpy(jpeg_streaming, "");
-	}
-	frame_scaling = in_win->frame_scaling;
-	crop_scaling = in_win->crop_scaling;
-	crop_output = in_win->crop_output;
-	crop_output_x = in_win->crop_output_x;
-	crop_output_y = in_win->crop_output_y;
-	jpeg_streaming_port = in_win->jpeg_streaming_port;
-	streaming = in_win->streaming;
-	strcpy(stream_url, in_win->stream_url);
-	stream_only = in_win->stream_only;
-	streaming_audio_quality = in_win->streaming_audio_quality;
-	embed_pip = in_win->embed_pip;
-	pip_x_position = in_win->pip_x_position;
-	pip_y_position = in_win->pip_y_position;
-	pip_red = in_win->pip_red;
-	pip_green = in_win->pip_green;
-	pip_blue = in_win->pip_blue;
-	pip_size = in_win->pip_size;
-	multipip = in_win->multipip;
-	grid_size = in_win->grid_size;
-	if(in_win->desktop_monitor != NULL)
-	{
-		strcpy(desktop_monitor, in_win->desktop_monitor);
-	}
-	else
-	{
-		strcpy(desktop_monitor, "");
-	}
-	audio = in_win->audio;
-	mute_audio = in_win->mute_audio;
-	strcpy(mux_format, in_win->mux_format);
-
-	retain_commands = in_win->retain_commands;
-	retain_cameras = in_win->retain_cameras;
-	retain_audio = in_win->retain_audio;
-	retain_ptz = in_win->retain_ptz;
-
-	encoding = in_win->encoding;
-	visible_debug = in_win->visible_debug;
-	for(loop = 0;loop < 100;loop++)
-	{
-		interest_x[loop] = in_win->interest_x[loop];
-		interest_y[loop] = in_win->interest_y[loop];
-	}
-	interest_cnt = in_win->interest_cnt;
-	timestamp = in_win->timestamp;
-	drag_start_x = in_win->drag_start_x;
-	drag_start_y = in_win->drag_start_y;
-	motion_debug = in_win->motion_debug;
-	split = in_win->split;
-
-	record_all = in_win->record_all;
-	record_desktop = in_win->record_desktop;
-	desktop_x = in_win->desktop_x;
-	desktop_y = in_win->desktop_y;
-	desktop_w = in_win->desktop_w;
-	desktop_h = in_win->desktop_h;
-	single_stream = in_win->single_stream;
-	follow_mode = in_win->follow_mode;
-	transition = in_win->transition;
-	strcpy(transition_plugin, in_win->transition_plugin);
-	
-	for(loop = 0;loop < NUMBER_OF_INTERFACES;loop++)
-	{
-		if(in_win->ptz_device_path[loop] != NULL)
-		{
-			strcpy(ptz_device_path[loop], in_win->ptz_device_path[loop]);
-			for(inner = 0;inner < NUMBER_OF_CAMERAS;inner++)
-			{
-				if(in_win->ptz_lock_alias[loop][inner] != NULL)
-				{
-					strcpy(ptz_lock_alias[loop][inner], in_win->ptz_lock_alias[loop][inner]);
-				}
-				else
-				{
-					strcpy(ptz_lock_alias[loop][inner], "");
-				}
-			}
-			if(in_win->ptz_alias[loop] != NULL)
-			{
-				strcpy(ptz_alias[loop], in_win->ptz_alias[loop]);
-			}
-			else
-			{
-				strcpy(ptz_alias[loop], "");
-			}
-			if(in_win->ptz_bind_alias[loop] != NULL)
-			{
-				strcpy(ptz_bind_alias[loop], in_win->ptz_bind_alias[loop]);
-			}
-			else
-			{
-				strcpy(ptz_bind_alias[loop], "");
-			}
-		}
-		else
-		{
-			strcpy(ptz_device_path[loop], "");
-		}
-	}
-	ptz_device_cnt = in_win->ptz_device_cnt;
-	ptz_zoom = in_win->ptz_zoom;
-	old_ptz_zoom = in_win->old_ptz_zoom;
-	ptz_panning = in_win->ptz_panning;
-	ptz_zooming = in_win->ptz_zooming;
-	ptz_focusing = in_win->ptz_focusing;
-	use_pan_speed = in_win->use_pan_speed;
-	use_tilt_speed = in_win->use_tilt_speed;
-	ptz_follow = in_win->ptz_follow;
-	ptz_little_speed = in_win->ptz_little_speed;
-	ptz_little_mode = in_win->ptz_little_mode;
-	ptz_reverse_horizontal = in_win->ptz_reverse_horizontal;
-	ptz_reverse_vertical = in_win->ptz_reverse_vertical;
-	ptz_joystick = in_win->ptz_joystick;
-	transmitting = in_win->transmitting;
-	image_memory = in_win->image_memory;
-
-	use_video_codec = in_win->use_video_codec;
-	use_audio_codec = in_win->use_audio_codec;
-	strcpy(use_extension, in_win->use_extension);
-	strcpy(use_container, in_win->use_container);
-	int	video_found = my_find_codec_by_id(0, use_video_codec, video_codec_name);
-	int	audio_found = my_find_codec_by_id(1, use_audio_codec, audio_codec_name);
-}
-
-StoredMyWin::~StoredMyWin()
-{
-}
-
-void	StoredMyWin::Save(char *filename)
-{
-	int fd = open(filename, O_CREAT | O_WRONLY, 0655);
-	if(fd > -1)
-	{
-		write(fd, this, sizeof(StoredMyWin));
-		close(fd);
-	}
-}
-
-void	StoredMyWin::Save(int fd)
-{
-	write(fd, this, sizeof(StoredMyWin));
-}
-
-void	StoredMyWin::Load(char *filename)
-{
-	int fd = open(filename, O_RDONLY);
-	if(fd > -1)
-	{
-		read(fd, this, sizeof(StoredMyWin));
-		close(fd);
-	}
-}
-
-void	StoredMyWin::Load(int fd)
-{
-	read(fd, this, sizeof(StoredMyWin));
 }
 
 void	json_get_colors(cJSON *json, char *color_name, uchar& red, uchar& green, uchar& blue)
@@ -50401,7 +49234,7 @@ int			loop;
 			char *str = json_parse_string(json, "font");
 			if(str != NULL)
 			{
-				Fl::set_font(FL_HELVETICA, str);
+				Fl::set_font(FL_HELVETICA, strdup(str));
 			}
 			cJSON_Delete(json);
 		}
@@ -50446,6 +49279,7 @@ ImDefault::ImDefault()
 	pt_type = NULL;
 	strcpy(font_name, "Sans");
 	strcpy(image_file_path, "");
+	strcpy(freehand_filename, "");
 }
 
 ImDefault::~ImDefault()
@@ -51872,17 +50706,321 @@ int		loop;
 	}
 }
 
+AnimButton::AnimButton(MyWin *in_win, int xx, int yy) : Fl_Box(xx, yy, 10, 10)
+{
+	box(FL_NO_BOX);
+	color(BLACK);
+	align(FL_ALIGN_BOTTOM | FL_ALIGN_CENTER);
+	labelcolor(WHITE);
+	labelsize(8);
+
+	frame = 0;
+}
+
+AnimButton::~AnimButton()
+{
+}
+
+void	AnimButton::draw()
+{
+char	buf[256];
+
+	fl_color(WHITE);
+	fl_line(x(), y(), x() + 5, y() + 10);
+	fl_line(x() + 5, y() + 10, x() - 5, y() + 10);
+	fl_line(x() - 5, y() + 10, x(), y());
+
+	sprintf(buf, "%d", frame);
+	fl_font(FL_HELVETICA, 8);
+	fl_draw(buf, x() - 10, y() + 12, 20, 10, FL_ALIGN_CENTER);
+}
+
+int		AnimButton::handle(int event)
+{
+	int flag = 0;
+	if(flag == 0)
+	{
+		flag = Fl_Box::handle(event);
+	}
+	return(flag);
+}
+
+void	anim_timeline_set_start_cb(Fl_Widget *w, void *v)
+{
+	AnimTimeline *anim = (AnimTimeline *)v;
+	MyInput *in = (MyInput *)w;
+	char *val = (char *)in->value();
+	if(val != NULL)
+	{
+		int nn = atoi(val);
+		if(nn > 0)
+		{
+			anim->start = nn;
+			int calced_frame = anim->start + (int)(((double)anim->range / (double)anim->w()) * (double)anim->frame_indicator->x());
+			anim->current_frame = calced_frame;
+		}
+	}
+	in->hide();
+	anim->redraw();
+}
+
+void	anim_timeline_set_range_cb(Fl_Widget *w, void *v)
+{
+	AnimTimeline *anim = (AnimTimeline *)v;
+	MyInput *in = (MyInput *)w;
+	char *val = (char *)in->value();
+	if(val != NULL)
+	{
+		int nn = atoi(val);
+		if((nn > 0) && (nn > anim->start))
+		{
+			anim->range = nn - anim->start;
+			int calced_frame = anim->start + (int)(((double)anim->range / (double)anim->w()) * (double)anim->frame_indicator->x());
+			anim->current_frame = calced_frame;
+		}
+	}
+	in->hide();
+	anim->redraw();
+}
+
+void	anim_timeline_preview_cb(Fl_Widget *w, void *v)
+{
+	MyButton *preview = (MyButton *)w;
+	AnimTimeline *anim = (AnimTimeline *)v;
+	Camera *cam = anim->my_window->DisplayedCamera();
+	if(cam != NULL)
+	{
+		if(cam->anim_preview == 0)
+		{
+			anim->Reset();
+			cam->anim_preview = 1;
+			preview->copy_label("@square");
+		}
+		else
+		{
+			cam->anim_preview = 0;
+			preview->copy_label("@>");
+		}
+	}
+}
+
+AnimTimeline::AnimTimeline(MyWin *in_win, int xx, int yy, int ww, int hh) : Fl_Window(xx, yy, ww, hh, "Animation Timeline")
+{
+	my_window = in_win;
+	box(FL_FLAT_BOX);
+	color(BLACK);
+	frame_indicator = new AnimButton(in_win, 1, 5);
+	range = 1000;
+	start = 1;
+	current_frame = 1;
+	input = new MyInput(2, 24, 30, 12, "");
+	input->textsize(8);
+	input->box(FL_FRAME_BOX);
+	input->color(YELLOW);
+	input->textcolor(BLACK);
+	input->hide();
+	preview_button = new MyButton((w() / 2) - 5, 24, 10, 10, "@>");
+	preview_button->box(FL_FLAT_BOX);
+	preview_button->color(BLACK);
+	preview_button->labelcolor(YELLOW);
+	preview_button->labelsize(8);
+	preview_button->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	preview_button->callback(anim_timeline_preview_cb, this);
+	end();
+}
+
+AnimTimeline::~AnimTimeline()
+{
+}
+
+void	AnimTimeline::draw()
+{
+char	buf[256];
+int		outer;
+int		inner;
+
+	frame_indicator->frame = current_frame;
+	Fl_Window::draw();
+	fl_color(YELLOW);
+	fl_line(1, 0, 1, 20);
+	fl_line(1, 5, w() - 2, 5);
+	fl_line(w() - 2, 0, w() - 2, 20);
+
+	if((!input->visible()) || (input->x() > (w() / 2)))
+	{
+		sprintf(buf, "%d", start);
+		fl_font(FL_HELVETICA, 8);
+		fl_draw(buf, 2, 24, 20, 10, FL_ALIGN_CENTER);
+	}
+	if((!input->visible()) || (input->x() < (w() / 2)))
+	{
+		sprintf(buf, "%d", start + range);
+		fl_font(FL_HELVETICA, 8);
+		fl_draw(buf, w() - 30, 24, 20, 10, FL_ALIGN_CENTER);
+	}
+	Camera *cam = my_window->DisplayedCamera();
+	if(cam != NULL)
+	{
+		for(outer = 0;outer < cam->immediate_cnt;outer++)
+		{
+			Immediate *im = cam->immediate_list[outer];
+			if(im != NULL)
+			{
+				for(inner = 0;inner < im->anim_cnt;inner++)
+				{
+					if(im->anim[inner] != NULL)
+					{
+						int frame = im->anim[inner]->frame;
+						fl_color(FL_RED);
+						fl_rectf(frame - 1, 3, 4, 4);
+					}
+				}
+			}
+		}
+	}
+}
+
+int		AnimTimeline::handle(int event)
+{
+char	buf[256];
+
+	int flag = 0;
+	if(event == FL_PUSH)
+	{
+		int xx = Fl::event_x();
+		int yy = Fl::event_y();
+		if(yy < 18)
+		{
+			int calced_frame = start + (int)(((double)range / (double)w()) * (double)xx);
+			current_frame = calced_frame;
+			frame_indicator->resize(xx, frame_indicator->y(), frame_indicator->w(), frame_indicator->h());
+			frame_indicator->redraw();
+			input->hide();
+			redraw();
+			flag = 1;
+		}
+		else if((xx > 0) && (xx < 30))
+		{
+			sprintf(buf, "%d", start);
+			input->value(buf);
+			input->resize(2, 24, input->w(), input->h());
+			input->callback(anim_timeline_set_start_cb, this);
+			input->show();
+		}
+		else if((xx > w() - 30) && (xx < w()))
+		{
+			sprintf(buf, "%d", start + range);
+			input->value(buf);
+			input->resize(w() - 30, 24, input->w(), input->h());
+			input->callback(anim_timeline_set_range_cb, this);
+			input->show();
+		}
+	}
+	else if(event == FL_DRAG)
+	{
+		int xx = Fl::event_x();
+		if((xx > 0) && (xx < w()))
+		{
+			int calced_frame = start + (int)(((double)range / (double)w()) * (double)xx);
+			current_frame = calced_frame;
+			frame_indicator->resize(xx, frame_indicator->y(), frame_indicator->w(), frame_indicator->h());
+			frame_indicator->redraw();
+			redraw();
+		}
+		flag = 1;
+	}
+	if(flag == 0)
+	{
+		flag = Fl_Window::handle(event);
+	}
+	return(event);
+}
+
+void	AnimTimeline::Reset()
+{
+int	loop;
+
+	Camera *cam = my_window->DisplayedCamera();
+	if(cam != NULL)
+	{
+		for(loop = 0;loop < cam->immediate_cnt;loop++)
+		{
+			Immediate *im = cam->immediate_list[loop];
+			if(im != NULL)
+			{
+				im->anim_index = 0;
+				im->anim_frame = 0;
+				im->anim_complete = 0;
+			}
+		}
+	}
+}
+
+ImAnim::ImAnim()
+{
+}
+
+ImAnim::ImAnim(int in_frame, Immediate *in_im)
+{
+int	use_red;
+int	use_green;
+int	use_blue;
+int	use_alpha;
+
+	frame = in_frame;
+	xx = in_im->x();
+	yy = in_im->y();
+	ww = in_im->w();
+	hh = in_im->h();
+	angle = in_im->angle;
+
+	in_im->GetColor(use_red, use_green, use_blue, use_alpha);
+	red = use_red;
+	green = use_green;
+	blue = use_blue;
+	alpha = use_alpha;
+}
+
+ImAnim::~ImAnim()
+{
+}
+
+void	ImAnim::Edit(int in_frame, Immediate *in_im)
+{
+int	use_red;
+int	use_green;
+int	use_blue;
+int	use_alpha;
+
+	frame = in_frame;
+	xx = in_im->x();
+	yy = in_im->y();
+	ww = in_im->w();
+	hh = in_im->h();
+	angle = in_im->angle;
+
+	in_im->GetColor(use_red, use_green, use_blue, use_alpha);
+	red = use_red;
+	green = use_green;
+	blue = use_blue;
+	alpha = use_alpha;
+}
+
 Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : MyGroup(xx, yy, ww, hh)
 {
+int	loop;
+
 	my_window = in_win;
 	my_camera = in_cam;
 	idw = in_idw;
+	inw = NULL;
 	immediate_type = idw->mode;
 	layer = 0;
 	if(my_camera != NULL)
 	{
 		layer = my_camera->edit_layer;
 	}
+	name = NULL;
 	draw_it = 1;
 	initial_x = 0;
 	initial_y = 0;
@@ -51908,6 +51046,42 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_i
 	crop_w = 0;
 	crop_h = 0;
 	angle = 0.0;
+	anim_flag = 0;
+	anim_index = 0;
+	anim_frame = 0;
+	anim_complete = 0;
+	anim_x = x();
+	anim_y = y();
+	anim_ix = 0.0;
+	anim_iy = 0.0;
+	anim_iangle = 0.0;
+	anim_w = w();
+	anim_h = h();
+	anim_iw = 0.0;
+	anim_ih = 0.0;
+	anim_red = 0.0;
+	anim_green = 0.0;
+	anim_blue = 0.0;
+	anim_alpha = 0.0;
+	anim_ired = 0.0;
+	anim_igreen = 0.0;
+	anim_iblue = 0.0;
+	anim_ialpha = 0.0;
+	anim_looping = 0;
+	for(loop = 0;loop < 1024;loop++)
+	{
+		anim[loop] = NULL;
+	}
+	anim_cnt = 0;
+	save_initial = 0;
+	save_x = 0;
+	save_y = 0;
+	save_w = 0;
+	save_h = 0;
+	save_red = 0;
+	save_green = 0;
+	save_blue = 0;
+	save_alpha = 0;
 
 	text = NULL;
 	line = NULL;
@@ -52004,10 +51178,14 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_i
 
 Immediate::Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int hh) : MyGroup(xx, yy, ww, hh)
 {
+int	loop;
+
 	my_window = in_win;
 	my_camera = in_cam;
 	idw = NULL;
+	inw = NULL;
 	immediate_type = -1;
+	name = NULL;
 	layer = my_camera->edit_layer;
 	draw_it = 1;
 	initial_x = 0;
@@ -52025,6 +51203,48 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int 
 	scale_h = 1.0;
 	orig_w = ww;
 	orig_h = hh;
+	crop_x = 0;
+	crop_y = 0;
+	crop_w = 0;
+	crop_h = 0;
+	actively_drawing = 0;
+	if(my_camera != NULL)
+	{
+		relative_x = xx - my_camera->image_sx;
+		relative_y = yy - my_camera->image_sy;
+	}
+	anim_flag = 0;
+	anim_index = 0;
+	anim_frame = 0;
+	anim_complete = 0;
+	anim_x = x();
+	anim_y = y();
+	anim_ix = 0.0;
+	anim_iy = 0.0;
+	anim_iangle = 0.0;
+	anim_w = w();
+	anim_h = h();
+	anim_iw = 0.0;
+	anim_ih = 0.0;
+	anim_ired = 0.0;
+	anim_igreen = 0.0;
+	anim_iblue = 0.0;
+	anim_ialpha = 0.0;
+	anim_looping = 0;
+	for(loop = 0;loop < 1024;loop++)
+	{
+		anim[loop] = NULL;
+	}
+	anim_cnt = 0;
+	save_initial = 0;
+	save_x = 0;
+	save_y = 0;
+	save_w = 0;
+	save_h = 0;
+	save_red = 0;
+	save_green = 0;
+	save_blue = 0;
+	save_alpha = 0;
 
 	text = NULL;
 	line = NULL;
@@ -52041,6 +51261,8 @@ Immediate::Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int 
 
 Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(), old->w(), old->h())
 {
+int	loop;
+
 	int xx = old->x();
 	int yy = old->y();
 	int ww = old->w();
@@ -52048,6 +51270,16 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 	my_window = old->my_window;
 	my_camera = in_cam;
 	idw = old->idw;
+	inw = NULL;
+	if(name != NULL)
+	{
+		free(name);
+		name = NULL;
+	}
+	if(old->name != NULL)
+	{
+		name = strdup(old->name);
+	}
 	immediate_type = old->immediate_type;
 	layer = 0;
 	if(my_camera != NULL)
@@ -52079,6 +51311,38 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 	crop_w = old->crop_w;
 	crop_h = old->crop_h;
 	angle = old->angle;
+	anim_flag = 0;
+	anim_index = 0;
+	anim_frame = 0;
+	anim_complete = 0;
+	anim_x = x();
+	anim_y = y();
+	anim_ix = 0.0;
+	anim_iy = 0.0;
+	anim_iangle = 0.0;
+	anim_w = w();
+	anim_h = h();
+	anim_iw = 0.0;
+	anim_ih = 0.0;
+	anim_ired = 0.0;
+	anim_igreen = 0.0;
+	anim_iblue = 0.0;
+	anim_ialpha = 0.0;
+	anim_looping = 0;
+	for(loop = 0;loop < 1024;loop++)
+	{
+		anim[loop] = NULL;
+	}
+	anim_cnt = 0;
+	save_initial = 0;
+	save_x = 0;
+	save_y = 0;
+	save_w = 0;
+	save_h = 0;
+	save_red = 0;
+	save_green = 0;
+	save_blue = 0;
+	save_alpha = 0;
 	if(my_camera != NULL)
 	{
 		relative_x = xx - my_camera->image_sx;
@@ -52152,21 +51416,522 @@ Immediate::Immediate(Immediate *old, Camera *in_cam) : MyGroup(old->x(), old->y(
 
 Immediate::~Immediate()
 {
+int	loop;
+
 	if(my_window != NULL)
 	{
-		if(my_window->resize_frame->use == this)
+		if(my_window->resize_frame != NULL)
 		{
-			my_window->resize_frame->hide();
-			my_window->resize_frame->use = NULL;
+			if(my_window->resize_frame->use == this)
+			{
+				my_window->resize_frame->hide();
+				my_window->resize_frame->use = NULL;
+			}
+		}
+	}
+	if(inw != NULL)
+	{
+		inw->hide();
+		Fl::delete_widget(inw);
+		inw = NULL;
+	}
+	if(name != NULL)
+	{
+		free(name);
+		name = NULL;
+	}
+	for(loop = 0;loop < anim_cnt;loop++)
+	{
+		if(anim[loop] != NULL)
+		{
+			delete anim[loop];
+			anim[loop] = NULL;
+		}
+	}
+	anim_cnt = 0;
+}
+
+void	Immediate::SaveAsJSON(FILE *fp)
+{
+int	inner;
+
+	ImDefault *use_default = NULL;
+
+	if(text != NULL) use_default = (ImDefault *)text;
+	if(line != NULL) use_default = (ImDefault *)line;
+	if(rectangle != NULL) use_default = (ImDefault *)rectangle;
+	if(rectangle_passthru != NULL) use_default = (ImDefault *)rectangle_passthru;
+	if(ellipse != NULL) use_default = (ImDefault *)ellipse;
+	if(ellipse_passthru != NULL) use_default = (ImDefault *)ellipse_passthru;
+	if(freehand != NULL) use_default = (ImDefault *)freehand;
+	if(pixelate != NULL) use_default = (ImDefault *)pixelate;
+	if(image_im != NULL) use_default = (ImDefault *)image_im;
+
+	fprintf(fp, "\t\t\t\"sx\": %d,\n", x());
+	fprintf(fp, "\t\t\t\"sy\": %d,\n", y());
+	fprintf(fp, "\t\t\t\"sw\": %d,\n", w());
+	fprintf(fp, "\t\t\t\"sh\": %d,\n", h());
+	fprintf(fp, "\t\t\t\"im type\": %d,\n", im_type);
+	fprintf(fp, "\t\t\t\"draw it\": %d,\n", draw_it);
+	fprintf(fp, "\t\t\t\"immediate type\": %d,\n", immediate_type);
+	fprintf(fp, "\t\t\t\"initial x\": %d,\n", initial_x);
+	fprintf(fp, "\t\t\t\"initial y\": %d,\n", initial_y);
+	fprintf(fp, "\t\t\t\"layer\": %d,\n", layer);
+	fprintf(fp, "\t\t\t\"crop x\": %d,\n", crop_x);
+	fprintf(fp, "\t\t\t\"crop y\": %d,\n", crop_y);
+	fprintf(fp, "\t\t\t\"crop w\": %d,\n", crop_w);
+	fprintf(fp, "\t\t\t\"crop h\": %d,\n", crop_h);
+	fprintf(fp, "\t\t\t\"overall alpha\": %f,\n", overall_alpha);
+	fprintf(fp, "\t\t\t\"use as mask\": %d,\n", use_as_mask);
+	if(use_default == text)
+	{
+		fprintf(fp, "\t\t\t\"text value\": \"%s\",\n", text->value());
+		fprintf(fp, "\t\t\t\"text font name\": \"%s\",\n", text->font_name);
+	}
+	fprintf(fp, "\t\t\t\"image file path\": \"%s\",\n", use_default->image_file_path);
+	fprintf(fp, "\t\t\t\"freehand filename\": \"%s\",\n", use_default->freehand_filename);
+	fprintf(fp, "\t\t\t\"width\": %d,\n", use_default->width);
+	fprintf(fp, "\t\t\t\"red\": %d,\n", use_default->red);
+	fprintf(fp, "\t\t\t\"green\": %d,\n", use_default->green);
+	fprintf(fp, "\t\t\t\"blue\": %d,\n", use_default->blue);
+	fprintf(fp, "\t\t\t\"alpha\": %d,\n", use_default->alpha);
+	fprintf(fp, "\t\t\t\"style\": %d,\n", use_default->style);
+	fprintf(fp, "\t\t\t\"shape\": %d,\n", use_default->shape);
+	fprintf(fp, "\t\t\t\"use size\": %d,\n", use_default->use_size);
+	fprintf(fp, "\t\t\t\"filled\": %d,\n", use_default->filled);
+	fprintf(fp, "\t\t\t\"box type\": %d,\n", use_default->box_type);
+	fprintf(fp, "\t\t\t\"point cnt\": %d,\n", use_default->cnt);
+	fprintf(fp, "\t\t\t\"Point\": [\n");
+	for(inner = 0;inner < use_default->cnt;inner++)
+	{
+		fprintf(fp, "\t\t\t\t{\n");
+		fprintf(fp, "\t\t\t\t\t\"xx\": %d,\n", use_default->xx[inner]);
+		fprintf(fp, "\t\t\t\t\t\"yy\": %d,\n", use_default->yy[inner]);
+		fprintf(fp, "\t\t\t\t\t\"pt type\": %d\n", use_default->pt_type[inner]);
+		if(inner == use_default->cnt - 1)
+		{
+			fprintf(fp, "\t\t\t\t}\n");
+		}
+		else
+		{
+			fprintf(fp, "\t\t\t\t},\n");
+		}
+	}
+	fprintf(fp, "\t\t\t],\n");
+	fprintf(fp, "\t\t\t\"key\": %d,\n", use_default->key);
+	fprintf(fp, "\t\t\t\"italic\": %d,\n", use_default->italic);
+	fprintf(fp, "\t\t\t\"bold\": %d,\n", use_default->bold);
+	fprintf(fp, "\t\t\t\"outline\": %d,\n", use_default->outline);
+	fprintf(fp, "\t\t\t\"font alpha\": %d,\n", use_default->font_alpha);
+	fprintf(fp, "\t\t\t\"background red\": %d,\n", use_default->background_red);
+	fprintf(fp, "\t\t\t\"background green\": %d,\n", use_default->background_green);
+	fprintf(fp, "\t\t\t\"background blue\": %d,\n", use_default->background_blue);
+	fprintf(fp, "\t\t\t\"background alpha\": %d,\n", use_default->background_alpha);
+	fprintf(fp, "\t\t\t\"outline alpha\": %d,\n", use_default->outline_alpha);
+
+	fprintf(fp, "\t\t\t\"anim cnt\": %d,\n", anim_cnt);
+	fprintf(fp, "\t\t\t\"Anim\": [\n");
+	if(anim_cnt > 0)
+	{
+		for(inner = 0;inner < anim_cnt;inner++)
+		{
+			fprintf(fp, "\t\t\t\t{\n");
+			if(anim[inner] != NULL)
+			{
+				ImAnim *my_anim = anim[inner];
+				fprintf(fp, "\t\t\t\t\t\"frame\": %d,\n", my_anim->frame);
+				fprintf(fp, "\t\t\t\t\t\"xx\": %f,\n", my_anim->xx);
+				fprintf(fp, "\t\t\t\t\t\"yy\": %f,\n", my_anim->yy);
+				fprintf(fp, "\t\t\t\t\t\"ww\": %f,\n", my_anim->ww);
+				fprintf(fp, "\t\t\t\t\t\"hh\": %f,\n", my_anim->hh);
+				fprintf(fp, "\t\t\t\t\t\"angle\": %f,\n", my_anim->angle);
+				fprintf(fp, "\t\t\t\t\t\"red\": %f,\n", my_anim->red);
+				fprintf(fp, "\t\t\t\t\t\"green\": %f,\n", my_anim->green);
+				fprintf(fp, "\t\t\t\t\t\"blue\": %f,\n", my_anim->blue);
+				fprintf(fp, "\t\t\t\t\t\"alpha\": %f\n", my_anim->alpha);
+			}
+			if(inner == anim_cnt - 1)
+			{
+				fprintf(fp, "\t\t\t\t}\n");
+			}
+			else
+			{
+				fprintf(fp, "\t\t\t\t},\n");
+			}
+		}
+	}
+	fprintf(fp, "\t\t\t]\n");
+}
+
+void	Immediate::SetColor(int red, int green, int blue, int alpha)
+{
+	if(text != NULL)
+	{
+		text->red = (uchar)red;
+		text->green = (uchar)green;
+		text->blue = (uchar)blue;
+		text->alpha = (uchar)alpha;
+	}
+	if(line != NULL)
+	{
+		line->red = (uchar)red;
+		line->green = (uchar)green;
+		line->blue = (uchar)blue;
+		line->alpha = (uchar)alpha;
+	}
+	if(rectangle != NULL)
+	{
+		rectangle->red = (uchar)red;
+		rectangle->green = (uchar)green;
+		rectangle->blue = (uchar)blue;
+		rectangle->alpha = (uchar)alpha;
+	}
+	if(ellipse != NULL)
+	{
+		ellipse->red = (uchar)red;
+		ellipse->green = (uchar)green;
+		ellipse->blue = (uchar)blue;
+		ellipse->alpha = (uchar)alpha;
+	}
+	if(freehand != NULL)
+	{
+		freehand->red = (uchar)red;
+		freehand->green = (uchar)green;
+		freehand->blue = (uchar)blue;
+		freehand->alpha = (uchar)alpha;
+	}
+}
+
+void	Immediate::GetColor(int& red, int& green, int& blue, int& alpha)
+{
+	if(text != NULL)
+	{
+		red = text->red;
+		green = text->green;
+		blue = text->blue;
+		alpha = text->alpha;
+	}
+	if(line != NULL)
+	{
+		red = line->red;
+		green = line->green;
+		blue = line->blue;
+		alpha = line->alpha;
+	}
+	if(rectangle != NULL)
+	{
+		red = rectangle->red;
+		green = rectangle->green;
+		blue = rectangle->blue;
+		alpha = rectangle->alpha;
+	}
+	if(ellipse != NULL)
+	{
+		red = ellipse->red;
+		green = ellipse->green;
+		blue = ellipse->blue;
+		alpha = ellipse->alpha;
+	}
+	if(freehand != NULL)
+	{
+		red = freehand->red;
+		green = freehand->green;
+		blue = freehand->blue;
+		alpha = freehand->alpha;
+	}
+}
+
+void	Immediate::ResetAnimParameters()
+{
+	anim_ix = 0.0;
+	anim_iy = 0.0;
+	anim_iw = 0.0;
+	anim_ih = 0.0;
+	anim_ired = 0.0;
+	anim_igreen = 0.0;
+	anim_iblue = 0.0;
+	anim_ialpha = 0.0;
+}
+
+void	Immediate::RestoreInitialParameters()
+{
+	if(save_initial == 1)
+	{
+		ResetAnimParameters();
+		resize(save_x, save_y, save_w, save_h);
+		SetColor(save_red, save_green, save_blue, save_alpha);
+		anim_x = save_x;
+		anim_y = save_y;
+		anim_w = save_w;
+		anim_h = save_h;
+		anim_red = save_red;
+		anim_green = save_green;
+		anim_blue = save_blue;
+		anim_alpha = save_alpha;
+	}
+}
+
+void	Immediate::SaveParameters()
+{
+	save_initial = 1;
+	save_x = x();
+	save_y = y();
+	save_w = w();
+	save_h = h();
+	GetColor(save_red, save_green, save_blue, save_alpha);
+}
+
+void	Immediate::KeyFrame()
+{
+int red, green, blue, alpha;
+
+	Camera *cam = my_camera;
+	if(cam != NULL)
+	{
+		if(anim_index == 0)
+		{
+			ResetAnimParameters();
+			resize(anim[0]->xx, anim[0]->yy, anim[0]->ww, anim[0]->hh);
+			SetColor(anim[0]->red, anim[0]->green, anim[0]->blue, anim[0]->alpha);
+		}
+		else
+		{
+			double diff_frames = (double)abs(anim[anim_index]->frame - anim_frame);
+			if(diff_frames > 0)
+			{
+				anim_ix = (anim[anim_index]->xx - (double)x()) / diff_frames;
+				anim_iy = (anim[anim_index]->yy - (double)y()) / diff_frames;
+				anim_iw = (anim[anim_index]->ww - (double)w()) / diff_frames;
+				anim_ih = (anim[anim_index]->hh - (double)h()) / diff_frames;
+				GetColor(red, green, blue, alpha);
+				anim_ired = (anim[anim_index]->red - (double)red) / diff_frames;
+				anim_igreen = (anim[anim_index]->green - (double)green) / diff_frames;
+				anim_iblue = (anim[anim_index]->blue - (double)blue) / diff_frames;
+				anim_ialpha = (anim[anim_index]->alpha - (double)alpha) / diff_frames;
+			}
 		}
 	}
 }
 
-void	Immediate::draw()
+void	Immediate::MeetKey()
+{
+	Camera *cam = my_camera;
+	if(cam != NULL)
+	{
+		if((anim_cnt > 0) && (anim_complete == 0))
+		{
+			if(anim_index == 0)
+			{
+				RestoreInitialParameters();
+			}
+			if(anim_index < anim_cnt)
+			{
+				if(anim_frame == anim[anim_index]->frame)
+				{
+					if(anim_frame != 0)
+					{
+						anim_index++;
+					}
+					if(anim_index < anim_cnt)
+					{
+						KeyFrame();
+					}
+				}
+				else
+				{
+					anim_x += anim_ix;
+					anim_y += anim_iy;
+					angle += anim_iangle;
+					anim_w += anim_iw;
+					anim_h += anim_ih;
+					anim_red += anim_ired;
+					anim_green += anim_igreen;
+					anim_blue += anim_iblue;
+					anim_alpha += anim_ialpha;
+					SetColor(anim_red, anim_green, anim_blue, anim_alpha);
+					resize(anim_x, anim_y, anim_w, anim_h);
+				}
+			}
+			else
+			{
+				ResetAnimParameters();
+				anim_index = 0;
+				if(anim_looping == 1)
+				{
+					anim_frame = -1;
+					anim_complete = 0;
+				}
+				else
+				{
+					anim_complete = 1;
+				}
+			}
+		}
+	}
+}
+
+void	Immediate::SetKey(int in_frame)
+{
+int red, green, blue, alpha;
+
+	if(anim_cnt == 0)
+	{
+		SaveParameters();
+		ResetAnimParameters();
+	}
+	GetColor(red, green, blue, alpha);
+	anim_red = red;
+	anim_green = green;
+	anim_blue = blue;
+	anim_alpha = alpha;
+	ImAnim *im_anim = new ImAnim(in_frame, this);
+	if(anim_cnt < 1024)
+	{
+		anim[anim_cnt] = im_anim;
+		anim_cnt++;
+	}
+}
+
+void	Immediate::SetKeyframeAll()
+{
+int	loop;
+
+	if(my_window != NULL)
+	{
+		if(my_window->anim_timeline != NULL)
+		{
+			int frame = my_window->anim_timeline->current_frame;
+			Camera *cam = my_window->DisplayedCamera();
+			if(cam != NULL)
+			{
+				for(loop = 0;loop < cam->immediate_cnt;loop++)
+				{
+					Immediate *im = cam->immediate_list[loop];
+					if(im != NULL)
+					{
+						im->SetKey(frame);
+						im->SortKeys();
+					}
+				}
+				my_window->anim_timeline->redraw();
+			}
+		}
+	}
+}
+
+void	Immediate::SetKeyframe()
+{
+	if(my_window != NULL)
+	{
+		if(my_window->anim_timeline != NULL)
+		{
+			int frame = my_window->anim_timeline->current_frame;
+			SetKey(frame);
+			SortKeys();
+			my_window->anim_timeline->redraw();
+		}
+	}
+}
+
+void	Immediate::EditKey(int in_frame)
+{
+int	loop;
+
+	int done = 0;
+	for(loop = 0;((loop < anim_cnt) && (done == 0));loop++)
+	{
+		if(anim[loop] != NULL)
+		{
+			if(anim[loop]->frame == in_frame)
+			{
+				anim[loop]->Edit(in_frame, this);
+				done = 1;
+			}
+		}
+	}
+}
+
+void	Immediate::RemoveKeyframes()
+{
+int	loop;
+
+	RestoreInitialParameters();
+	for(loop = 0;loop < anim_cnt;loop++)
+	{
+		if(anim[loop] != NULL)
+		{
+			delete anim[loop];
+			anim[loop] = NULL;
+		}
+	}
+	anim_cnt = 0;
+	if(my_window != NULL)
+	{
+		if(my_window->anim_timeline != NULL)
+		{
+			my_window->anim_timeline->redraw();
+		}
+	}
+}
+
+void	Immediate::RemoveKeyframesFromAll()
+{
+int	loop;
+
+	Camera *cam = my_window->DisplayedCamera();
+	if(cam != NULL)
+	{
+		for(loop = 0;loop < cam->immediate_cnt;loop++)
+		{
+			Immediate *im = cam->immediate_list[loop];
+			if(im != NULL)
+			{
+				im->RemoveKeyframes();
+			}
+		}
+	}
+}
+
+void	Immediate::SortKeys()
+{
+int	loop;
+
+	int done = 0;
+	while(done == 0)
+	{
+		done = 1;
+		if(anim_cnt > 1)
+		{
+			for(loop = 0;loop < (anim_cnt - 1);loop++)
+			{
+				if((anim[loop] != NULL) && (anim[loop + 1] != NULL))
+				{
+					if(anim[loop]->frame > anim[loop + 1]->frame)
+					{
+						ImAnim *tmp = anim[loop];
+						anim[loop] = anim[loop + 1];
+						anim[loop + 1] = tmp;
+						done = 0;
+					}
+				}
+			}
+		}
+	}
+}
+
+void	Immediate::Draw()
 {
 int		loop;
 char	buf[256];
 
+	if(my_camera == my_window->DisplayedCamera())
+	{
+		if((my_camera->recording == 1) || (my_camera->anim_preview == 1))
+		{
+			MeetKey();
+			anim_frame++;
+		}
+	}
 	if(draw_it == 1)
 	{
 		MyGroup::draw();
@@ -52320,7 +52085,40 @@ void	immediate_popup_cb(Fl_Widget *w, void *v)
 		char *str = (char *)browser->text(browser->value());
 		if(str != NULL)
 		{
-			if(strcmp(str, "Delete") == 0)
+			if(strcmp(str, "Name") == 0)
+			{
+				im->Name();
+			}
+			else if(strcmp(str, "Set Keyframe For All") == 0)
+			{
+				im->SetKeyframeAll();
+			}
+			else if(strcmp(str, "Set Keyframe") == 0)
+			{
+				im->SetKeyframe();
+			}
+			else if(strcmp(str, "Remove Keyframes") == 0)
+			{
+				im->RemoveKeyframes();
+			}
+			else if(strcmp(str, "Remove Keyframes From All") == 0)
+			{
+				im->RemoveKeyframesFromAll();
+			}
+			else if(strcmp(str, "Loop") == 0)
+			{
+				im->anim_looping = 1;
+				im->anim_frame = 0;
+				im->anim_index = 0;
+				im->anim_complete = 0;
+			}
+			else if(strcmp(str, "Cease Looping") == 0)
+			{
+				im->anim_looping = 0;
+				im->anim_frame = 0;
+				im->anim_index = 0;
+			}
+			else if(strcmp(str, "Delete") == 0)
 			{
 				im->Delete();
 			}
@@ -52479,6 +52277,15 @@ void	Immediate::Move()
 	child(0)->resize(x(), y(), w(), h());
 }
 
+void	Immediate::Name()
+{
+	if((idw != NULL) && (my_camera != NULL))
+	{
+		inw = new ImmediateNameWindow(my_window, this);
+		inw->show();
+	}
+}
+
 void	Immediate::Delete()
 {
 	if((idw != NULL) && (my_camera != NULL))
@@ -52505,6 +52312,22 @@ void	Immediate::ShowPopup()
 		if(popup != NULL)
 		{
 			popup->browser->clear();
+			popup->browser->add("Name");
+			popup->browser->add("Set Keyframe");
+			popup->browser->add("Set Keyframe For All");
+			if(anim_cnt > 0)
+			{
+				popup->browser->add("Remove Keyframes");
+				popup->browser->add("Remove Keyframes From All");
+			}
+			if(anim_looping == 0)
+			{
+				popup->browser->add("Loop");
+			}
+			else
+			{
+				popup->browser->add("Cease Looping");
+			}
 			popup->browser->add("Delete");
 			popup->browser->add("Hide");
 			popup->browser->add("Show");
@@ -52893,20 +52716,15 @@ void	color_it_clear_all_cb(Fl_Widget *w, void *v)
 	}
 }
 
-ColorItWindow::ColorItWindow(MyWin *in_win) : DragWindow(425, 240, "Dynamic Coloring")
+ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(425, 240, "Dynamic Coloring")
 {
 	my_window = in_win;
 	last_x = 0;
 	last_y = 0;
 	set_non_modal();
 
-	int y_pos = 5;
-	Fl_Box *box = new Fl_Box(2, y_pos, w() - 4, 20, "Dynamic Coloring");
-	box->box(FL_FLAT_BOX);
-	box->color(BLACK);
-	box->labelcolor(WHITE);
-	box->labelsize(12);
-	y_pos += 28;
+	int new_yp = 20;
+	int y_pos = new_yp + 18;
 	
 	red_tolerance = new ColorSlider(100, y_pos, 300, 20, 24, "Red Tolerance");
 	red_tolerance->callback(color_it_set_all_cb, this);
@@ -52929,7 +52747,7 @@ ColorItWindow::ColorItWindow(MyWin *in_win) : DragWindow(425, 240, "Dynamic Colo
 	y_pos += 22;
 	alpha_replace = new ColorSlider(100, y_pos, 300, 20, 0, "Alpha Replace");
 	alpha_replace->callback(color_it_set_all_cb, this);
-	y_pos += 32;
+	y_pos += 42;
 
 	MyButton *clear_last_button = new MyButton(60, y_pos, 70, 20, "Clear Last");
 	clear_last_button->box(FL_FLAT_BOX);
@@ -52964,7 +52782,7 @@ int		ColorItWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -52972,13 +52790,13 @@ int		ColorItWindow::handle(int event)
 void	ColorItWindow::hide()
 {
 	my_window->selecting_colors = 0;
-	DragWindow::hide();
+	Dialog::hide();
 }
 
 void	ColorItWindow::show()
 {
 	my_window->selecting_colors = 1;
-	DragWindow::show();
+	Dialog::show();
 }
 
 // SECTION ************************************** MATRIX STATE ***************************************************
@@ -53154,12 +52972,13 @@ char	buf[256];
 	}
 }
 
-InstrumentWindow::InstrumentWindow(MyWin *in_win, Camera *in_cam, int ww, int hh) : DragWindow(ww, hh, "Instruments")
+InstrumentWindow::InstrumentWindow(MyWin *in_win, Camera *in_cam, int ww, int hh) : Dialog(ww, hh, "Instruments")
 {
 int	loop;
 
 	my_window = in_win;
 	my_camera = in_cam;
+	int new_yp = 20;
 	if(my_camera != NULL)
 	{
 		Camera *cam = my_camera;
@@ -53181,14 +53000,14 @@ int	loop;
 			}
 			Populate();
 
-			go_button = new MyButton(10, 10, 60, 22, "Go");
+			go_button = new MyButton(10, 10 + new_yp, 60, 22, "Go");
 			go_button->box(FL_FLAT_BOX);
 			go_button->labelcolor(YELLOW);
 			go_button->labelsize(14);
 			go_button->color(BLACK);
 			go_button->callback(instrument_cb, this);
 
-			close_button = new MyButton(80, 10, 60, 22, "Close");
+			close_button = new MyButton(80, 10 + new_yp, 60, 22, "Close");
 			close_button->box(FL_FLAT_BOX);
 			close_button->labelcolor(YELLOW);
 			close_button->labelsize(14);
@@ -53196,7 +53015,7 @@ int	loop;
 			close_button->callback(hide_window_cb, this);
 
 			int x_pos = 230;
-			int y_pos = 20;
+			int y_pos = 20 + new_yp;
 			int cnt = 0;
 
 			Fl_Box *label_box = new Fl_Box(x_pos, y_pos, 60, 20, "Start X");
@@ -53255,7 +53074,7 @@ int	loop;
 			label_box->labelcolor(WHITE);
 			label_box->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 
-			y_pos = 40;
+			y_pos = 40 + new_yp;
 			for(loop = 0;loop < node_cnt;loop++)
 			{
 				std:string str = node[loop]->getName();
@@ -53346,7 +53165,7 @@ int	InstrumentWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -56674,7 +56493,7 @@ int	loop;
 	}
 }
 
-EmbedAppSettings::EmbedAppSettings(MyWin *in_win) : DragWindow(450, 300, 300, 385, "Embed App")
+EmbedAppSettings::EmbedAppSettings(MyWin *in_win) : Dialog(450, 300, 300, 385, "Embed Application")
 {
 int		loop;
 int		inner;
@@ -56682,6 +56501,7 @@ char	buf[256];
 
 	my_window = in_win;
 	current = 0;
+	int new_yp = 20;
 	for(loop = 0;loop < 10;loop++)
 	{
 		my_path[loop] = strdup("");
@@ -56694,13 +56514,7 @@ char	buf[256];
 	}
 	resize(x(), y(), w(), h());
 
-	title = new Fl_Box(20, 5, w() - 40, 20, "External Programs");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelsize(12);
-	title->labelcolor(WHITE);
-
-	current_index = new Fl_Box(20, 25, w() - 40, 20);
+	current_index = new Fl_Box(20, 25 + new_yp, w() - 40, 20);
 	current_index->box(FL_FLAT_BOX);
 	current_index->color(BLACK);
 	current_index->labelsize(9);
@@ -56709,7 +56523,7 @@ char	buf[256];
 	sprintf(label_buf, "%d", current + 1);
 	current_index->copy_label(label_buf);
 
-	prev = new MyButton(2, 5, 20, 20, "@<");
+	prev = new MyButton(2, 5 + new_yp, 20, 20, "@<");
 	prev->box(FL_FLAT_BOX);
 	prev->color(BLACK);
 	prev->labelsize(12);
@@ -56717,7 +56531,7 @@ char	buf[256];
 	prev->copy_tooltip("Advance to the next external program definition.");
 	prev->callback(embed_app_prev_cb, this);
 
-	next = new MyButton(w() - 21, 5, 20, 20, "@>");
+	next = new MyButton(w() - 21, 5 + new_yp, 20, 20, "@>");
 	next->box(FL_FLAT_BOX);
 	next->color(BLACK);
 	next->labelsize(12);
@@ -56725,7 +56539,7 @@ char	buf[256];
 	next->copy_tooltip("Go back the last external program definition.");
 	next->callback(embed_app_next_cb, this);
 
-	int y_pos = 55;
+	int y_pos = 55 + new_yp;
 	path = new Fl_Input(75, y_pos, 200, 20, "Path");
 	path->textsize(11);
 	path->textcolor(BLACK);
@@ -57698,12 +57512,13 @@ int	loop;
 	}
 }
 
-VideoSettingsWindow::VideoSettingsWindow(MyWin *in_win) : DragWindow(360, 200, 800, 455, "Video Settings")
+VideoSettingsWindow::VideoSettingsWindow(MyWin *in_win) : Dialog(360, 200, 800, 455, "Video Settings")
 {
 char	buf[256];
 
 	main_win = in_win;
 	Camera *cam = main_win->DisplayedCamera();
+	int new_yp = 20;
 
 	if(main_win->disregard_settings == 0)
 	{
@@ -57713,15 +57528,8 @@ char	buf[256];
 	last_y = 0;
 	resize(x(), y(), w(), h());
 
-	int yp = 10;
-	Fl_Box *title = new Fl_Box(5, 10, w() - 10, 20, "Video Settings");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelcolor(WHITE);
-	title->labelsize(13);
-	title->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	int yp = new_yp + 20;
 
-	yp += (45);
 	output_w = new Fl_Int_Input(200, yp, 60, 20, "Output Size");
 	output_w->box(FL_FRAME_BOX);
 	output_w->color(BLACK);
@@ -57749,7 +57557,7 @@ char	buf[256];
 	output_h->when(FL_WHEN_CHANGED);
 	output_h->copy_tooltip("Height of the outout stream");
 	output_h->callback(video_settings_resolution_cb, this);
-	yp += (25);
+	yp += 25;
 
 	timestamp_default = new MyToggleButton(200, yp + 2, 16, 16, "Timestamp");
 	timestamp_default->box(FL_FRAME_BOX);
@@ -57797,7 +57605,7 @@ char	buf[256];
 	timestamp_background_color_button->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	timestamp_background_color_button->copy_tooltip("Change the background color of the timestamp");
 	timestamp_background_color_button->callback(timestamp_background_color_cb, this);
-	yp += (40);
+	yp += 40;
 
 	Fl_Box *tf_box = new Fl_Box(200, yp, 500, 20,
 		"%Y = current year\t"
@@ -57818,7 +57626,7 @@ char	buf[256];
 	tf_box->labelcolor(WHITE);
 	tf_box->labelsize(9);
 	tf_box->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	yp += (40);
+	yp += 40;
 
 	timestamp_font_size = new Fl_Int_Input(200, yp, 60, 20, "Timestamp Font Size");
 	timestamp_font_size->box(FL_FRAME_BOX);
@@ -57929,6 +57737,7 @@ char	buf[256];
 	create_tag_file_button->value(main_win->tag_recognized);
 	create_tag_file_button->copy_tooltip("Create an ASCII file with recognized objects found in the video");
 	create_tag_file_button->callback(create_tag_file_cb, main_win);
+
 	yp = row_start;
 	record_all_button = new MyLightButton(330, yp, 120, 20, "Record Main Window");
 	record_all_button->box(FL_FRAME_BOX);
@@ -58022,7 +57831,7 @@ char	buf[256];
 	html_background_transparent->callback(html_background_transparent_cb, this);
 	yp += 25;
 
-	yp += (32);
+	yp += 32;
 	MyButton *close = new MyButton(70, yp, 100, 30, "Close");
 	close->box(FL_FRAME_BOX);
 	close->color(BLACK);
@@ -58048,7 +57857,7 @@ void	VideoSettingsWindow::draw()
 int	VideoSettingsWindow::handle(int event)
 {
 	int flag = 0;
-	flag = DragWindow::handle(event);
+	flag = Dialog::handle(event);
 	if(flag == 0)
 	{
 		if((event == FL_FOCUS)
@@ -58133,7 +57942,7 @@ void	misc_slider_cb(Fl_Widget *w, void *v)
 	}
 }
 
-MiscVideoSettingsWindow::MiscVideoSettingsWindow(MyWin *in_win) : DragWindow(360, 200, 800, 795, "Video Settings")
+MiscVideoSettingsWindow::MiscVideoSettingsWindow(MyWin *in_win) : Dialog(360, 200, 800, 795, "Video Settings")
 {
 	my_window = in_win;
 
@@ -58143,19 +57952,14 @@ MiscVideoSettingsWindow::MiscVideoSettingsWindow(MyWin *in_win) : DragWindow(360
 	hue = 1.0;
 	intensity = 1.0;
 
+	int new_yp = 20;
+
 	last_x = 0;
 	last_y = 0;
 	resize(x(), y(), w(), h());
 	int font_sz = 9;
 
-	int yp = 10;
-	Fl_Box *title = new Fl_Box(5, 10, w() - 10, 20, "Misc Video Settings");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelcolor(WHITE);
-	title->labelsize(13);
-	title->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	yp += 45;
+	int yp = 20 + new_yp;
 
 	contrast_slider = new MySlider(200, yp, 500, 25, "Contrast");
 	contrast_slider->range(0.0, 1.0);
@@ -58201,7 +58005,7 @@ MiscVideoSettingsWindow::MiscVideoSettingsWindow(MyWin *in_win) : DragWindow(360
 	intensity_slider->labelcolor(YELLOW);
 	intensity_slider->copy_tooltip("Color intensity applied to the image after it is received from the camera.");
 	intensity_slider->callback(misc_slider_cb, this);
-	yp += 40;
+	yp += 50;
 
 	MyButton *close = new MyButton(70, yp, 100, 22, "Close");
 	close->box(FL_FRAME_BOX);
@@ -58221,7 +58025,7 @@ MiscVideoSettingsWindow::~MiscVideoSettingsWindow()
 int	MiscVideoSettingsWindow::handle(int event)
 {
 	int flag = 0;
-	flag = DragWindow::handle(event);
+	flag = Dialog::handle(event);
 	if(flag == 0)
 	{
 		if((event == FL_FOCUS)
@@ -58358,7 +58162,7 @@ int loop;
 		if(cam != NULL)
 		{
 			char filename[4096];
-			int nn = my_file_chooser("Select a camera file", "*.json", "./Cameras/*", filename);
+			int nn = my_file_chooser("Select a camera file", "*.json", "./Cameras", filename);
 			if(nn > 0)
 			{
 				win->LoadJSONCamera(filename, cam);
@@ -58930,12 +58734,14 @@ int loop;
 	}
 }
 
-CameraSettingsWindow::CameraSettingsWindow(MyWin *in_win) : DragWindow(360, 200, 800, 795, "Camera Settings")
+CameraSettingsWindow::CameraSettingsWindow(MyWin *in_win) : Dialog(360, 200, 800, 795, "Camera Settings")
 {
 char	buf[256];
 
 	main_win = in_win;
 	Camera *cam = main_win->DisplayedCamera();
+
+	int new_yp = 20;
 
 	if(main_win->disregard_settings == 0)
 	{
@@ -58946,14 +58752,7 @@ char	buf[256];
 	resize(x(), y(), w(), h());
 	int font_sz = 9;
 
-	int yp = 10;
-	Fl_Box *title = new Fl_Box(5, 10, w() - 10, 20, "Camera Settings");
-	title->box(FL_FLAT_BOX);
-	title->color(BLACK);
-	title->labelcolor(WHITE);
-	title->labelsize(13);
-	title->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
-	yp += (45);
+	int yp = 25 + new_yp;;
 
 	cam_alias = new Fl_Input(200, yp, 200, 20, "Alias");
 	cam_alias->box(FL_FRAME_BOX);
@@ -58973,7 +58772,7 @@ char	buf[256];
 	}
 	cam_alias->value(str);
 	cam_alias->callback(camera_settings_alias_cb, this);
-	yp += (25);
+	yp += 25;
 
 	display_w = new Fl_Int_Input(200, yp, 60, 20, "Display Size");
 	display_w->box(FL_FRAME_BOX);
@@ -59007,7 +58806,7 @@ char	buf[256];
 	}
 	display_h->callback(camera_settings_resolution_cb, this);
 
-	yp += (25);
+	yp += 35;
 	contrast_slider = new MySlider(200, yp, 500, 25, "Contrast");
 	contrast_slider->range(0.0, 1.0);
 	contrast_slider->value(0.5);
@@ -59016,7 +58815,7 @@ char	buf[256];
 	contrast_slider->labelcolor(YELLOW);
 	contrast_slider->callback(contrast_slider_cb, this);
 	contrast_slider->copy_tooltip("Contrast applied to the image after it is received from the camera.");
-	yp += (25);
+	yp += 25;
 	brightness_slider = new MySlider(200, yp, 500, 25, "Brightness");
 	brightness_slider->range(0.0, 1.0);
 	brightness_slider->value(0.5);
@@ -59025,7 +58824,7 @@ char	buf[256];
 	brightness_slider->labelcolor(YELLOW);
 	brightness_slider->copy_tooltip("Brightness applied to the image after it is received from the camera.");
 	brightness_slider->callback(brightness_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	saturation_slider = new MySlider(200, yp, 500, 25, "Saturation");
 	saturation_slider->range(0.0, 2.0);
 	saturation_slider->value(1.0);
@@ -59034,7 +58833,7 @@ char	buf[256];
 	saturation_slider->labelcolor(YELLOW);
 	saturation_slider->copy_tooltip("Color saturation applied to the image after it is received from the camera.");
 	saturation_slider->callback(saturation_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	hue_slider = new MySlider(200, yp, 500, 25, "Hue");
 	hue_slider->range(0.0, 2.0);
 	hue_slider->value(1.0);
@@ -59043,7 +58842,7 @@ char	buf[256];
 	hue_slider->labelcolor(YELLOW);
 	hue_slider->copy_tooltip("Hue adjustment applied to the image after it is received from the camera.");
 	hue_slider->callback(hue_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	intensity_slider = new MySlider(200, yp, 500, 25, "Value");
 	intensity_slider->range(0.0, 2.0);
 	intensity_slider->value(1.0);
@@ -59052,7 +58851,7 @@ char	buf[256];
 	intensity_slider->labelcolor(YELLOW);
 	intensity_slider->copy_tooltip("Color intensity applied to the image after it is received from the camera.");
 	intensity_slider->callback(intensity_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	red_intensity_slider = new MySlider(200, yp, 500, 25, "Red Value");
 	red_intensity_slider->range(0.0, 2.0);
 	red_intensity_slider->value(1.0);
@@ -59061,7 +58860,7 @@ char	buf[256];
 	red_intensity_slider->labelcolor(YELLOW);
 	red_intensity_slider->copy_tooltip("Red intensity applied to the image after it is received from the camera.");
 	red_intensity_slider->callback(red_intensity_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	green_intensity_slider = new MySlider(200, yp, 500, 25, "Green Value");
 	green_intensity_slider->range(0.0, 2.0);
 	green_intensity_slider->value(1.0);
@@ -59070,7 +58869,7 @@ char	buf[256];
 	green_intensity_slider->labelcolor(YELLOW);
 	green_intensity_slider->copy_tooltip("Green intensity applied to the image after it is received from the camera.");
 	green_intensity_slider->callback(green_intensity_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	blue_intensity_slider = new MySlider(200, yp, 500, 25, "Blue Value");
 	blue_intensity_slider->range(0.0, 2.0);
 	blue_intensity_slider->value(1.0);
@@ -59079,7 +58878,7 @@ char	buf[256];
 	blue_intensity_slider->labelcolor(YELLOW);
 	blue_intensity_slider->copy_tooltip("Blue intensity applied to the image after it is received from the camera.");
 	blue_intensity_slider->callback(blue_intensity_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	alpha_intensity_slider = new MySlider(200, yp, 500, 25, "Alpha Value");
 	alpha_intensity_slider->range(0.0, 2.0);
 	alpha_intensity_slider->value(1.0);
@@ -59088,7 +58887,7 @@ char	buf[256];
 	alpha_intensity_slider->labelcolor(YELLOW);
 	alpha_intensity_slider->copy_tooltip("Alpha intensity applied to the image after it is received from the camera.");
 	alpha_intensity_slider->callback(alpha_intensity_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	aspect_x_slider = new MySlider(200, yp, 500, 25, "Aspect Width");
 	aspect_x_slider->range(0.0, 2.0);
 	aspect_x_slider->value(1.0);
@@ -59097,7 +58896,7 @@ char	buf[256];
 	aspect_x_slider->labelcolor(YELLOW);
 	aspect_x_slider->copy_tooltip("Aspect ratio adjustment. This will stretch the image is cropping is not applied.");
 	aspect_x_slider->callback(aspect_x_slider_cb, this);
-	yp += (25);
+	yp += 25;
 	aspect_y_slider = new MySlider(200, yp, 500, 25, "Aspect Height");
 	aspect_y_slider->range(0.0, 2.0);
 	aspect_y_slider->value(1.0);
@@ -59107,7 +58906,7 @@ char	buf[256];
 	aspect_y_slider->copy_tooltip("Aspect ratio adjustment. This will stretch the image is cropping is not applied.");
 	aspect_y_slider->callback(aspect_y_slider_cb, this);
 
-	yp += (25);
+	yp += 25;
 	motion_threshold_slider = new MySlider(200, yp, 500, 25, "Motion Threshold");
 	motion_threshold_slider->range(10.0, 10000.0);
 	motion_threshold_slider->value(100.0);
@@ -59117,7 +58916,7 @@ char	buf[256];
 	motion_threshold_slider->copy_tooltip("The amount of change required to trigger the motion sensor.");
 	motion_threshold_slider->callback(motion_threshold_slider_cb, this);
 
-	yp += (25);
+	yp += 25;
 	recognition_threshold_slider = new MySlider(200, yp, 500, 25, "Object Recog. Threshold");
 	recognition_threshold_slider->range(0.0, 1.0);
 	recognition_threshold_slider->value(0.5);
@@ -59127,7 +58926,7 @@ char	buf[256];
 	recognition_threshold_slider->copy_tooltip("The certainty of recognition necessary to trigger recording.");
 	recognition_threshold_slider->callback(threshold_slider_cb, this);
 
-	yp += (25);
+	yp += 25;
 	recognition_interval_slider = new MySlider(200, yp, 500, 25, "Object Recog. Interval");
 	recognition_interval_slider->range(1, 100);
 	recognition_interval_slider->value(10);
@@ -59138,7 +58937,7 @@ char	buf[256];
 	recognition_interval_slider->copy_tooltip("How often the object recognition looks at a frame.");
 	recognition_interval_slider->callback(recognition_interval_cb, this);
 
-	yp += (25);
+	yp += 25;
 	capture_interval_slider = new MySlider(200, yp, 500, 25, "Capture Interval");
 	capture_interval_slider->range(0.1, 60.0);
 	capture_interval_slider->value(0.0);
@@ -59149,7 +58948,7 @@ char	buf[256];
 	capture_interval_slider->copy_tooltip("How frequently recording samples the frames arriving from this camera.");
 	capture_interval_slider->callback(capture_interval_cb, this);
 
-	yp += (25);
+	yp += 25;
 	retrieve_interval_slider = new MySlider(200, yp, 500, 25, "Retrieve Interval");
 	retrieve_interval_slider->range(1.0, 1000000.0);
 	retrieve_interval_slider->value(10000.0);
@@ -59159,7 +58958,7 @@ char	buf[256];
 	retrieve_interval_slider->labelcolor(YELLOW);
 	retrieve_interval_slider->copy_tooltip("How often this camera is sampled at all.");
 	retrieve_interval_slider->callback(retrieve_interval_cb, this);
-	yp += (25);
+	yp += 25;
 
 	yp += 44;
 	apply_to_all_button = new MyToggleButton(70, yp, 100, 22, "Apply to All");
@@ -59203,7 +59002,7 @@ void	CameraSettingsWindow::draw()
 int	CameraSettingsWindow::handle(int event)
 {
 	int flag = 0;
-	flag = DragWindow::handle(event);
+	flag = Dialog::handle(event);
 	if(flag == 0)
 	{
 		if((event == FL_FOCUS)
@@ -59376,14 +59175,15 @@ void	snapshot_trigger_cb(Fl_Widget *w, void *v)
 	}
 }
 
-SnapshotSettingWindow::SnapshotSettingWindow(MyWin *in_win) : DragWindow(360, 200, 600, 370, "Snapshot Settings")
+SnapshotSettingWindow::SnapshotSettingWindow(MyWin *in_win) : Dialog(360, 200, 600, 370, "Snapshot Settings")
 {
 char	buf[256];
 
 	main_win = in_win;
 	Camera *cam = main_win->DisplayedCamera();
 
-	int yp = 22;
+	int new_yp = 20;
+	int yp = 22 + new_yp;
 	if(cam != NULL)
 	{
 		last_x = 0;
@@ -59560,7 +59360,7 @@ void	SnapshotSettingWindow::draw()
 int	SnapshotSettingWindow::handle(int event)
 {
 	int flag = 0;
-	flag = DragWindow::handle(event);
+	flag = Dialog::handle(event);
 	if(flag == 0)
 	{
 		if((event == FL_FOCUS)
@@ -60064,11 +59864,12 @@ int	loop;
 	}
 }
 
-GUI_SettingsWindow::GUI_SettingsWindow(MyWin *in_win) : DragWindow(400, 100, 320, 880, "GUI Settings")
+GUI_SettingsWindow::GUI_SettingsWindow(MyWin *in_win) : Dialog(400, 100, 320, 880, "GUI Settings")
 {
 int	loop;
 
 	my_window = in_win;
+	int new_yp = 20;
 	resize(x(), y(), w(), h());
 	clear_visible_focus();
 	set_modal();
@@ -60084,7 +59885,7 @@ int	loop;
 	Fl::get_color(DARK_BLUE, dark_blue_color_r, dark_blue_color_g, dark_blue_color_b, dark_blue_color_a);
 	Fl::get_color(CYAN, cyan_color_r, cyan_color_g, cyan_color_b, cyan_color_a);
 
-	int yp = 10;
+	int yp = new_yp + 10;
 
 	hide_status_button = new MyLightButton(10, yp, 160, 20, "Hide Status");
 	hide_status_button->box(FL_FRAME_BOX);
@@ -60093,7 +59894,7 @@ int	loop;
 	hide_status_button->labelsize(9);
 	hide_status_button->align(FL_ALIGN_CENTER);
 	hide_status_button->value(my_window->hide_status);
-	yp += (22);
+	yp += 22;
 	retain_commands_button = new MyLightButton(10, yp, 160, 20, "Retain Commands");
 	retain_commands_button->box(FL_FRAME_BOX);
 	retain_commands_button->color(BLACK);
@@ -60101,7 +59902,7 @@ int	loop;
 	retain_commands_button->labelsize(9);
 	retain_commands_button->align(FL_ALIGN_CENTER);
 	retain_commands_button->value(my_window->retain_commands);
-	yp += (22);
+	yp += 22;
 	retain_cameras_button = new MyLightButton(10, yp, 160, 20, "Retain Cameras");
 	retain_cameras_button->box(FL_FRAME_BOX);
 	retain_cameras_button->color(BLACK);
@@ -60109,7 +59910,7 @@ int	loop;
 	retain_cameras_button->labelsize(9);
 	retain_cameras_button->align(FL_ALIGN_CENTER);
 	retain_cameras_button->value(my_window->retain_cameras);
-	yp += (22);
+	yp += 22;
 	retain_audio_button = new MyLightButton(10, yp, 160, 20, "Retain Audio Devices");
 	retain_audio_button->box(FL_FRAME_BOX);
 	retain_audio_button->color(BLACK);
@@ -60117,7 +59918,7 @@ int	loop;
 	retain_audio_button->labelsize(9);
 	retain_audio_button->align(FL_ALIGN_CENTER);
 	retain_audio_button->value(my_window->retain_audio);
-	yp += (22);
+	yp += 22;
 	retain_ptz_button = new MyLightButton(10, yp, 160, 20, "Retain PTZ");
 	retain_ptz_button->box(FL_FRAME_BOX);
 	retain_ptz_button->color(BLACK);
@@ -60125,7 +59926,7 @@ int	loop;
 	retain_ptz_button->labelsize(9);
 	retain_ptz_button->align(FL_ALIGN_CENTER);
 	retain_ptz_button->value(my_window->retain_ptz);
-	yp += (22);
+	yp += 22;
 	retain_all_button = new MyLightButton(10, yp, 160, 20, "Retain All Panels");
 	retain_all_button->box(FL_FRAME_BOX);
 	retain_all_button->color(BLACK);
@@ -60133,7 +59934,7 @@ int	loop;
 	retain_all_button->labelsize(9);
 	retain_all_button->align(FL_ALIGN_CENTER);
 	retain_all_button->value(0);
-	yp += (26);
+	yp += 26;
 	animate_panels_button = new MyLightButton(10, yp, 160, 20, "Animate Panels");
 	animate_panels_button->box(FL_FRAME_BOX);
 	animate_panels_button->color(BLACK);
@@ -60141,7 +59942,7 @@ int	loop;
 	animate_panels_button->labelsize(9);
 	animate_panels_button->align(FL_ALIGN_CENTER);
 	animate_panels_button->value(my_window->button_group->animated);
-	yp += (26);
+	yp += 26;
 	use_tooltips_button = new MyLightButton(10, yp, 160, 20, "Use Tooltips");
 	use_tooltips_button->box(FL_FRAME_BOX);
 	use_tooltips_button->color(BLACK);
@@ -60149,7 +59950,7 @@ int	loop;
 	use_tooltips_button->labelsize(9);
 	use_tooltips_button->align(FL_ALIGN_CENTER);
 	use_tooltips_button->value(my_window->use_tooltips);
-	yp += (26);
+	yp += 26;
 	transparent_interface_button = new MyLightButton(10, yp, 160, 20, "Transparent Interface");
 	transparent_interface_button->box(FL_FRAME_BOX);
 	transparent_interface_button->color(BLACK);
@@ -60158,7 +59959,7 @@ int	loop;
 	transparent_interface_button->align(FL_ALIGN_CENTER);
 	transparent_interface_button->callback(transparent_interface_cb, my_window);
 	transparent_interface_button->value(my_window->transparent_interface);
-	yp += (26);
+	yp += 26;
 	reverse_panels_button = new MyLightButton(10, yp, 160, 20, "Reverse Panels");
 	reverse_panels_button->box(FL_FRAME_BOX);
 	reverse_panels_button->color(BLACK);
@@ -60167,7 +59968,7 @@ int	loop;
 	reverse_panels_button->align(FL_ALIGN_CENTER);
 	reverse_panels_button->value(my_window->button_group_side);
 	reverse_panels_button->callback(reverse_initial_panel_positions_cb, my_window);
-	yp += (26);
+	yp += 26;
 	status_color_box = new Fl_Box(10, yp, 160, 20, "Status Color");
 	status_color_box->box(FL_FRAME_BOX);
 	status_color_box->color(BLACK);
@@ -60178,7 +59979,7 @@ int	loop;
 	status_color_button->box(FL_FRAME_BOX);
 	status_color_button->color(fl_rgb_color(my_window->status_color_r, my_window->status_color_g, my_window->status_color_b));
 	status_color_button->callback(gui_setting_status_color_cb, this);
-	yp += (22);
+	yp += 22;
 	background_color_box = new Fl_Box(10, yp, 160, 20, "Background Color");
 	background_color_box->box(FL_FRAME_BOX);
 	background_color_box->color(BLACK);
@@ -60189,7 +59990,7 @@ int	loop;
 	background_color_button->box(FL_FRAME_BOX);
 	background_color_button->color(fl_rgb_color(background_color_r, background_color_g, background_color_b));
 	background_color_button->callback(gui_setting_background_color_cb, this);
-	yp += (22);
+	yp += 22;
 	text_color_box = new Fl_Box(10, yp, 160, 20, "Text Color");
 	text_color_box->box(FL_FRAME_BOX);
 	text_color_box->color(BLACK);
@@ -60200,7 +60001,7 @@ int	loop;
 	text_color_button->box(FL_FRAME_BOX);
 	text_color_button->color(fl_rgb_color(text_color_r, text_color_g, text_color_b));
 	text_color_button->callback(gui_setting_text_color_cb, this);
-	yp += (22);
+	yp += 22;
 	highlight_color_box = new Fl_Box(10, yp, 160, 20, "Highlight Color");
 	highlight_color_box->box(FL_FRAME_BOX);
 	highlight_color_box->color(BLACK);
@@ -60211,7 +60012,7 @@ int	loop;
 	highlight_color_button->box(FL_FRAME_BOX);
 	highlight_color_button->color(fl_rgb_color(highlight_color_r, highlight_color_g, highlight_color_b));
 	highlight_color_button->callback(gui_setting_highlight_color_cb, this);
-	yp += (22);
+	yp += 22;
 	gray_color_box = new Fl_Box(10, yp, 160, 20, "Gray Color");
 	gray_color_box->box(FL_FRAME_BOX);
 	gray_color_box->color(BLACK);
@@ -60222,7 +60023,7 @@ int	loop;
 	gray_color_button->box(FL_FRAME_BOX);
 	gray_color_button->color(fl_rgb_color(gray_color_r, gray_color_g, gray_color_b));
 	gray_color_button->callback(gui_setting_gray_color_cb, this);
-	yp += (22);
+	yp += 22;
 	dark_gray_color_box = new Fl_Box(10, yp, 160, 20, "Dark Gray Color");
 	dark_gray_color_box->box(FL_FRAME_BOX);
 	dark_gray_color_box->color(BLACK);
@@ -60233,7 +60034,7 @@ int	loop;
 	dark_gray_color_button->box(FL_FRAME_BOX);
 	dark_gray_color_button->color(fl_rgb_color(dark_gray_color_r, dark_gray_color_g, dark_gray_color_b));
 	dark_gray_color_button->callback(gui_setting_dark_gray_color_cb, this);
-	yp += (22);
+	yp += 22;
 	red_color_box = new Fl_Box(10, yp, 160, 20, "Red Color");
 	red_color_box = new Fl_Box(10, yp, 160, 20, "Red Color");
 	red_color_box->box(FL_FRAME_BOX);
@@ -60245,7 +60046,7 @@ int	loop;
 	red_color_button->box(FL_FRAME_BOX);
 	red_color_button->color(fl_rgb_color(red_color_r, red_color_g, red_color_b));
 	red_color_button->callback(gui_setting_red_color_cb, this);
-	yp += (22);
+	yp += 22;
 	dark_red_color_box = new Fl_Box(10, yp, 160, 20, "Dark Red Color");
 	dark_red_color_box->box(FL_FRAME_BOX);
 	dark_red_color_box->color(BLACK);
@@ -60256,7 +60057,7 @@ int	loop;
 	dark_red_color_button->box(FL_FRAME_BOX);
 	dark_red_color_button->color(fl_rgb_color(dark_red_color_r, dark_red_color_g, dark_red_color_b));
 	dark_red_color_button->callback(gui_setting_dark_red_color_cb, this);
-	yp += (22);
+	yp += 22;
 	blue_color_box = new Fl_Box(10, yp, 160, 20, "Blue Color");
 	blue_color_box->box(FL_FRAME_BOX);
 	blue_color_box->color(BLACK);
@@ -60267,7 +60068,7 @@ int	loop;
 	blue_color_button->box(FL_FRAME_BOX);
 	blue_color_button->color(fl_rgb_color(blue_color_r, blue_color_g, blue_color_b));
 	blue_color_button->callback(gui_setting_blue_color_cb, this);
-	yp += (22);
+	yp += 22;
 	dark_blue_color_box = new Fl_Box(10, yp, 160, 20, "Dark Blue Color");
 	dark_blue_color_box->box(FL_FRAME_BOX);
 	dark_blue_color_box->color(BLACK);
@@ -60278,7 +60079,7 @@ int	loop;
 	dark_blue_color_button->box(FL_FRAME_BOX);
 	dark_blue_color_button->color(fl_rgb_color(dark_blue_color_r, dark_blue_color_g, dark_blue_color_b));
 	dark_blue_color_button->callback(gui_setting_dark_blue_color_cb, this);
-	yp += (22);
+	yp += 22;
 	cyan_color_box = new Fl_Box(10, yp, 160, 20, "Cyan Color");
 	cyan_color_box->box(FL_FRAME_BOX);
 	cyan_color_box->color(BLACK);
@@ -60289,7 +60090,7 @@ int	loop;
 	cyan_color_button->box(FL_FRAME_BOX);
 	cyan_color_button->color(fl_rgb_color(cyan_color_r, cyan_color_g, cyan_color_b));
 	cyan_color_button->callback(gui_setting_cyan_color_cb, this);
-	yp += (42);
+	yp += 42;
 	font_browser = new Fl_Hold_Browser(10, yp, 300, 200, "Font");
 	font_browser->color(BLACK);
 	font_browser->box(FL_FRAME_BOX);
@@ -60300,17 +60101,18 @@ int	loop;
 	font_browser->selection_color(YELLOW);
 	font_browser->scrollbar.color(BLACK);
 	font_browser->align(FL_ALIGN_TOP);
+
 	int nn = my_window->number_of_fonts;
-	for(loop = 1;loop < nn;loop++)
+	for(loop = 0;loop < nn;loop++)
 	{
 		char *str = (char *)Fl::get_font_name(loop);
 		font_browser->add(str);
 	}
 	font_browser->select(1);
-	yp += (204);
+	yp += 204;
 	int bottom = yp + 12;
 
-	yp = 10;
+	yp = new_yp + 10;
 	MyButton *accept = new MyButton(180, yp, 60, 20, "Accept");
 	accept->box(FL_FRAME_BOX);
 	accept->color(BLACK);
@@ -60318,7 +60120,7 @@ int	loop;
 	accept->labelsize(9);
 	accept->align(FL_ALIGN_CENTER);
 	accept->callback(gui_settings_cb, this);
-	yp += (22);
+	yp += 22;
 	MyButton *cancel = new MyButton(180, yp, 60, 20, "Cancel");
 	cancel->box(FL_FRAME_BOX);
 	cancel->color(BLACK);
@@ -60326,7 +60128,7 @@ int	loop;
 	cancel->labelsize(9);
 	cancel->align(FL_ALIGN_CENTER);
 	cancel->callback(generic_cancel_cb, this);
-	yp += (22);
+	yp += 22;
 	end();
 	resize(x(), y(), w(), bottom);
 }
@@ -60639,12 +60441,15 @@ char	buf[256];
 	fpw->hide();
 }
 
-FilterPluginsWindow::FilterPluginsWindow(MyWin *in_win, int in_filter_type) : DragWindow(400, 300, 280, 400, "Filter Plugins")
+FilterPluginsWindow::FilterPluginsWindow(MyWin *in_win, int in_filter_type) : Dialog(400, 300, 280, 400, "Filter Plugins")
 {
 int	loop;
 
 	my_window = in_win;
 	Camera *cam = my_window->DisplayedCamera();
+
+	int new_yp = 20;
+
 	last_x = 0;
 	last_y = 0;
 	filter_type = in_filter_type;
@@ -60652,19 +60457,13 @@ int	loop;
 	clear_visible_focus();
 	set_non_modal();
 
-	Fl_Box *box = new Fl_Box(0, 5, w(), 20, "Filter Plugins");
-	box->box(FL_NO_BOX);
-	box->labelcolor(WHITE);
-	box->labelsize(13);
-	box->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
-
-	Fl_Box *available_label = new Fl_Box(10, 25, 120, 20, "Available");
+	Fl_Box *available_label = new Fl_Box(10, new_yp + 5, 120, 20, "Available");
 	available_label->box(FL_NO_BOX);
 	available_label->labelcolor(GRAY);
 	available_label->labelsize(12);
 	available_label->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	
-	Fl_Box *use_label = new Fl_Box(130, 25, 120, 20, "Use");
+	Fl_Box *use_label = new Fl_Box(130, new_yp + 5, 120, 20, "Use");
 	use_label->box(FL_NO_BOX);
 	use_label->labelcolor(GRAY);
 	use_label->labelsize(12);
@@ -60680,13 +60479,13 @@ int	loop;
 	{
 		use_cnt = 9;
 	}
-	available = new Fl_Pack(10, 45, 120, (use_cnt * 20));
+	available = new Fl_Pack(10, new_yp + 25, 120, (use_cnt * 20));
 	available->box(FL_NO_BOX);
 	available->color(WHITE);
 	available->copy_tooltip("The list of available filters. Drag filters from here to the Use bin to use that filter.");
 	available->end();
 
-	use = new Fl_Pack(140, 45, 120, (use_cnt * 20));
+	use = new Fl_Pack(140, new_yp + 25, 120, (use_cnt * 20));
 	use->box(FL_NO_BOX);
 	use->color(WHITE);
 	use->copy_tooltip("The list of filters in use appearing in the order they will be called. Drag filters up and down to change the order. Drag them back to the Avilable bin to remove the filter from use.");
@@ -60788,7 +60587,7 @@ int	loop;
 		available->add(filter_button);
 		cnt++;
 	}
-	my_accept = new MyButton(10, (55 + (22 * cnt)), 80, 18, "Accept");
+	my_accept = new MyButton(10, new_yp + (35 + (22 * cnt)), 80, 18, "Accept");
 	my_accept->box(FL_NO_BOX);
 	my_accept->color(WHITE);
 	my_accept->labelcolor(YELLOW);
@@ -60797,7 +60596,7 @@ int	loop;
 	my_accept->copy_tooltip("Accept the selected filters in the order in which they appear.");
 	my_accept->callback(filters_accept_cb, this);
 
-	my_cancel = new MyButton(100, (55 + (22 * cnt)), 80, 18, "Cancel");
+	my_cancel = new MyButton(100, new_yp + (35 + (22 * cnt)), 80, 18, "Cancel");
 	my_cancel->box(FL_NO_BOX);
 	my_cancel->color(WHITE);
 	my_cancel->labelcolor(YELLOW);
@@ -60806,7 +60605,7 @@ int	loop;
 	my_cancel->copy_tooltip("Cancel any changes to the filters in use.");
 	my_cancel->callback(hide_window_cb, this);
 
-	use_none = new MyButton(w() - 90, (55 + (22 * cnt)), 80, 18, "Use None");
+	use_none = new MyButton(w() - 90, new_yp + (35 + (22 * cnt)), 80, 18, "Use None");
 	use_none->box(FL_NO_BOX);
 	use_none->color(WHITE);
 	use_none->labelcolor(YELLOW);
@@ -60827,7 +60626,7 @@ int		FilterPluginsWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -60993,7 +60792,7 @@ void	select_audio_cb(Fl_Widget *w, void *v)
 	Fl::delete_widget(saw);
 }
 
-SelectAudioWindow::SelectAudioWindow(MyWin *in_win) : DragWindow(800, 320, 460, 180, "Select Audio")
+SelectAudioWindow::SelectAudioWindow(MyWin *in_win) : Dialog(800, 320, 460, 180, "Select Audio")
 {
 int	loop;
 char *list[128];
@@ -61004,6 +60803,7 @@ char	def_sink[4096];
 int		channels[128];
 int		rate[128];
 
+	int new_yp = 20;
 	ndi_find = NULL;
 	my_window = in_win;
 	clear_visible_focus();
@@ -61019,7 +60819,7 @@ int		rate[128];
 		if(mx > max) max = mx;
 	}
 	if(max < 460) max = 460;
-	int y_cnt = 10;
+	int y_cnt = 10 + new_yp;
 	for(loop = 0;loop < nn;loop++)
 	{
 		SelectAudioButton *b = new SelectAudioButton(10, y_cnt, max + 5, 20, strdup(description[loop]), strdup(list[loop]));
@@ -61193,16 +60993,17 @@ char fourcc[5];
 	Fl::delete_widget(scw);
 }
 
-SelectCameraWindow::SelectCameraWindow(MyWin *in_win) : DragWindow(800, 320, 460, 180, "Select Camera")
+SelectCameraWindow::SelectCameraWindow(MyWin *in_win) : Dialog(800, 320, 460, 180, "Select Camera")
 {
 int	loop, inner;
 
+	int new_yp = 20;
 	my_window = in_win;
 	clear_visible_focus();
 	set_non_modal();
 	int cnt = my_window->PopulateCameraCaps();
 
-	MyButton *close = new MyButton(700, 2, 50, 18, "Close");
+	MyButton *close = new MyButton(700, new_yp + 2, 50, 18, "Close");
 	close->box(FL_FLAT_BOX);
 	close->color(BLACK);
 	close->labelcolor(YELLOW);
@@ -61210,7 +61011,7 @@ int	loop, inner;
 	close->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 	close->callback(hide_window_cb, this);
 
-	int y_cnt = 20;
+	int y_cnt = new_yp + 25;
 	for(loop = 0;loop < cnt;loop++)
 	{
 		int inner;
@@ -61312,7 +61113,7 @@ int	loop, inner;
 	}
 	end();
 	resize(x(), y(), w(), 10 + y_cnt);
-	close->resize(w() - 52, 2, 50, 18);
+	close->resize(w() - 52, new_yp + 2, 50, 18);
 }
 
 SelectCameraWindow::~SelectCameraWindow()
@@ -61330,10 +61131,11 @@ void	SelectCameraWindow::draw()
 
 // SECTION **************************************************** PSEUDO CAMERA WINDOW *******************************************************
 
-PseudoCameraWindow::PseudoCameraWindow(MyWin *in_win) : DragWindow(1075, 300, 140, 180, "Pseudo Camera")
+PseudoCameraWindow::PseudoCameraWindow(MyWin *in_win) : Dialog(1075, 300, 140, 180, "Pseudo Camera")
 {
 int	loop;
 
+	int new_yp = 20;
 	my_window = in_win;
 	clear_visible_focus();
 	set_non_modal();
@@ -61343,7 +61145,7 @@ int	loop;
 		if((global_potential_camera[loop] != NULL) && (global_potential_camera_handle[loop] != NULL))
 		{
 			char *str = global_potential_camera[loop] + strlen("camera_");
-			pseudo[cnt] = new MyButton(10, 10 + (22 * cnt), 120, 20, str);
+			pseudo[cnt] = new MyButton(10, new_yp + 10 + (22 * cnt), 120, 20, str);
 			pseudo[cnt]->box(FL_FLAT_BOX);
 			pseudo[cnt]->color(BLACK);
 			pseudo[cnt]->labelcolor(WHITE);
@@ -61353,7 +61155,7 @@ int	loop;
 			cnt++;
 		}
 	}
-	pseudo[cnt] = new MyButton(10, 10 + (22 * cnt), 120, 20, "Cancel");
+	pseudo[cnt] = new MyButton(10, new_yp + 10 + (22 * cnt), 120, 20, "Cancel");
 	pseudo[cnt]->box(FL_FLAT_BOX);
 	pseudo[cnt]->color(BLACK);
 	pseudo[cnt]->labelcolor(YELLOW);
@@ -61362,7 +61164,7 @@ int	loop;
 	pseudo[cnt]->callback(plugin_camera_cancel_cb, this);
 	cnt++;
 	end();
-	resize(x(), y(), w(), 20 + (cnt * 22));
+	resize(x(), y(), w(), new_yp + 20 + (cnt * 22));
 }
 
 PseudoCameraWindow::~PseudoCameraWindow()
@@ -61431,16 +61233,17 @@ void	transition_plugin_cb(Fl_Widget *w, void *v)
 	tw->my_window->SaveTransition();
 }
 
-TransitionWindow::TransitionWindow(MyWin *in_win) : DragWindow(780, 180, "Transitions")
+TransitionWindow::TransitionWindow(MyWin *in_win) : Dialog(780, 180, "Transitions")
 {
 int	loop;
 
 	my_window = in_win;
+	int new_yp = 20;
 	resize(x(), y(), w(), h());
 
 	int x_pos = 10;
 	Fl_PNG_Image *none = new Fl_PNG_Image("Images/transition_none.png");
-	none_button = new MyButton(x_pos, 40, 100, 100);
+	none_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	none_button->image(none);
 	none_button->type(FL_RADIO_BUTTON);
 	none_button->copy_tooltip("Abruptly transition from camera to camera");
@@ -61448,7 +61251,7 @@ int	loop;
 	x_pos += 110;
 
 	Fl_PNG_Image *blend = new Fl_PNG_Image("Images/transition_blend.png");
-	blend_button = new MyButton(x_pos, 40, 100, 100);
+	blend_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	blend_button->image(blend);
 	blend_button->type(FL_RADIO_BUTTON);
 	blend_button->copy_tooltip("Dissolve images from one camera into the next");
@@ -61456,7 +61259,7 @@ int	loop;
 	x_pos += 110;
 
 	Fl_PNG_Image *to_black = new Fl_PNG_Image("Images/transition_2black.png");
-	to_black_button = new MyButton(x_pos, 40, 100, 100);
+	to_black_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	to_black_button->image(to_black);
 	to_black_button->type(FL_RADIO_BUTTON);
 	to_black_button->copy_tooltip("Fade to black");
@@ -61464,7 +61267,7 @@ int	loop;
 	x_pos += 110;
 
 	Fl_PNG_Image *wipe_l2r = new Fl_PNG_Image("Images/transition_wipe_l2r.png");
-	wipe_l2r_button = new MyButton(x_pos, 40, 100, 100);
+	wipe_l2r_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	wipe_l2r_button->image(wipe_l2r);
 	wipe_l2r_button->type(FL_RADIO_BUTTON);
 	wipe_l2r_button->copy_tooltip("Wipe from left to right");
@@ -61472,7 +61275,7 @@ int	loop;
 	x_pos += 110;
 
 	Fl_PNG_Image *wipe_r2l = new Fl_PNG_Image("Images/transition_wipe_r2l.png");
-	wipe_r2l_button = new MyButton(x_pos, 40, 100, 100);
+	wipe_r2l_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	wipe_r2l_button->image(wipe_r2l);
 	wipe_r2l_button->type(FL_RADIO_BUTTON);
 	wipe_r2l_button->copy_tooltip("Wipe from right to left");
@@ -61480,7 +61283,7 @@ int	loop;
 	x_pos += 110;
 
 	Fl_PNG_Image *wipe_t2b = new Fl_PNG_Image("Images/transition_wipe_t2b.png");
-	wipe_t2b_button = new MyButton(x_pos, 40, 100, 100);
+	wipe_t2b_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	wipe_t2b_button->image(wipe_t2b);
 	wipe_t2b_button->type(FL_RADIO_BUTTON);
 	wipe_t2b_button->copy_tooltip("Wipe from the top to the bottom");
@@ -61488,21 +61291,13 @@ int	loop;
 	x_pos += 110;
 
 	Fl_PNG_Image *wipe_b2t = new Fl_PNG_Image("Images/transition_wipe_b2t.png");
-	wipe_b2t_button = new MyButton(x_pos, 40, 100, 100);
+	wipe_b2t_button = new MyButton(x_pos, new_yp + 20, 100, 100);
 	wipe_b2t_button->image(wipe_b2t);
 	wipe_b2t_button->type(FL_RADIO_BUTTON);
 	wipe_b2t_button->copy_tooltip("Wipe from the bottom to the top");
 	wipe_b2t_button->callback(transition_select_cb, this);
 
-	MyButton *close = new MyButton(x_pos + 30, 5, 100, 30, "Close");
-	close->box(FL_NO_BOX);
-	close->color(BLACK);
-	close->labelcolor(YELLOW);
-	close->labelsize(12);
-	close->copy_tooltip("Close the window and apply any changes");
-	close->callback(transitions_close_cb, this);
-
-	selection = new Fl_Box(0, 0, 48, 48, "@#+88->");
+	selection = new Fl_Box(0, 0, 48, 28, "@#+88->");
 	selection->box(FL_NO_BOX);
 	selection->labelcolor(YELLOW);
 	selection->hide();
@@ -61514,10 +61309,10 @@ int	loop;
 	if(global_potential_transition_cnt > 0)
 	{
 		int x_pos = 10;
-		int y_pos = 180;
+		int y_pos = new_yp + 180;
 		int amount = ((global_potential_transition_cnt / 7) * 20) + 40;
 		resize(x(), y(), w(), h() + amount);
-		Fl_Group *grp = new Fl_Group(2, 180, w() - 4, amount - 2);
+		Fl_Group *grp = new Fl_Group(2, new_yp + 180, w() - 4, amount - 2);
 		grp->box(FL_FLAT_BOX);
 		grp->color(BLACK);
 		for(loop = 0;loop < global_potential_transition_cnt;loop++)
@@ -61585,37 +61380,37 @@ void	TransitionWindow::Update()
 	if(my_window->transition == TRANSITION_NONE)
 	{
 		none_button->value(1);
-		selection->resize(none_button->x() + (36), none_button->y() + (100), 24, 24);
+		selection->resize(none_button->x() + 36, none_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_BLEND)
 	{
 		blend_button->value(1);
-		selection->resize(blend_button->x() + (36), blend_button->y() + (100), 24, 24);
+		selection->resize(blend_button->x() + 36, blend_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_L2R_WIPE)
 	{
 		wipe_l2r_button->value(1);
-		selection->resize(wipe_l2r_button->x() + (36), wipe_l2r_button->y() + (100), 24, 24);
+		selection->resize(wipe_l2r_button->x() + 36, wipe_l2r_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_R2L_WIPE)
 	{
 		wipe_r2l_button->value(1);
-		selection->resize(wipe_r2l_button->x() + (36), wipe_r2l_button->y() + (100), 24, 24);
+		selection->resize(wipe_r2l_button->x() + 36, wipe_r2l_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_T2B_WIPE)
 	{
 		wipe_t2b_button->value(1);
-		selection->resize(wipe_t2b_button->x() + (36), wipe_t2b_button->y() + (100), 24, 24);
+		selection->resize(wipe_t2b_button->x() + 36, wipe_t2b_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_B2T_WIPE)
 	{
 		wipe_b2t_button->value(1);
-		selection->resize(wipe_b2t_button->x() + (36), wipe_b2t_button->y() + (100), 24, 24);
+		selection->resize(wipe_b2t_button->x() + 36, wipe_b2t_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_FADE_TO_BLACK)
 	{
 		to_black_button->value(1);
-		selection->resize(to_black_button->x() + (36), to_black_button->y() + (100), 24, 24);
+		selection->resize(to_black_button->x() + 36, to_black_button->y() + 100, 24, 24);
 	}
 	else if(my_window->transition == TRANSITION_PLUGIN)
 	{
@@ -61821,7 +61616,7 @@ int	loop;
 	tw->redraw();
 }
 
-TriggerWindow::TriggerWindow(MyWin *in_win) : DragWindow(400, 300, 430, 450, "Triggers")
+TriggerWindow::TriggerWindow(MyWin *in_win) : Dialog(400, 300, 430, 450, "Triggers")
 {
 int	loop;
 
@@ -61836,11 +61631,12 @@ int	loop;
 		"On Trigger Camera"
 	};
 	main_win = in_win;
+	int new_yp = 20;
 	last_x = 0;
 	last_y = 0;
 
 	int xp = 20;
-	int yp = 20;
+	int yp = 20 + new_yp;
 	Fl_Box *weekday = new Fl_Box(xp, yp, 140, 20, "Weekday");
 	weekday->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
 	weekday->box(FL_FLAT_BOX);
@@ -61940,7 +61736,7 @@ int	loop;
 		yp += 22;
 	}
 	int nxx = 250;
-	int nyy = 50;
+	int nyy = 50 + new_yp;
 	for(loop = 0;loop < 128;loop++)
 	{
 		thumbnail[loop] = NULL;
@@ -61949,7 +61745,7 @@ int	loop;
 	{
 		if((nyy + 86) > h())
 		{
-			nyy = 50;
+			nyy = 50 + new_yp;
 			nxx += 160;
 		}
 		thumbnail[loop] = new ThumbButton(in_win, loop, nxx, nyy, 153, 86);
@@ -61959,14 +61755,14 @@ int	loop;
 		thumbnail[loop]->hide();
 		nyy += 90;
 	}
-	clear = new MyButton(w() - 170, 10, 70, 20, "Clear");
+	clear = new MyButton(w() - 170, 10 + new_yp, 70, 20, "Clear");
 	clear->box(FL_NO_BOX);
 	clear->labelcolor(YELLOW);
 	clear->labelsize(11);
 	clear->copy_tooltip("Clear selected record trigger conditions.");
 	clear->callback(trigger_window_clear_cb, this);
 
-	done = new MyButton(w() - 100, 10, 70, 20, "Done");
+	done = new MyButton(w() - 100, 10 + new_yp, 70, 20, "Done");
 	done->box(FL_NO_BOX);
 	done->labelcolor(YELLOW);
 	done->labelsize(11);
@@ -62001,7 +61797,7 @@ int	TriggerWindow::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	if((flag == 0) && (event == FL_PUSH))
 	{
@@ -63179,11 +62975,13 @@ int	loop;
 	}
 }
 
-FltkPluginWindow::FltkPluginWindow(MyWin *in_win) : DragWindow(260, 300, 200, 600, "FLTK Plugins")
+FltkPluginWindow::FltkPluginWindow(MyWin *in_win) : Dialog(260, 300, 200, 600, "FLTK Plugins")
 {
 	my_window = in_win;
 	last_x = 0;
 	last_y = 0;
+	int new_yp = 20;
+	vertical_offset = new_yp;
 	Populate();
 	end();
 }
@@ -63197,7 +62995,7 @@ int		FltkPluginWindow::handle(int event)
 	int flag = 0;
 	if(flag == 0)
 	{
-		flag = DragWindow::handle(event);
+		flag = Dialog::handle(event);
 	}
 	return(flag);
 }
@@ -63206,17 +63004,11 @@ void	FltkPluginWindow::Populate()
 {
 int	loop;
 
-	int y_pos = 2;
+	int y_pos = vertical_offset + 5;
 	for(loop = 0;loop < 128;loop++)
 	{
 		plug_in[loop] = NULL;
 	}
-	Fl_Box *box = new Fl_Box(2, y_pos, w() - 4, 20, "FLTK Plugins");
-	box->box(FL_FLAT_BOX);
-	box->color(BLACK);
-	box->labelcolor(WHITE);
-	box->labelsize(12);
-	y_pos += 26;
 	for(loop = 0;loop < global_potential_fltk_cnt;loop++)
 	{
 		char *cp = global_potential_fltk[loop] + strlen("fltk_");
@@ -63559,15 +63351,16 @@ int	loop;
 	{
 		if(al->path_button[loop] == b)
 		{
-			if(al->filename[loop] != NULL)
-			{
-				free(al->filename[loop]);
-			}
 			char filename[4096];
 			strcpy(filename, "");
-			int nn = my_file_chooser("Select an audio file", "*.{wav,mp3,flac}", "./AudioLibrary/*", filename);
+			int nn = my_file_chooser("Select an audio file", "*.{wav,mp3,flac}", "./AudioLibrary", filename);
 			if(nn > 0)
 			{
+				if(al->filename[loop] != NULL)
+				{
+					free(al->filename[loop]);
+					al->filename[loop] = NULL;
+				}
 				al->filename[loop] = strdup(filename);
 				b->copy_label(al->filename[loop]);
 				b->redraw();
@@ -63637,21 +63430,16 @@ void	PlayAudioButton::Play()
 	}
 }
 
-AudioLibraryList::AudioLibraryList(MyWin *in_win) : DragWindow(120, 500, "Audio Library List")
+AudioLibraryList::AudioLibraryList(MyWin *in_win) : Dialog(120, 500, "Audio Library List")
 {
 	my_window = in_win;
+	int new_yp = 20;
+	vertical_offset = new_yp;
 	box(FL_FLAT_BOX);
 
-	Fl_Group *grp = new Fl_Group(0, 0, w(), h());
-	Fl_Box *box = new Fl_Box(0, 0, w(), 20, label());
-	box->box(FL_FLAT_BOX);
-	box->color(BLACK);
-	box->labelcolor(WHITE);
-	box->labelsize(11);
-
-	scroll = new Fl_Scroll(5, 20, w() - 10, h() - 40);
+	scroll = new Fl_Scroll(5, new_yp, w() - 10, h() - 40);
 	scroll->box(FL_FLAT_BOX);
-	scroll->color(DARK_GRAY);
+	scroll->color(BLACK);
 	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->end();
 
@@ -63662,11 +63450,8 @@ AudioLibraryList::AudioLibraryList(MyWin *in_win) : DragWindow(120, 500, "Audio 
 	close_button->labelsize(9);
 	close_button->copy_tooltip("Close the dialog.");
 	close_button->callback(hide_window_cb, this);
-	grp->end();
-	grp->resizable(NULL);
 
 	end();
-	resizable(this);
 }
 
 AudioLibraryList::~AudioLibraryList()
@@ -63679,13 +63464,9 @@ int	loop;
 
 	set_non_modal();
 	scroll->clear();
-	resize(x(), y(), w(), 500);
-	scroll->resize(scroll->x(), scroll->y(), scroll->w(), 460);
-	scroll->type(Fl_Scroll::VERTICAL);
-	close_button->resize(close_button->x(), 480, close_button->w(), close_button->h());
 	if(my_window->audio_library_window != NULL)
 	{
-		my_window->audio_library_window->Load("audio_library.txt");
+		my_window->audio_library_window->Load("audio_library.json");
 		int yp = 0;
 		int nn = my_window->audio_library_window->number_of_entries;
 		for(loop = 0;loop < nn;loop++)
@@ -63709,22 +63490,16 @@ int	loop;
 				}
 			}
 		}
-		if(yp < scroll->h())
-		{
-			resize(x(), y(), w(), yp + 40);
-			scroll->resize(scroll->x(), scroll->y(), scroll->w(), yp);
-			scroll->type(0);
-			close_button->resize(close_button->x(), yp + 20, close_button->w(), close_button->h());
-		}
 	}
-	DragWindow::show();
+	Dialog::show();
 }
 
-AudioLibrary::AudioLibrary(MyWin *in_win) : DragWindow(560, 500, "Audio Library")
+AudioLibrary::AudioLibrary(MyWin *in_win) : Dialog(560, 500, "Audio Library")
 {
 int	loop;
 
 	my_window = in_win;
+	int new_yp = 20;
 	number_of_entries = 0;
 	for(loop = 0;loop < 1024;loop++)
 	{
@@ -63733,13 +63508,13 @@ int	loop;
 		name_input[loop] = NULL;
 		path_button[loop] = NULL;
 	}
-	scroll = new Fl_Scroll(10, 10, w() - 20, 450);
+	scroll = new Fl_Scroll(10, 10 + new_yp, w() - 20, 450);
 	scroll->box(FL_FRAME_BOX);
 	scroll->color(DARK_GRAY);
 	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->end();
 
-	add_button = new MyButton(10, 470, 70, 20, "Add");
+	add_button = new MyButton(10, 470 + new_yp, 70, 20, "Add");
 	add_button->box(FL_FLAT_BOX);
 	add_button->color(BLACK);
 	add_button->labelcolor(YELLOW);
@@ -63747,7 +63522,7 @@ int	loop;
 	add_button->copy_tooltip("Add a new blank entry to the library.");
 	add_button->callback(audio_library_add_cb, this);
 
-	save_button = new MyButton((w() / 2) - 35, 470, 70, 20, "Save");
+	save_button = new MyButton((w() / 2) - 35, 470 + new_yp, 70, 20, "Save");
 	save_button->box(FL_FLAT_BOX);
 	save_button->color(BLACK);
 	save_button->labelcolor(YELLOW);
@@ -63755,7 +63530,7 @@ int	loop;
 	save_button->copy_tooltip("Save library and close the dialog. Entries with a blank name will not be saved.");
 	save_button->callback(save_audio_library_cb, this);
 
-	cancel_button = new MyButton(w() - 80, 470, 70, 20, "Cancel");
+	cancel_button = new MyButton(w() - 80, 470 + new_yp, 70, 20, "Cancel");
 	cancel_button->box(FL_FLAT_BOX);
 	cancel_button->color(BLACK);
 	cancel_button->labelcolor(YELLOW);
@@ -63789,7 +63564,7 @@ void	AudioLibrary::show()
 {
 	set_non_modal();
 	Load("audio_library.json");
-	DragWindow::show();
+	Dialog::show();
 }
 
 void	AudioLibrary::Add(char *in_name, char *in_path)
@@ -63838,7 +63613,6 @@ void	AudioLibrary::Add(char *in_name, char *in_path)
 		local_path_button->callback(audio_library_filename_change_cb, this);
 		scroll->add(local_path_button);
 		path_button[number_of_entries] = local_path_button;
-
 		number_of_entries++;
 	}
 	scroll->redraw();
@@ -64088,8 +63862,6 @@ void	show_help()
 	printf("cowcam --source=/dev/video0::V4L:MJPG\n\n");
 	printf("# Specify an audio input device\n");
 	printf("cowcam --audio_source=alsa_input.usb-audio-technica____AT2020_USB-00.analog-stereo\n\n");
-	printf("# Load a full setup. This will overwrite most other options.\n");
-	printf("cowcam --load=your_file.setup\n\n");
 	printf("# Use an IP camera at a RTSP URL with login and password\n");
 	printf("cowcam --source=rtsp://your_login:your_password@url_for_your_webcam.org/live\n\n");
 	printf("# Use USB camera number 4\n");
@@ -64344,7 +64116,6 @@ extern int	global_my_format_cnt;
 	int frame_scaling = 1;
 	int crop_output = 0;
 	int crop_display = 0;
-	char *load_file = NULL;
 	int auto_scale = 0;
 	double screen_scaling = 1.0;
 	int default_window_width = -1;
@@ -64913,11 +64684,6 @@ extern int	global_my_format_cnt;
 					use_no_audio_scan = 1;
 					use_no_scan = 1;
 				}
-				else if(strncmp(argv[loop], "--load=", strlen("--load=")) == 0)
-				{
-					char *cp = argv[loop] + strlen("--load=");
-					load_file = strdup(cp);
-				}
 				else if(strncmp(argv[loop], "--transition_plugin=", strlen("--transition_plugin=")) == 0)
 				{
 					char *cp = argv[loop] + strlen("--transition_plugin=");
@@ -65184,7 +64950,6 @@ extern int	global_my_format_cnt;
 		, use_detect
 		, timestamp
 		, frame_scaling
-		, load_file
 		, use_retain_commands
 		, use_retain_cameras
 		, use_retain_audio

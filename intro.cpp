@@ -140,7 +140,6 @@ int	loop;
 	stage_cnt = (int)(drand48() * 274.0);
 	tick = (int)(drand48() * 34.0);
 	inc = (drand48() * 1.75) + 1.0;
-fprintf(stderr, "STAGE CNT: %d TICK: %d INC: %f\n", stage_cnt, tick, inc);
 
 	int cnt = time(0) % 200;
 	for(loop = 0;loop < 8192;loop++)
@@ -305,6 +304,5 @@ std::thread thread_id;
 	thread_id = std::thread(communication_thread, win);
 	thread_id.detach();
 	Fl::run();
-fprintf(stderr, "EXITING\n");
 	return(0);
 }

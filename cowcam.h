@@ -444,10 +444,7 @@ class	V4L_Button;
 class	PTZ_Button;
 class	MyVISCACamera;
 class	Camera;
-class	StoredCamera;
-class	StoredMyWin;
 class	ImageWindow;
-class	StoredImageWindow;
 class	PulseMicrophone;
 class	ProgressScrubber;
 class	Immediate;
@@ -469,6 +466,7 @@ class	MyInput;
 class	MySlider;
 class	ColorSlider;
 class	MiscCopy;
+class	ImmediateNameWindow;
 
 class	ShortcutWindow : public Fl_Window
 {
@@ -588,6 +586,23 @@ public:
 	int		last_y;
 };
 
+class	Dialog : public DragWindow
+{
+public:
+			Dialog(int ww, int hh, char *lbl);
+			Dialog(int xx, int yy, int ww, int hh, char *lbl);
+			~Dialog();
+	int		handle(int event);
+	void	resize(int xx, int yy, int ww, int hh);
+	void	draw();
+
+	Fl_Box		*title_box;
+	MyButton	*close;
+	int			expanded;
+	int			old_w;
+	int			old_h;
+};
+
 class	MyBox : public Fl_Box
 {
 public:
@@ -658,7 +673,7 @@ public:
 	int			layout;
 };
 
-class	FileSelector : public DragWindow
+class	FileSelector : public Dialog
 {
 public:
 					FileSelector(char *lbl, char *in_filter, char *result, int select_dir, int new_file);
@@ -710,7 +725,7 @@ public:
 	MyButton		*sort_timestamp;
 };
 
-class	RelabelWindow : public DragWindow
+class	RelabelWindow : public Dialog
 {
 public:
 			RelabelWindow(MyWin *win, Fl_Button *b, int xx, int yy, int ww, int hh);
@@ -837,7 +852,7 @@ public:
 	char	*path;
 };
 
-class	AudioLibraryList : public DragWindow
+class	AudioLibraryList : public Dialog
 {
 public:
 					AudioLibraryList(MyWin *my_win);
@@ -848,9 +863,11 @@ public:
 
 	Fl_Scroll		*scroll;
 	MyButton		*close_button;
+
+	int				vertical_offset;
 };
 
-class	AudioLibrary : public DragWindow
+class	AudioLibrary : public Dialog
 {
 public:
 					AudioLibrary(MyWin *my_win);
@@ -994,7 +1011,7 @@ public:
 	int			handle(int in_event);
 };
 
-class	MiscVideoSettingsWindow : public DragWindow
+class	MiscVideoSettingsWindow : public Dialog
 {
 public:
 		MiscVideoSettingsWindow(MyWin *in_win);
@@ -1094,7 +1111,7 @@ public:
 		osg::Node	*node;
 };
 
-class	InstrumentWindow : public DragWindow
+class	InstrumentWindow : public Dialog
 {
 public:
 				InstrumentWindow(MyWin *in_win, Camera *in_cam, int ww, int hh);
@@ -1162,7 +1179,7 @@ public:
 	int			limit;
 };
 
-class	PTZ_LockWindow : public DragWindow
+class	PTZ_LockWindow : public Dialog
 {
 public:
 				PTZ_LockWindow(MyWin *in_win);
@@ -1353,7 +1370,7 @@ public:
 	MainMenu	*my_menu;
 };
 
-class	ObjectMenu : public DragWindow
+class	ObjectMenu : public Dialog
 {
 public:
 					ObjectMenu(MyWin *in_win);
@@ -1386,7 +1403,7 @@ public:
 	Fl_Widget	*item[4096];
 };
 
-class	CodecSelectionWindow : public DragWindow
+class	CodecSelectionWindow : public Dialog
 {
 public:
 		CodecSelectionWindow(MyWin *in_win);
@@ -1412,7 +1429,7 @@ public:
 };
 
 
-class	ColorItWindow : public DragWindow
+class	ColorItWindow : public Dialog
 {
 public:
 				ColorItWindow(MyWin *in_win);
@@ -1435,7 +1452,7 @@ public:
 	ColorSlider	*alpha_replace;
 };
 
-class	ColorDialog : public DragWindow
+class	ColorDialog : public Dialog
 {
 public:
 			ColorDialog(MyWin *in_win, int ww, int hh, char *title = NULL, int *in_red = NULL, int *in_green = NULL, int *in_blue = NULL, int *in_alpha = NULL);
@@ -1506,7 +1523,7 @@ public:
 	Mat	freehand_mat;
 };
 
-class	TextEditWindow : public DragWindow
+class	TextEditWindow : public Dialog
 {
 public:
 					TextEditWindow(MyWin *in_win, Camera *in_cam, MiscCopy *in_misc);
@@ -1537,7 +1554,7 @@ public:
 	Fl_Multiline_Input	*text_initial_text;
 };
 
-class	ImmediateDrawingWindow : public DragWindow
+class	ImmediateDrawingWindow : public Dialog
 {
 public:
 			ImmediateDrawingWindow(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
@@ -1819,43 +1836,6 @@ public:
 	char		image_file_path[4096];
 };
 
-class	StoredImDefault
-{
-public:
-				StoredImDefault();
-
-	int			width;
-	int			red;
-	int			green;
-	int			blue;
-	int			alpha;
-	int			style;
-	int			background_red;
-	int			background_green;
-	int			background_blue;
-	int			background_alpha;
-	int			shape;
-	int			use_size;
-	int			filled;
-	int			selecting;
-	int			erase;
-	int			box_type;
-
-	int			xx[32768];
-	int			yy[32768];
-	int			pt_type[32768];
-	int			cnt;
-	char		key;
-	int			italic;
-	int			bold;
-	int			outline;
-	int			font_alpha;
-	int			outline_alpha;
-	char		font_name[128];
-	char		image_file_path[4096];
-	char		freehand_filename[4096];
-};
-
 class	QuickText : public Fl_Multiline_Input
 {
 public:
@@ -1962,6 +1942,57 @@ public:
 	int		extent_y2;
 };
 
+class	ImAnim
+{
+public:
+				ImAnim();
+				ImAnim(int frame, Immediate *in_im);
+				~ImAnim();
+
+	void		Edit(int frame, Immediate *in_im);
+
+	int			frame;
+	double		xx;
+	double		yy;
+	double		ww;
+	double		hh;
+	double		angle;
+	double		red;
+	double		green;
+	double		blue;
+	double		alpha;
+};
+
+class	AnimButton : public Fl_Box
+{
+public:
+			AnimButton(MyWin *in_win, int xx, int yy);
+			~AnimButton();
+	void	draw();
+	int		handle(int event);
+
+	int		frame;
+};
+
+class	AnimTimeline : public Fl_Window
+{
+public:
+			AnimTimeline(MyWin *in_win, int xx, int yy, int ww, int hh);
+			~AnimTimeline();
+	void	draw();
+	int		handle(int event);
+
+	void	Reset();
+
+	MyWin		*my_window;
+	AnimButton	*frame_indicator;
+	MyInput		*input;
+	MyButton	*preview_button;
+	int			range;
+	int			start;
+	int			current_frame;
+};
+
 class	Immediate : public MyGroup
 {
 public:
@@ -1970,9 +2001,10 @@ public:
 			Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int hh);
 			~Immediate();
 	int		handle(int event);
-	void	draw();
+	void	Draw();
 	void	resize(int xx, int yy, int ww, int hh);
 
+	void	Name();
 	void	Hide();
 	void	Show();
 	void	CompleteRectangle(int xx, int yy);
@@ -1984,8 +2016,24 @@ public:
 	void	ZipDown();
 	void	ShowPopup();
 	void	Copy();
+	void	GetColor(int& red, int& green, int& blue, int& alpha);
+	void	SetColor(int red, int green, int blue, int alpha);
+	void	KeyFrame();
+	void	SetKeyframe();
+	void	SetKeyframeAll();
+	void	SetKey(int frame);
+	void	EditKey(int frame);
+	void	SortKeys();
+	void	MeetKey();
+	void	ResetAnimParameters();
+	void	RemoveKeyframes();
+	void	RemoveKeyframesFromAll();
+	void	SaveParameters();
+	void	RestoreInitialParameters();
+	void	SaveAsJSON(FILE *fp);
 
 	ImmediateDrawingWindow	*idw;
+	ImmediateNameWindow		*inw;
 
 	ImText					*text;
 	ImLine					*line;
@@ -1999,6 +2047,7 @@ public:
 
 	PopupMenu				*popup;
 
+	char	*name;
 	int		draw_it;
 	int		immediate_type;
 	int		im_type;
@@ -2030,39 +2079,42 @@ public:
 	int		crop_w;
 	int		crop_h;
 	double	angle;
+	int		anim_flag;
+	double	anim_x;
+	double	anim_y;
+	double	anim_ix;
+	double	anim_iy;
+	double	anim_iangle;
+	double	anim_w;
+	double	anim_h;
+	double	anim_iw;
+	double	anim_ih;
+	double	anim_red;
+	double	anim_green;
+	double	anim_blue;
+	double	anim_alpha;
+	double	anim_ired;
+	double	anim_igreen;
+	double	anim_iblue;
+	double	anim_ialpha;
+	ImAnim	*anim[1024];
+	int		anim_cnt;
+	int		anim_index;
+	int		anim_frame;
+	int		anim_complete;
+	int		anim_looping;
+	int		save_initial;
+	int		save_x;
+	int		save_y;
+	int		save_w;
+	int		save_h;
+	int		save_red;
+	int		save_green;
+	int		save_blue;
+	int		save_alpha;
 };
 
-class	StoredImmediate
-{
-public:
-			StoredImmediate();
-	void	Populate(Immediate *im);
-	void	Depopulate(MyWin *win, Camera *cam, Immediate *im);
-
-	int		sx;
-	int		sy;
-	int		sw;
-	int		sh;
-	StoredImDefault	stored_default;
-
-	char	stored_value[32768];
-	int		im_type;
-	int		draw_it;
-	int		immediate_type;
-	int		hovering;
-	int		dragging;
-	int		initial_x;
-	int		initial_y;
-	int		last_x;
-	int		last_y;
-	int		layer;
-	int		drag_mode;
-	double	overall_alpha;
-	int		mw_mode;
-	int		use_as_mask;
-};
-
-class	SelectOutputWindow : public DragWindow
+class	SelectOutputWindow : public Dialog
 {
 public:
 		SelectOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh);
@@ -2079,7 +2131,7 @@ public:
 	int					last_y;
 };
 
-class	EditOutputWindow : public DragWindow
+class	EditOutputWindow : public Dialog
 {
 public:
 		EditOutputWindow(MyWin *in_win, int xx, int yy, int ww, int hh);
@@ -2118,7 +2170,7 @@ public:
 	MyMenuButton	*value_menu;
 };
 
-class	CommandKeySettingsWindow : public DragWindow
+class	CommandKeySettingsWindow : public Dialog
 {
 public:
 		CommandKeySettingsWindow(MyWin *in_win, int ww, int hh);
@@ -2288,7 +2340,7 @@ public:
 				~ColorSlider();
 };
 
-class	TriggerWindow : public DragWindow
+class	TriggerWindow : public Dialog
 {
 public:
 			TriggerWindow(MyWin *);
@@ -2336,7 +2388,7 @@ public:
 };
 
 
-class	GUI_SettingsWindow : public DragWindow
+class	GUI_SettingsWindow : public Dialog
 {
 public:
 		GUI_SettingsWindow(MyWin *);
@@ -2430,7 +2482,7 @@ public:
 	unsigned char	dark_blue_color_a;
 };
 
-class	TransitionWindow : public DragWindow
+class	TransitionWindow : public Dialog
 {
 public:
 					TransitionWindow(MyWin *);
@@ -2452,7 +2504,7 @@ public:
 	MyLightButton	*transition_plugin_button[128];
 };
 
-class	SelectAudioWindow : public DragWindow
+class	SelectAudioWindow : public Dialog
 {
 public:
 			SelectAudioWindow(MyWin *);
@@ -2463,7 +2515,7 @@ public:
 	NDIlib_find_instance_t	ndi_find;
 };
 
-class	SelectCameraWindow : public DragWindow
+class	SelectCameraWindow : public Dialog
 {
 public:
 			SelectCameraWindow(MyWin *);
@@ -2473,7 +2525,7 @@ public:
 	MyWin	*my_window;
 };
 
-class	PseudoCameraWindow : public DragWindow
+class	PseudoCameraWindow : public Dialog
 {
 public:
 		PseudoCameraWindow(MyWin *);
@@ -2485,7 +2537,7 @@ public:
 	MyWin		*my_window;
 };
 
-class	FilterPluginsWindow : public DragWindow
+class	FilterPluginsWindow : public Dialog
 {
 public:
 					FilterPluginsWindow(MyWin *win, int in_filter_type);
@@ -2533,7 +2585,7 @@ public:
 	double	ratio_h;
 };
 
-class	VideoSettingsWindow : public DragWindow
+class	VideoSettingsWindow : public Dialog
 {
 public:
 			VideoSettingsWindow(MyWin *);
@@ -2573,7 +2625,7 @@ public:
 	MyLightButton	*html_background_transparent;
 };
 
-class	CameraSettingsWindow : public DragWindow
+class	CameraSettingsWindow : public Dialog
 {
 public:
 			CameraSettingsWindow(MyWin *);
@@ -2611,7 +2663,7 @@ public:
 	MyButton			*load_from;
 };
 
-class	SnapshotSettingWindow : public DragWindow
+class	SnapshotSettingWindow : public Dialog
 {
 public:
 			SnapshotSettingWindow(MyWin *);
@@ -2647,7 +2699,7 @@ public:
 	Mat	mat;
 };
 
-class	SourceSelectWindow : public DragWindow
+class	SourceSelectWindow : public Dialog
 {
 public:
 			SourceSelectWindow(MyWin *win, int ww, int hh, char *lbl);
@@ -2669,6 +2721,7 @@ public:
 	int		cur_row;
 	int		cur_col;
 	char	*list[128];
+	int		vertical_offset;
 };
 
 class	SaveFIFO
@@ -2718,18 +2771,21 @@ public:
 	int	visible;
 };
 
-class	NDISourceListWindow : public DragWindow
+class	NDISourceListWindow : public Dialog
 {
 public:
 							NDISourceListWindow(MyWin *in_win);
 							~NDISourceListWindow();
 	void					Update();
+	void					clear();
 
 	MyWin					*my_window;
 	MyButton				*ndi_source_button[33];
 	NDIlib_find_instance_t	ndi_find;
 	const NDIlib_source_t	*sources;
 	uint32_t				num_sources;
+	int						ndi_source_button_cnt;
+	int						vertical_offset;
 };
 
 class	Camera
@@ -2767,9 +2823,6 @@ public:
 	void			ScrollTextList(char *);
 	void			GrabSlideshow();
 	void			GrabWindow();
-	void			Save(char *filename);
-	void			Save(int fd);
-	void			RestoreFromStoredCamera(StoredCamera *in);
 	void			PositionAllButtonized();
 	void			AddImmediate(Immediate *in);
 	int				RemoveImmediate(Immediate *ptr);
@@ -2805,8 +2858,8 @@ public:
 	void			BlurDetectedRegions();
 	void			DrawShapes();
 	void			HighlightShapes();
-	void			SaveImmediate(int fd);
-	void			LoadImmediate(int fd);
+	void			SaveImmediate(char *filename);
+	void			LoadImmediate(char *filename);
 	void			TimestampFrame();
 	void			TriggerSnapshot();
 	void			UnTriggerSnapshot();
@@ -2982,7 +3035,7 @@ public:
 	InstrumentWindow	*instrument_window;
 	MatrixState			*matrix_state[128];
 	int					matrix_state_cnt;
-	
+
 	int					crop_start_x;
 	int					crop_start_y;
 	int					use_crop_start;
@@ -3112,99 +3165,7 @@ public:
 	char				alert_old_buffer[32768];
 
 	int					v4l_capable;
-};
-
-class	StoredImageWindow
-{
-public:
-	int	index;
-	char	source_path[4096];
-	double	width;
-	double	height;
-	double	orig_w;
-	double	orig_h;
-	double	dx;
-	double	dy;
-	double	dw;
-	double	dh;
-	int		layer;
-	int	buttonize;
-	int	buttonized_x;
-	int	buttonized_y;
-	int	buttonized_w;
-	int	buttonized_h;
-};
-
-class	StoredCamera
-{
-public:
-				StoredCamera(Camera *in);
-				StoredCamera();
-
-	char		path[4096];
-	char		original_path[4096];
-	char		alias[4096];
-	int			requested_x;
-	int			requested_y;
-	int			requested_w;
-	int			requested_h;
-	int			record_trigger;
-	int			schedule_start;
-	int			schedule_stop;
-	int			schedule_day;
-	double		darkness_trigger;
-	int			motion_detect;
-	int			font_sz;
-	double		zoom;
-	int			width;
-	int			height;
-	int			id;
-
-	int			flip_horizontal;
-	int			flip_vertical;
-	double		brightness;
-	double		saturation;
-	double		hue;
-	double		intensity;
-	double		contrast;
-	int			motion_threshold;
-	double		recognition_threshold;
-	int			recognize_interval;
-
-	int			zoom_box_display;
-	int			zoom_box_x;
-	int			zoom_box_y;
-	int			zoom_box_w;
-	int			zoom_box_h;
-
-	double		display_width;
-	double		display_height;
-
-	StoredImageWindow	image_window[128];
-	int					image_window_cnt;
-	int					immediate_cnt;
-
-	int			red;
-	int			green;
-	int			blue;
-	int			alpha;
-	int			text_red;
-	int			text_green;
-	int			text_blue;
-	int			text_alpha;
-
-	char		snapshot_filename_format[4096];
-	int			snapshot_initial_delay;
-	int			snapshot_repeat_delay;
-	int			snapshot_trigger_condition;
-	double		snapshot_scale;
-
-	char		filter_plugin_name[128][256];
-	int			filter_plugin_cnt;
-
-	char		filter_name[128][256];
-	double		filter_param[128][10];
-	int			filter_cnt;
+	int					anim_preview;
 };
 
 class	MyVISCACamera : public VISCACamera_t
@@ -3303,7 +3264,7 @@ public:
 	int						in_use;
 };
 
-class	PulseAudioFilterWindow : public DragWindow
+class	PulseAudioFilterWindow : public Dialog
 {
 public:
 						PulseAudioFilterWindow(MyWin *in_win);
@@ -3362,7 +3323,7 @@ public:
 	void	draw();
 };
 
-class	AudioSettingsWindow : public DragWindow
+class	AudioSettingsWindow : public Dialog
 {
 public:
 					AudioSettingsWindow(MyWin *in_win);
@@ -3395,7 +3356,7 @@ public:
 	int	focus;
 };
 
-class	AlertWindow : public DragWindow
+class	AlertWindow : public Dialog
 {
 public:		
 					AlertWindow(MyWin *in_win, int ww, int hh);
@@ -3420,7 +3381,7 @@ public:
 	char			monitor_file[4096];
 };
 
-class	TimerWindow : public DragWindow
+class	TimerWindow : public Dialog
 {
 public:		
 					TimerWindow(MyWin *in_win, int ww, int hh);
@@ -3448,7 +3409,7 @@ public:
 	MyButton			*accept;
 };
 
-class	AliasWindow : public DragWindow
+class	AliasWindow : public Dialog
 {
 public:		
 				AliasWindow(MyWin *in_win);
@@ -3460,7 +3421,19 @@ public:
 	MyWin		*my_window;
 };
 
-class	SpecifyURLWindow : public DragWindow
+class	ImmediateNameWindow : public Dialog
+{
+public:		
+				ImmediateNameWindow(MyWin *in_win, Immediate *in_im);
+				~ImmediateNameWindow();
+	int			handle(int event);
+
+	Fl_Input	*name;
+	MyWin		*my_window;
+	Immediate	*my_im;
+};
+
+class	SpecifyURLWindow : public Dialog
 {
 public:
 						SpecifyURLWindow(MyWin *in_win);
@@ -3473,7 +3446,7 @@ public:
 	MyWin				*my_window;
 };
 
-class	SpecifyIRCWindow : public DragWindow
+class	SpecifyIRCWindow : public Dialog
 {
 public:
 						SpecifyIRCWindow(MyWin *in_win);
@@ -3489,7 +3462,7 @@ public:
 	MyWin				*my_window;
 };
 
-class	SelectX11Window : public DragWindow
+class	SelectX11Window : public Dialog
 {
 public:
 		SelectX11Window(MyWin *in_win);
@@ -3498,7 +3471,7 @@ public:
 	MyWin	*my_window;
 };
 
-class	NewSourceWindow : public DragWindow
+class	NewSourceWindow : public Dialog
 {
 public:		
 			NewSourceWindow(MyWin *in_win, int xx, int yy);
@@ -3596,7 +3569,7 @@ public:
 	int			total;
 };
 
-class	MonitorWindow : public DragWindow
+class	MonitorWindow : public Dialog
 {
 public:
 				MonitorWindow(MyWin *in_win, int ww, int hh, char *lbl);
@@ -3604,11 +3577,13 @@ public:
 	void		draw();
 	int			handle(int event);
 	void		ShowPopup();
+	void		hide();
 
 	MyWin		*my_window;
 	Mat			mat;
 	int			size;
 	int			depth;
+	int			vertical_offset;
 	PopupMenu	*popup;
 };
 
@@ -3853,7 +3828,6 @@ public:
 			, int use_detect
 			, int use_timestamp
 			, int use_frame_scaling
-			, char *load_file
 			, int use_retain_commands
 			, int use_retain_cameras
 			, int use_retain_audio
@@ -3953,16 +3927,9 @@ public:
 	void		ShowLog();
 	void		SaveMicrophones();
 	void		SaveMicrophones(char *filename);
-	int			LoadMicrophone(int fd, int orig_cnt);
 	void		LoadMicrophones();
-	void		LoadMicrophones(char *filename);
-	void		LoadCamera(char *filename);
-	void		LoadCamera(int fd);
 	Camera		*FindCameraByPath(char *path);
-	void		RestoreFromStored(StoredMyWin *in_win);
 	void		Cleanup();
-	void		Save(char *filename);
-	void		Load(char *filename);
 	int			ImageWindowButtonHit(int xx, int yy);
 	void		AddLastMuxed(char *filename);
 	void		FrameForMuxer(Camera *cam, Mat in_mat);
@@ -4201,6 +4168,9 @@ public:
 	NDISourceListWindow	*ndi_source_window;
 	MenuButton			*command_button_list[1024];
 	int					command_button_cnt;
+
+	TextEditWindow		*text_edit_window;
+	AnimTimeline		*anim_timeline;
 	
 	uchar		status_color_r;
 	uchar		status_color_g;
@@ -4598,134 +4568,6 @@ public:
 	int			tutorial_mode;
 };
 
-class	StoredMyWin
-{
-public:
-				StoredMyWin(MyWin *win);
-				StoredMyWin();
-				~StoredMyWin();
-
-	void		Load(char *filename);
-	void		Load(int fd);
-	void		Save(char *filename);
-	void		Save(int fd);
-
-	char		source[128][4096];
-	int			source_cnt;
-	char		audio_source[128][4096];
-	int			audio_source_cnt;
-	int			split_bx[10];
-	int			split_by[10];
-	int			split_rx[10];
-	int			split_ry[10];
-	int			requested_x;
-	int			requested_y;
-	int			requested_w;
-	int			requested_h;
-	int			output_width;
-	int			output_height;
-	double		display_width;
-	double		display_height;
-	int			frame_scaling;
-	int			crop_scaling;
-	int			crop_output;
-	int			crop_output_x;
-	int			crop_output_y;
-	int			image_sx;
-	int			image_sy;
-	int			use_mousewheel;
-	int			muxing;
-	int			no_scan;
-	int			no_audio_scan;
-	char		yolo_cfg_filename[4096];
-	char		yolo_weights_filename[4096];
-	char		yolo_names_filename[4096];
-	int			forced_fps;
-	double		forced_interval;
-	double		restore_forced_interval;
-	double		minimum_fps;
-	char		jpeg_streaming[4096];
-	int 		jpeg_streaming_port;
-	int			streaming;
-	char		stream_url[4092];
-	int			stream_only;
-	int			streaming_audio_quality;
-	int			embed_pip;
-	double		pip_x_position;
-	double		pip_y_position;
-	int			pip_red;
-	int			pip_green;
-	int			pip_blue;
-	double		pip_size;
-	int			multipip;
-	int			grid_size;
-	double		speed_factor;
-	char		desktop_monitor[4096];
-
-	int			audio;
-	int			mute_audio;
-	char		mux_format[128];
-
-	int		encoding;
-	int		visible_debug;
-	int		interest_x[100];
-	int		interest_y[100];
-	int		interest_cnt;
-	int		snapshot;
-	int		timestamp;
-	int		resizing_detail;
-	int		drag_start_x;
-	int		drag_start_y;
-	int		motion_debug;
-	int		split;
-	int		retain_commands;
-	int		retain_cameras;
-	int		retain_audio;
-	int		retain_ptz;
-
-	int		record_all;
-	int		record_desktop;
-	int		desktop_x;
-	int		desktop_y;
-	int		desktop_w;
-	int		desktop_h;
-	int		single_stream;
-	int		follow_mode;
-	int		transition;
-	char	transition_plugin[256];
-	
-	char			ptz_device_path[NUMBER_OF_INTERFACES][4096];
-	char			ptz_lock_alias[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS][4096];
-	char			ptz_alias[NUMBER_OF_INTERFACES][4096];
-	char			ptz_bind_alias[NUMBER_OF_INTERFACES][4096];
-	int				ptz_prefer_ndi[NUMBER_OF_INTERFACES];
-	int				ptz_prefer_v4l[NUMBER_OF_INTERFACES];
-	int				ptz_device_cnt;
-	int				ptz_zoom;
-	int				old_ptz_zoom;
-	int				ptz_panning;
-	int				ptz_zooming;
-	int				ptz_focusing;
-	int				use_pan_speed;
-	int				use_tilt_speed;
-	int				ptz_follow;
-	int				ptz_adjust_speed_for_zoom;
-	int				ptz_little_speed;
-	int				ptz_little_mode;
-	int				ptz_reverse_horizontal;
-	int				ptz_reverse_vertical;
-	int				ptz_joystick;
-	int				transmitting;
-	ImageMemory		image_memory;
-
-	AVCodecID		use_video_codec;
-	AVCodecID		use_audio_codec;
-	char			use_extension[256];
-	char			use_container[4096];
-	char			video_codec_name[4096];
-	char			audio_codec_name[4096];
-};
-
 class	TitleBox : public Fl_Window
 {
 public:
@@ -4882,7 +4724,7 @@ public:
 	int			use_as_mask;
 };
 
-class	EmbedAppSettings : public DragWindow
+class	EmbedAppSettings : public Dialog
 {
 public:
 			EmbedAppSettings(MyWin *in_win);
@@ -4917,7 +4759,7 @@ public:
 	char		label_buf[128];
 };
 
-class	FltkPluginWindow : public DragWindow
+class	FltkPluginWindow : public Dialog
 {
 public:
 			FltkPluginWindow(MyWin *in_win);
@@ -4929,6 +4771,7 @@ public:
 	MyWin		*my_window;
 	int			last_x;
 	int			last_y;
+	int			vertical_offset;
 
 	MyLightButton	*plug_in[1024];
 

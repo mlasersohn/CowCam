@@ -52,7 +52,6 @@ int		loop;
 		}
 		else if(strcmp(extension, ".wav") == 0)
 		{
-printf("2 INIT FILE: [%s]\n", filename);
 			if(drwav_init_file(&wav, filename, NULL))
 			{
 				p_wav = &wav;
@@ -81,7 +80,6 @@ printf("2 INIT FILE: [%s]\n", filename);
 		}
 		else if(p_wav != NULL)
 		{
-printf("3 SEEK TO FRAME\n");
 			drwav_seek_to_pcm_frame((drwav *)p_wav, 0);
 			drwav *wav = (drwav *)p_wav;
 			channels = wav->channels;
@@ -110,7 +108,6 @@ printf("3 SEEK TO FRAME\n");
 				else if(p_wav != NULL)
 				{
 					drwav_uint64 framesRead = drwav_read_pcm_frames_s16((drwav *)p_wav, number_of_samples, buf);
-printf("2 READ PCM FRAMES: %llu\n", framesRead);
 					n = (int)framesRead;
 				}
 				else if(p_flac != NULL)
@@ -125,18 +122,15 @@ printf("2 READ PCM FRAMES: %llu\n", framesRead);
 					total_buf = (SAMPLE *)realloc(total_buf, total_sz);
 					if(total_buf != NULL)
 					{
-printf("TOTAL_SZ: %d\n", total_sz);
 						memcpy(&total_buf[sample_cnt * channels], buf, sz_in_bytes);
 						sample_cnt += n;
 					}
 				}
 				else
 				{
-printf("DONE\n");
 					done = 1;
 				}
 			}
-printf("OUT\n");
 			if(p_mp3 != NULL)
 			{
     			drmp3_uninit((drmp3 *)p_mp3);
@@ -311,7 +305,6 @@ int	loop;
 	else if(p_wav != NULL)
 	{
 		drwav_uint64 framesRead = drwav_read_pcm_frames_s16((drwav *)p_wav, number_of_samples, buf);
-printf("READ PCM FRAMES: %llu\n", framesRead);
 		n = (int)framesRead;
 	}
 	else if(p_flac != NULL)
@@ -340,7 +333,6 @@ printf("READ PCM FRAMES: %llu\n", framesRead);
 			}
 			else if(p_wav != NULL)
 			{
-printf("2 SEEK TO FRAME\n");
 				drwav_seek_to_pcm_frame((drwav *)p_wav, 0);
 			}
 			else if(p_flac != NULL)
@@ -643,7 +635,6 @@ long int precise_time(void);
 					}
 					else if(strcmp(extension, ".wav") == 0)
 					{
-printf("INIT FILE: [%s]\n", device);
 						if(drwav_init_file(&wav, device, NULL)) 
 						{
 							p_wav = &wav;
@@ -748,7 +739,6 @@ void	PulseAudio::Record()
 			}
 			else if(p_wav != NULL)
 			{
-printf("SEEK TO FRAME\n");
 				drwav_seek_to_pcm_frame((drwav *)p_wav, 0);
 			}
 			else if(p_flac != NULL)
