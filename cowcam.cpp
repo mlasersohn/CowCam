@@ -261,6 +261,11 @@ void			*void_OSG_Scale = NULL;
 void			*void_OSG_open_osg = NULL;
 int				global_osg_enabled = 0;
 
+int	global_palette_red[32];
+int global_palette_green[32];
+int global_palette_blue[32];
+int global_palette_alpha[32];
+
 cairo_matrix_t			global_cairo_matrix[128];
 int						global_cairo_matrix_cnt = 0;
 
@@ -540,6 +545,79 @@ void	find_url_css_js(char *buf, char *url, char *css, char *js_once, char *js_al
 		cpo++;
 	}
 	*cpo = '\0';
+}
+
+int		mat_from_copy_buffer(Mat& out)
+{
+	int rr = 0;
+	if(strcmp(Fl::event_clipboard_type(), Fl::clipboard_image) == 0) 
+	{
+		Fl_RGB_Image *im = (Fl_RGB_Image*)Fl::event_clipboard();
+		if(im != NULL)
+		{
+			Mat local;
+			unsigned char *ptr = (unsigned char *)im->data()[0];
+
+			int ww = im->w();
+			int hh = im->h();
+			if((ww > 0) && (hh > 0) && (ptr != NULL))
+			{
+				Mat use;
+				if(im->d() == 3)
+				{
+					Mat local(hh, ww, CV_8UC3, (void *)ptr);
+					cv::resize(local, local, cv::Size(ww, hh));
+					cvtColor(local, local, COLOR_RGB2RGBA);
+					out = local.clone();
+					rr = 1;
+				}
+				else if(im->d() == 4)
+				{
+					Mat local(hh, ww, CV_8UC4, (void *)ptr);
+					cv::resize(local, local, cv::Size(ww, hh));
+					out = local.clone();
+					rr = 1;
+				}
+			}
+		}
+	}
+	return(rr);
+}
+
+void	copy_to_clipboard(Camera *cam, int xx, int yy, int ww, int hh)
+{
+	MyWin *win = cam->my_window;
+	Mat local;
+	int use_x = xx;
+	if(use_x < 0) use_x = 0;
+	int use_y = yy;
+	if(use_y < 0) use_y = 0;
+	while((use_x + ww) >= cam->mat.cols)
+	{
+		ww--;
+	}
+	while((use_y + hh) >= cam->mat.rows)
+	{
+		hh--;
+	}
+	if((ww > 0) && (hh > 0))
+	{
+		float old_scale = Fl::screen_scale(0);
+		Fl::screen_scale(0, 1.0);
+		win->CropFrame(cam->mat, &local, use_x, use_y, ww, hh);
+		Fl_Copy_Surface *copy_surf = new Fl_Copy_Surface(ww, hh);
+		Fl_Surface_Device::push_current(copy_surf);
+		fl_color(WHITE);
+		fl_rectf(0, 0, ww, hh);
+
+		Mat local_mat;
+		cvtColor(local, local_mat, COLOR_RGBA2RGB);
+		cv::resize(local_mat, local_mat, cv::Size(ww, hh));
+		fl_draw_image(local_mat.ptr(), 0, 0, ww, hh, 3);
+		Fl_Surface_Device::pop_current();
+		delete copy_surf;
+		Fl::screen_scale(0, old_scale);
+	}
 }
 
 int	my_file_chooser(char *prompt, char *filter, char *start_path, char *current_selection, int select_dir = 0, int new_file = 0)
@@ -1378,29 +1456,6 @@ int stick_this_thread_to_core(int core_id)
    return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 }
 
-int	my_color_chooser(char *title, int& red, int& green, int &blue)
-{
-static ColorDialog	*cd = NULL;
-
-	if(cd == NULL)
-	{
-		cd = new ColorDialog(NULL, 420, 125, title, &red, &green, &blue, NULL);
-		cd->set_modal();
-	}
-	if(cd != NULL)
-	{
-		cd->show();
-		while(cd->visible())
-		{
-			red = cd->red->value();
-			green = cd->green->value();
-			blue = cd->blue->value();
-			Fl::check();
-		}
-	}
-	return(1);
-}
-
 void	my_video_settings_chooser(MyWin *in_win, double& contrast, double& brightness, double& saturation, double& hue, double& intensity)
 {
 	MiscVideoSettingsWindow *mvsw = in_win->misc_video_settings_window;
@@ -1425,7 +1480,7 @@ static ColorDialog	*cd = NULL;
 
 	if(cd == NULL)
 	{
-		cd = new ColorDialog(NULL, 420, 125, title, &red, &green, &blue, &alpha);
+		cd = new ColorDialog(NULL, 420, 185, red, green, blue, alpha, title);
 		cd->set_modal();
 	}
 	if(cd != NULL)
@@ -1433,10 +1488,6 @@ static ColorDialog	*cd = NULL;
 		cd->show();
 		while(cd->visible())
 		{
-			red = cd->red->value();
-			green = cd->green->value();
-			blue = cd->blue->value();
-			alpha = cd->alpha->value();
 			Fl::check();
 		}
 	}
@@ -8968,9 +9019,14 @@ void	drawing_font_selection_cb(Fl_Widget *w, void *v)
 	char *str = (char *)hold->text(hold->value());
 	if(str != NULL)
 	{
+		char *font_name = str;
+		if(strlen(str) > 7)
+		{
+			font_name = str + 7;
+		}
 		idw->font_num = (int)(long int)hold->data(hold->value());
-		strcpy(idw->selected_font, str);
-		idw->font_output->copy_label(str);
+		strcpy(idw->selected_font, font_name);
+		idw->font_output->copy_label(font_name);
 		idw->font_output->labelfont(idw->font_num);
 		idw->font_sample->labelfont(idw->font_num);
 		idw->font_sample->redraw();
@@ -8979,7 +9035,7 @@ void	drawing_font_selection_cb(Fl_Widget *w, void *v)
 			if(idw->selected_widget->text != NULL)
 			{
 				idw->selected_widget->text->textfont(idw->font_num);
-				strncpy(idw->selected_widget->text->font_name, str, 128);
+				strncpy(idw->selected_widget->text->font_name, font_name, 128);
 				idw->selected_widget->redraw();
 			}
 		}
@@ -9073,6 +9129,81 @@ char	buf[64];
 		sprintf(buf, "%3d", use);
 		idw->font_alpha_output->value(buf);
 	}
+	else if(slider == NULL)
+	{
+		int use = 0;
+		if(idw->using_background_color == 2)
+		{
+			idw->outline_color_red = (int)idw->font_red_slider->value();
+			use = idw->outline_color_red;
+		}
+		else if(idw->using_background_color == 1)
+		{
+			idw->back_color_red = (int)idw->font_red_slider->value();
+			use = idw->back_color_red;
+		}
+		else if(idw->using_background_color == 0)
+		{
+			idw->font_color_red = (int)idw->font_red_slider->value();
+			use = idw->font_color_red;
+		}
+		sprintf(buf, "%3d", use);
+		idw->font_red_output->value(buf);
+
+		if(idw->using_background_color == 2)
+		{
+			idw->outline_color_green = (int)idw->font_green_slider->value();
+			use = idw->outline_color_green;
+		}
+		else if(idw->using_background_color == 1)
+		{
+			idw->back_color_green = (int)idw->font_green_slider->value();
+			use = idw->back_color_green;
+		}
+		else if(idw->using_background_color == 0)
+		{
+			idw->font_color_green = (int)idw->font_green_slider->value();
+			use = idw->font_color_green;
+		}
+		sprintf(buf, "%3d", use);
+		idw->font_green_output->value(buf);
+
+		if(idw->using_background_color == 2)
+		{
+			idw->outline_color_blue = (int)idw->font_blue_slider->value();
+			use = idw->outline_color_blue;
+		}
+		else if(idw->using_background_color == 1)
+		{
+			idw->back_color_blue = (int)idw->font_blue_slider->value();
+			use = idw->back_color_blue;
+		}
+		else if(idw->using_background_color == 0)
+		{
+			idw->font_color_blue = (int)idw->font_blue_slider->value();
+			use = idw->font_color_blue;
+		}
+		sprintf(buf, "%3d", use);
+		idw->font_blue_output->value(buf);
+
+		if(idw->using_background_color == 2)
+		{
+			idw->outline_color_alpha = (int)idw->font_alpha_slider->value();
+			use = idw->outline_color_alpha;
+		}
+		else if(idw->using_background_color == 1)
+		{
+			idw->back_color_alpha = (int)idw->font_alpha_slider->value();
+			use = idw->back_color_alpha;
+		}
+		else if(idw->using_background_color == 0)
+		{
+			idw->font_color_alpha = (int)idw->font_alpha_slider->value();
+			use = idw->font_color_alpha;
+		}
+		sprintf(buf, "%3d", use);
+		idw->font_alpha_output->value(buf);
+	}
 	if(idw->using_background_color == 2)
 	{
 		idw->font_sample->color(fl_rgb_color(idw->outline_color_red, idw->outline_color_green, idw->outline_color_blue));
@@ -9144,6 +9275,24 @@ char	buf[64];
 		sprintf(buf, "%3d", idw->line_color_alpha);
 		idw->line_alpha_output->value(buf);
 	}
+	else
+	{
+		idw->line_color_red = (int)idw->line_red_slider->value();
+		sprintf(buf, "%3d", idw->line_color_red);
+		idw->line_red_output->value(buf);
+
+		idw->line_color_green = (int)idw->line_green_slider->value();
+		sprintf(buf, "%3d", idw->line_color_green);
+		idw->line_green_output->value(buf);
+
+		idw->line_color_blue = (int)idw->line_blue_slider->value();
+		sprintf(buf, "%3d", idw->line_color_blue);
+		idw->line_blue_output->value(buf);
+
+		idw->line_color_alpha = (int)idw->line_alpha_slider->value();
+		sprintf(buf, "%3d", idw->line_color_alpha);
+		idw->line_alpha_output->value(buf);
+	}
 	idw->line_sample->labelcolor(fl_rgb_color(idw->line_color_red, idw->line_color_green, idw->line_color_blue));
 	idw->line_sample->redraw();
 	if(idw->selected_widget != NULL)
@@ -9186,6 +9335,24 @@ char	buf[64];
 	else if(slider == idw->rectangle_alpha_slider)
 	{
 		idw->rectangle_color_alpha = (int)slider->value();
+		sprintf(buf, "%3d", idw->rectangle_color_alpha);
+		idw->rectangle_alpha_output->value(buf);
+	}
+	else
+	{
+		idw->rectangle_color_red = (int)idw->rectangle_red_slider->value();
+		sprintf(buf, "%3d", idw->rectangle_color_red);
+		idw->rectangle_red_output->value(buf);
+
+		idw->rectangle_color_green = (int)idw->rectangle_green_slider->value();
+		sprintf(buf, "%3d", idw->rectangle_color_green);
+		idw->rectangle_green_output->value(buf);
+
+		idw->rectangle_color_blue = (int)idw->rectangle_blue_slider->value();
+		sprintf(buf, "%3d", idw->rectangle_color_blue);
+		idw->rectangle_blue_output->value(buf);
+
+		idw->rectangle_color_alpha = (int)idw->rectangle_alpha_slider->value();
 		sprintf(buf, "%3d", idw->rectangle_color_alpha);
 		idw->rectangle_alpha_output->value(buf);
 	}
@@ -9236,11 +9403,19 @@ char	buf[64];
 		sprintf(buf, "%3d", idw->line_color_blue);
 		idw->freehand_blue_output->value(buf);
 	}
-	else if(slider == idw->freehand_alpha_slider)
+	else
 	{
-		idw->line_color_alpha = (int)slider->value();
-		sprintf(buf, "%3d", idw->line_color_alpha);
-		idw->freehand_alpha_output->value(buf);
+		idw->line_color_red = (int)idw->freehand_red_slider->value();
+		sprintf(buf, "%3d", idw->line_color_red);
+		idw->freehand_red_output->value(buf);
+
+		idw->line_color_green = (int)idw->freehand_green_slider->value();
+		sprintf(buf, "%3d", idw->line_color_green);
+		idw->freehand_green_output->value(buf);
+
+		idw->line_color_blue = (int)idw->freehand_blue_slider->value();
+		sprintf(buf, "%3d", idw->line_color_blue);
+		idw->freehand_blue_output->value(buf);
 	}
 	idw->freehand_sample->labelcolor(fl_rgb_color(idw->line_color_red, idw->line_color_green, idw->line_color_blue));
 	idw->freehand_sample->redraw();
@@ -9609,6 +9784,7 @@ void	rectangle_style_cb(Fl_Widget *w, void *v)
 	if(idw->rectangle_style_join_round_button->value()) style |= FL_JOIN_ROUND;
 	if(idw->rectangle_style_join_bevel_button->value()) style |= FL_JOIN_BEVEL;
 	idw->rectangle_filled = idw->rectangle_filled_button->value();
+	idw->rectangle_square = idw->rectangle_square_button->value();
 	idw->rectangle_erase = idw->rectangle_erase_button->value();
 	idw->rectangle_style = style;
 	idw->rectangle_sample->line_style = style;
@@ -9619,6 +9795,7 @@ void	rectangle_style_cb(Fl_Widget *w, void *v)
 		{
 			idw->selected_widget->rectangle->style = idw->rectangle_style;
 			idw->selected_widget->rectangle->filled = idw->rectangle_filled;
+			idw->selected_widget->rectangle->square = idw->rectangle_square;
 			idw->selected_widget->rectangle->erase = idw->rectangle_erase;
 			idw->selected_widget->redraw();
 		}
@@ -9626,6 +9803,7 @@ void	rectangle_style_cb(Fl_Widget *w, void *v)
 		{
 			idw->selected_widget->ellipse->style = idw->rectangle_style;
 			idw->selected_widget->ellipse->filled = idw->rectangle_filled;
+			idw->selected_widget->ellipse->square = idw->rectangle_square;
 			idw->selected_widget->ellipse->erase = idw->rectangle_erase;
 			idw->selected_widget->redraw();
 		}
@@ -9675,6 +9853,20 @@ char	filename[4096];
 		idw->freehand_mat = local_mat;
 		idw->freehand_sample->redraw();
 		strcpy(idw->freehand_filename, filename);
+	}
+}
+
+void	image_paste_cb(Fl_Widget *w, void *v)
+{
+	ImmediateDrawingWindow *idw = (ImmediateDrawingWindow *)v;
+	if(idw->image_paste_button->value())
+	{
+		Fl::paste(*idw, 1, Fl::clipboard_image);
+		idw->from_paste = 1;
+	}
+	else
+	{
+		idw->from_paste = 0;
 	}
 }
 
@@ -10015,23 +10207,20 @@ void	text_edit_window_cb(Fl_Widget *w, void *v)
 char	buf[256];
 
 	TextEditWindow *win = (TextEditWindow *)v;
-	sprintf(buf, "%3d", (int)win->font_red_slider->value());
-	win->font_red_output->value(buf);
-	sprintf(buf, "%3d", (int)win->font_green_slider->value());
-	win->font_green_output->value(buf);
-	sprintf(buf, "%3d", (int)win->font_blue_slider->value());
-	win->font_blue_output->value(buf);
-	sprintf(buf, "%3d", (int)win->font_alpha_slider->value());
-	win->font_alpha_output->value(buf);
-
 	sprintf(buf, "%3d", (int)win->font_size_slider->value());
 	win->font_size_output->value(buf);
 
 	int nn = win->font_browser->value();
 	char *font_str = (char *)win->font_browser->text(nn);
+printf("FONT STR: [%s]\n", font_str);
 	if(font_str != NULL)
 	{
-		win->font_output->copy_label(win->font_browser->text(nn));
+		if(strlen(font_str) > 7)
+		{
+			font_str += 7;
+		}
+		win->font_output->copy_label(font_str);
+		win->font_output->labelfont(nn - 1);
 	}
 	if(win->my_misc != NULL)
 	{
@@ -10048,11 +10237,13 @@ char	buf[256];
 			{
 				strcpy(qt->use_font, "sans");
 			}
-			int rr = (int)win->font_red_slider->value();
-			int gg = (int)win->font_green_slider->value();
-			int bb = (int)win->font_blue_slider->value();
+			int rr = win->local_red;
+			int gg = win->local_green;
+			int bb = win->local_blue;
+			int aa = win->local_alpha;
 			qt->textcolor(fl_rgb_color(rr, gg, bb));
-			qt->alpha = (int)win->font_alpha_slider->value();
+			qt->alpha = aa;
+
 			qt->italic = win->text_italic_button->value();
 			qt->bold = win->text_bold_button->value();
 			qt->outline = win->text_outline_button->value();
@@ -10063,7 +10254,7 @@ char	buf[256];
 	win->redraw();
 }
 
-TextEditWindow::TextEditWindow(MyWin *in_win, Camera *in_cam, MiscCopy *in_misc) : Dialog(400, 460, "Edit Text")
+TextEditWindow::TextEditWindow(MyWin *in_win, Camera *in_cam, MiscCopy *in_misc) : Dialog(400, 540, "Edit Text")
 {
 int	loop;
 
@@ -10098,7 +10289,9 @@ int	loop;
 		char *str = (char *)Fl::get_font_name(loop, &attr);
 		if(attr == 0)
 		{
-			font_browser->add(str, (void *)(long int)loop);
+			char buf[256];
+			sprintf(buf, "@F%05d%s", loop, str);
+			font_browser->add(buf, (void *)(long int)loop);
 		}
 	}
 	if(strlen(selected_font) < 1)
@@ -10118,7 +10311,7 @@ int	loop;
 	font_size_slider->align(FL_ALIGN_LEFT);
 	font_size_slider->labelcolor(WHITE);
 	font_size_slider->labelsize(9);
-	font_size_slider->value(72.0);
+	font_size_slider->value(32.0);
 	font_size_slider->range(3.0, 255.0);
 	font_size_slider->callback(text_edit_window_cb, this);
 
@@ -10129,89 +10322,16 @@ int	loop;
 	font_size_output->textfont(FL_COURIER);
 	font_size_output->textcolor(WHITE);
 	font_size_output->textsize(9);
-	font_size_output->value(" 72");
+	font_size_output->value(" 32");
 	yp += 16;
 
-	font_red_slider = new Fl_Hor_Slider(60, yp, 100, 10, "Red");
-	font_red_slider->color(BLACK);
-	font_red_slider->box(FL_FRAME_BOX);
-	font_red_slider->align(FL_ALIGN_LEFT);
-	font_red_slider->labelcolor(WHITE);
-	font_red_slider->labelsize(9);
-	font_red_slider->value(255.0);
-	font_red_slider->range(0.0, 255.0);
-	font_red_slider->callback(text_edit_window_cb, this);
-
-	font_red_output = new Fl_Output(165, yp, 25, 10);
-	font_red_output->color(BLACK);
-	font_red_output->box(FL_FLAT_BOX);
-	font_red_output->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
-	font_red_output->textfont(FL_COURIER);
-	font_red_output->textcolor(WHITE);
-	font_red_output->textsize(9);
-	font_red_output->value("255");
-	yp += 12;
-	
-	font_green_slider = new Fl_Hor_Slider(60, yp, 100, 10, "Green");
-	font_green_slider->color(BLACK);
-	font_green_slider->box(FL_FRAME_BOX);
-	font_green_slider->align(FL_ALIGN_LEFT);
-	font_green_slider->labelcolor(WHITE);
-	font_green_slider->labelsize(9);
-	font_green_slider->value(255.0);
-	font_green_slider->range(0.0, 255.0);
-	font_green_slider->callback(text_edit_window_cb, this);
-
-	font_green_output = new Fl_Output(165, yp, 25, 10);
-	font_green_output->color(BLACK);
-	font_green_output->box(FL_FLAT_BOX);
-	font_green_output->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
-	font_green_output->textfont(FL_COURIER);
-	font_green_output->textcolor(WHITE);
-	font_green_output->textsize(9);
-	font_green_output->value("255");
-	yp += 12;
-	
-	font_blue_slider = new Fl_Hor_Slider(60, yp, 100, 10, "Blue");
-	font_blue_slider->color(BLACK);
-	font_blue_slider->box(FL_FRAME_BOX);
-	font_blue_slider->align(FL_ALIGN_LEFT);
-	font_blue_slider->labelcolor(WHITE);
-	font_blue_slider->labelsize(9);
-	font_blue_slider->value(255.0);
-	font_blue_slider->range(0.0, 255.0);
-	font_blue_slider->callback(text_edit_window_cb, this);
-
-	font_blue_output = new Fl_Output(165, yp, 25, 10);
-	font_blue_output->color(BLACK);
-	font_blue_output->box(FL_FLAT_BOX);
-	font_blue_output->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
-	font_blue_output->textfont(FL_COURIER);
-	font_blue_output->textcolor(WHITE);
-	font_blue_output->textsize(9);
-	font_blue_output->value("255");
-	yp += 12;
-
-	font_alpha_slider = new Fl_Hor_Slider(60, yp, 100, 10, "Alpha");
-	font_alpha_slider->color(BLACK);
-	font_alpha_slider->box(FL_FRAME_BOX);
-	font_alpha_slider->align(FL_ALIGN_LEFT);
-	font_alpha_slider->labelcolor(WHITE);
-	font_alpha_slider->labelsize(9);
-	font_alpha_slider->value(255.0);
-	font_alpha_slider->range(0.0, 255.0);
-	font_alpha_slider->callback(text_edit_window_cb, this);
-
-	font_alpha_output = new Fl_Output(165, yp, 25, 10);
-	font_alpha_output->color(BLACK);
-	font_alpha_output->box(FL_FLAT_BOX);
-	font_alpha_output->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
-	font_alpha_output->textfont(FL_COURIER);
-	font_alpha_output->textcolor(WHITE);
-	font_alpha_output->textsize(9);
-	font_alpha_output->value("255");
-
-	yp += 24;
+	local_red = 255;
+	local_blue = 255;
+	local_green = 255;
+	local_alpha = 255;
+	color_panel = new ColorPanel(in_win, &local_red, &local_green, &local_blue, &local_alpha, 4, yp, 390, 142);
+	color_panel->Callback(text_edit_window_cb, this);
+	yp += 150;
 	int xp = 60;
 
 	text_italic_button = new MyLightButton(xp, yp, 60, 20, "Italic");
@@ -10277,6 +10397,55 @@ void	hide_immediate_window_cb(Fl_Widget *w, void *v)
 	win->hide();
 }
 
+void	immediate_choose_color(Fl_Hor_Slider *red, Fl_Hor_Slider *green, Fl_Hor_Slider *blue, Fl_Hor_Slider *alpha)
+{
+	int rr = red->value();
+	int gg = green->value();
+	int bb = blue->value();
+	int aa = 255;
+	if(alpha != NULL)
+	{
+		aa = alpha->value();
+	}
+	my_color_chooser("Fill Color", rr, gg, bb, aa);
+	red->value(rr);
+	green->value(gg);
+	blue->value(bb);
+	if(alpha != NULL)
+	{
+		alpha->value(aa);
+	}
+}
+
+void	immediate_palette_for_font_cb(Fl_Widget *w, void *v)
+{
+	ImmediateDrawingWindow *idw = (ImmediateDrawingWindow *)v;
+	immediate_choose_color(idw->font_red_slider, idw->font_green_slider, idw->font_blue_slider, idw->font_alpha_slider);
+	drawing_font_color_cb(NULL, idw);
+}
+
+void	immediate_palette_for_line_cb(Fl_Widget *w, void *v)
+{
+	ImmediateDrawingWindow *idw = (ImmediateDrawingWindow *)v;
+	immediate_choose_color(idw->line_red_slider, idw->line_green_slider, idw->line_blue_slider, idw->line_alpha_slider);
+	drawing_line_color_cb(NULL, idw);
+}
+
+void	immediate_palette_for_rectangle_cb(Fl_Widget *w, void *v)
+{
+	ImmediateDrawingWindow *idw = (ImmediateDrawingWindow *)v;
+	immediate_choose_color(idw->rectangle_red_slider, idw->rectangle_green_slider, idw->rectangle_blue_slider, idw->rectangle_alpha_slider);
+	drawing_rectangle_color_cb(NULL, idw);
+}
+
+void	immediate_palette_for_freehand_cb(Fl_Widget *w, void *v)
+{
+	ImmediateDrawingWindow *idw = (ImmediateDrawingWindow *)v;
+	immediate_choose_color(idw->freehand_red_slider, idw->freehand_green_slider, idw->freehand_blue_slider, NULL);
+	drawing_freehand_color_cb(NULL, idw);
+}
+
+
 ImmediateDrawingWindow::ImmediateDrawingWindow(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl) : Dialog(xx, yy, ww, hh, lbl)
 {
 char	buf[256];
@@ -10320,11 +10489,13 @@ int		ii;
 	rectangle_color_blue = 255;
 	rectangle_color_alpha = 255;
 	rectangle_filled = 0;
+	rectangle_square = 0;
 	freehand_key = '/';
 	text_box_type = FL_NO_BOX;
 	grid_size = 1;
 	pixelate_size = 10;
 	erase = 0;
+	from_paste = 0;
 
 	int yp = 40;
 	general = new MyButton(10, yp, 100, 20, "General");
@@ -10603,7 +10774,7 @@ int		ii;
 		font_output->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
 		yp += 24;
 	
-		font_browser = new Fl_Hold_Browser(120, yp, 300, 200);
+		font_browser = new Fl_Hold_Browser(120, yp, 300, 170);
 		font_browser->color(BLACK);
 		font_browser->box(FL_FLAT_BOX);
 		font_browser->textcolor(WHITE);
@@ -10611,7 +10782,7 @@ int		ii;
 		font_browser->selection_color(YELLOW);
 		font_browser->scrollbar.color(BLACK);
 		font_browser->callback(drawing_font_selection_cb, this);
-		yp += 204;
+		yp += 174;
 	
 		font_sample = new FontSample(this, 120, yp, 100, 100, "Ab");
 		font_sample->color(DARK_GRAY);
@@ -10718,7 +10889,17 @@ int		ii;
 		font_alpha_output->textcolor(WHITE);
 		font_alpha_output->textsize(9);
 		font_alpha_output->value("255");
-		yp += 16;
+		yp += 12;
+
+		font_palette_button = new MyButton(260, yp, 70, 18, "Palette");
+		font_palette_button->labelsize(7);
+		font_palette_button->labelcolor(YELLOW);
+		font_palette_button->color(BLACK);
+		font_palette_button->box(FL_FLAT_BOX);
+		font_palette_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
+		font_palette_button->clear_visible_focus();
+		font_palette_button->callback(immediate_palette_for_font_cb, this);
+		yp += 22;
 
 		xp = 240;
 		MyGroup *drawing_text_color_selection_group = new MyGroup(xp, yp, 186, 18);
@@ -10916,7 +11097,17 @@ int		ii;
 		line_alpha_output->textcolor(WHITE);
 		line_alpha_output->textsize(9);
 		line_alpha_output->value("255");
-		yp += 14;
+		yp += 12;
+
+		line_palette_button = new MyButton(260, yp, 70, 18, "Palette");
+		line_palette_button->labelsize(7);
+		line_palette_button->labelcolor(YELLOW);
+		line_palette_button->color(BLACK);
+		line_palette_button->box(FL_FLAT_BOX);
+		line_palette_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
+		line_palette_button->clear_visible_focus();
+		line_palette_button->callback(immediate_palette_for_line_cb, this);
+		yp += 22;
 
 		int start_yp = yp;
 		MyGroup *line_style_group = new MyGroup(220, yp, 60, 60);
@@ -11161,7 +11352,17 @@ int		ii;
 		rectangle_alpha_output->textcolor(WHITE);
 		rectangle_alpha_output->textsize(9);
 		rectangle_alpha_output->value("255");
-		yp += 14;
+		yp += 12;
+
+		rectangle_palette_button = new MyButton(260, yp, 70, 18, "Palette");
+		rectangle_palette_button->labelsize(7);
+		rectangle_palette_button->labelcolor(YELLOW);
+		rectangle_palette_button->color(BLACK);
+		rectangle_palette_button->box(FL_FLAT_BOX);
+		rectangle_palette_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
+		rectangle_palette_button->clear_visible_focus();
+		rectangle_palette_button->callback(immediate_palette_for_rectangle_cb, this);
+		yp += 22;
 
 		start_yp = yp;
 		MyGroup *rectangle_style_group = new MyGroup(250, yp, 60, 60);
@@ -11234,6 +11435,16 @@ int		ii;
 		rectangle_filled_button->clear_visible_focus();
 		rectangle_filled_button->value(0);
 		rectangle_filled_button->callback(rectangle_style_cb, this);
+		yp += 22;
+
+		rectangle_square_button = new MyToggleButton(250, yp, 60, 16, "Squared");
+		rectangle_square_button->labelsize(9);
+		rectangle_square_button->labelcolor(WHITE);
+		rectangle_square_button->color(DARK_GRAY);
+		rectangle_square_button->box(FL_FLAT_BOX);
+		rectangle_square_button->clear_visible_focus();
+		rectangle_square_button->value(0);
+		rectangle_square_button->callback(rectangle_style_cb, this);
 		yp += 22;
 
 		rectangle_erase_button = new MyToggleButton(250, yp, 60, 16, "Erase");
@@ -11336,7 +11547,18 @@ int		ii;
 		freehand_blue_output->textcolor(WHITE);
 		freehand_blue_output->textsize(9);
 		freehand_blue_output->value("255");
-		yp += 14;
+		yp += 12;
+
+		freehand_palette_button = new MyButton(260, yp, 70, 18, "Palette");
+		freehand_palette_button->labelsize(7);
+		freehand_palette_button->labelcolor(YELLOW);
+		freehand_palette_button->color(BLACK);
+		freehand_palette_button->box(FL_FLAT_BOX);
+		freehand_palette_button->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
+		freehand_palette_button->clear_visible_focus();
+		freehand_palette_button->callback(immediate_palette_for_freehand_cb, this);
+		yp += 22;
+
 		start_yp = yp;
 		MyGroup *freehand_shape_group = new MyGroup(250, yp, 120, 120);
 			freehand_shape_square_button = new MyToggleButton(250, yp, 80, 16, "Square");
@@ -11438,7 +11660,16 @@ int		ii;
 		image_file_path->set_visible_focus();
 		image_file_path->when(FL_WHEN_ENTER_KEY);
 		image_file_path->callback(image_file_cb, this);
-		yp += 18;
+		yp += 22;
+
+		image_paste_button = new MyToggleButton(120, yp, 60, 18, "Paste");
+		image_paste_button->labelsize(9);
+		image_paste_button->labelcolor(WHITE);
+		image_paste_button->color(DARK_GRAY);
+		image_paste_button->box(FL_FLAT_BOX);
+		image_paste_button->clear_visible_focus();
+		image_paste_button->callback(image_paste_cb, this);
+
 	image_group->end();
 	image_group->hide();
 	pixelate_group = new MyGroup(120, 20, 1920, 1080);
@@ -11581,6 +11812,15 @@ int	ImmediateDrawingWindow::handle(int event)
 			}
 		}
 	}
+	else if(event == FL_PASTE)
+	{
+		int	rr = mat_from_copy_buffer(image_mat);
+		if(rr == 1)
+		{
+			redraw();
+		}
+		flag = 1;
+	}
 	if(flag == 0)
 	{
 		flag = Dialog::handle(event);
@@ -11613,7 +11853,9 @@ int	loop;
 		char *str = (char *)Fl::get_font_name(loop, &attr);
 		if(attr == 0)
 		{
-			font_browser->add(str, (void *)(long int)loop);
+			char buf[256];
+			sprintf(buf, "@F%05d%s", loop, str);
+			font_browser->add(buf, (void *)(long int)loop);
 		}
 	}
 	if(strlen(selected_font) < 1)
@@ -11673,90 +11915,266 @@ void	ImmediateDrawingWindow::FreehandSetup()
 
 // SECTION *********************************** COLOR WINDOW *******************************************
 
+void	save_global_palette_as_JSON()
+{
+int	loop;
+
+	FILE *fp = fopen("color_palette.json", "w");
+	if(fp != NULL)
+	{
+		fprintf(fp, "{\n");
+		fprintf(fp, "\t\"palette\": [\n");
+		for(loop = 0;loop < 32;loop++)
+		{
+			fprintf(fp, "\t\t{\n");
+			fprintf(fp, "\t\t\t\"red\": %d,\n", global_palette_red[loop]);
+			fprintf(fp, "\t\t\t\"green\": %d,\n", global_palette_green[loop]);
+			fprintf(fp, "\t\t\t\"blue\": %d,\n", global_palette_blue[loop]);
+			fprintf(fp, "\t\t\t\"alpha\": %d\n", global_palette_alpha[loop]);
+			if(loop == 32 - 1)
+			{
+				fprintf(fp, "\t\t}\n");
+			}
+			else
+			{
+				fprintf(fp, "\t\t},\n");
+			}
+		}
+		fprintf(fp, "\t]\n");
+		fprintf(fp, "}\n");
+		fclose(fp);
+	}
+}
+
+void	load_global_palette_as_JSON()
+{
+	char *buf = ReadWholeFile("color_palette.json");
+	if(buf != NULL)
+	{
+		cJSON *json = cJSON_Parse(buf);
+		if(json == NULL)
+		{
+			const char *error_ptr = cJSON_GetErrorPtr();
+			if(error_ptr != NULL)
+			{
+				fprintf(stderr, "Error: JSON Error before: %s reading %s\n", error_ptr, "color_palette.json");
+			}
+		}
+		else
+		{
+			cJSON *palette = NULL;
+			cJSON *palettes = json_parse_array(json, "palette");
+			int cnt = 0;
+			if(palettes != NULL)
+			{
+				int cnt = 0;
+				cJSON_ArrayForEach(palette, palettes)
+				{
+					if(cnt < 32)
+					{
+						json_parse_int(palette, "red", global_palette_red[cnt]);
+						json_parse_int(palette, "green", global_palette_green[cnt]);
+						json_parse_int(palette, "blue", global_palette_blue[cnt]);
+						json_parse_int(palette, "alpha", global_palette_alpha[cnt]);
+						cnt++;
+					}
+				}
+			}
+			cJSON_Delete(json);
+		}
+		free(buf);
+	}
+	else
+	{
+		fprintf(stderr, "Error: Cannot read JSON file: %s\n", "color_palette.json");
+	}
+}
+
 void	color_dialog_cb(Fl_Widget *w, void *v)
 {
-	ColorDialog *cd = (ColorDialog *)v;
+int	loop;
+
+	ColorPanel *cd = (ColorPanel *)v;
 	int rr = cd->red->value();
 	int gg = cd->green->value();
 	int bb = cd->blue->value();
 	int aa = cd->alpha->value();
-	if(cd->client_red != NULL) *cd->client_red = rr;
-	if(cd->client_green != NULL) *cd->client_green = gg;
-	if(cd->client_blue != NULL) *cd->client_blue = bb;
-	if(cd->client_alpha != NULL) *cd->client_alpha = aa;
+
+	*cd->client_red = rr;
+	*cd->client_green = gg;
+	*cd->client_blue = bb;
+	*cd->client_alpha = aa;
 	cd->sample->color(fl_rgb_color(rr, gg, bb));
+	for(loop = 0;loop < 32;loop++)
+	{
+		if(cd->palette_set_button[loop]->value())
+		{
+			global_palette_red[loop] = cd->red->value();
+			global_palette_green[loop] = cd->green->value();
+			global_palette_blue[loop] = cd->blue->value();
+			global_palette_alpha[loop] = cd->alpha->value();
+			int rr = global_palette_red[loop];
+			int gg = global_palette_green[loop];
+			int bb = global_palette_blue[loop];
+			cd->palette_button[loop]->color(fl_rgb_color(rr, gg, bb));
+			cd->palette_button[loop]->redraw();
+		}
+	}
 	cd->redraw();
+	if(cd->custom_callback == 1)
+	{
+		cd->do_callback();
+	}
 }
 
-void	color_dialog_close_cb(Fl_Widget *w, void *v)
+void	color_dialog_select_palette(Fl_Widget *w, void *v)
 {
-	ColorDialog *cd = (ColorDialog *)v;
-	cd->hide();
+int	loop;
+
+	ColorPanel *cd = (ColorPanel *)v;
+	for(loop = 0;loop < 32;loop++)
+	{
+		if(w == cd->palette_button[loop])
+		{
+			int rr = global_palette_red[loop];
+			int gg = global_palette_green[loop];
+			int bb = global_palette_blue[loop];
+			int aa = global_palette_alpha[loop];
+
+			cd->red->value(rr);
+			cd->green->value(gg);
+			cd->blue->value(bb);
+			cd->alpha->value(aa);
+
+			*cd->client_red = rr;
+			*cd->client_green = gg;
+			*cd->client_blue = bb;
+			*cd->client_alpha = aa;
+
+			cd->sample->color(fl_rgb_color(rr, gg, bb));
+			cd->sample->redraw();
+		}
+	}
+	cd->redraw();
+	if(cd->custom_callback == 1)
+	{
+		cd->do_callback();
+	}
 }
 
-ColorDialog::ColorDialog(MyWin *in_win, int ww, int hh, char *title, int *use_r, int *use_g, int *use_b, int *use_a) : Dialog(360, 300, ww, hh, "Color Dialog")
+void	color_dialog_set_palette(Fl_Widget *w, void *v)
 {
+int	loop;
+
+	ColorPanel *cd = (ColorPanel *)v;
+	for(loop = 0;loop < 32;loop++)
+	{
+		if(w == cd->palette_set_button[loop])
+		{
+			global_palette_red[loop] = cd->red->value();
+			global_palette_green[loop] = cd->green->value();
+			global_palette_blue[loop] = cd->blue->value();
+			global_palette_alpha[loop] = cd->alpha->value();
+			int rr = global_palette_red[loop];
+			int gg = global_palette_green[loop];
+			int bb = global_palette_blue[loop];
+			cd->palette_button[loop]->color(fl_rgb_color(rr, gg, bb));
+			cd->palette_button[loop]->redraw();
+		}
+	}
+}
+
+ColorPanel::ColorPanel(MyWin *in_win, int *in_red, int *in_green, int *in_blue, int *in_alpha, int xx, int yy, int ww, int hh) : Fl_Window(xx, yy, ww, hh)
+{
+int	inner, outer;
+
+	box(FL_FLAT_BOX);
+	color(BLACK);
+
+	custom_callback = 0;
+	client_red = in_red;
+	client_green = in_green;
+	client_blue = in_blue;
+	client_alpha = in_alpha;
+
+	int y_pos = 0;
+	red = new ColorSlider(40, y_pos, w() - 100, 20, 128, "Red");
+	red->callback(color_dialog_cb, this);
+	y_pos += 22;
+	green = new ColorSlider(40, y_pos, w() - 100, 20, 128, "Green");
+	green->callback(color_dialog_cb, this);
+	y_pos += 22;
+	blue = new ColorSlider(40, y_pos, w() - 100, 20, 128, "Blue");
+	blue->callback(color_dialog_cb, this);
+	y_pos += 22;
+	alpha = new ColorSlider(40, y_pos, w() - 100, 20, 255, "Alpha");
+	alpha->callback(color_dialog_cb, this);
+	y_pos += 28;
+
+	int cnt = 0;
+	int ux = 40;
+	int uy = y_pos;
+	for(outer = 0;outer < 2;outer++)
+	{
+		for(inner = 0;inner < 16;inner++)
+		{
+			int rr = global_palette_red[cnt];
+			int gg = global_palette_green[cnt];
+			int bb = global_palette_blue[cnt];
+			palette_button[cnt] = new MyButton(ux, uy, 18, 18, "");
+			palette_button[cnt]->box(FL_FLAT_BOX);
+			palette_button[cnt]->color(fl_rgb_color(rr, gg, bb));
+			palette_button[cnt]->copy_tooltip("Select a palette color");
+			palette_button[cnt]->callback(color_dialog_select_palette, this);
+
+			palette_set_button[cnt] = new MyToggleButton(ux, uy + 18, 18, 8);
+			palette_set_button[cnt]->box(FL_FRAME_BOX);
+			palette_set_button[cnt]->color(BLACK);
+			palette_set_button[cnt]->down_color(YELLOW);
+			palette_set_button[cnt]->copy_tooltip("Set a palette entry");
+			palette_set_button[cnt]->callback(color_dialog_set_palette, this);
+			ux += 19;
+			cnt++;
+		}
+		ux = 40;
+		uy += 28;
+	}
+	red->value(*client_red);
+	green->value(*client_green);
+	blue->value(*client_blue);
+	alpha->value(*client_alpha);
+
+	sample = new Fl_Box(w() - 55, 0, 50, 50);
+	sample->box(FL_FRAME_BOX);
+	sample->color(fl_rgb_color(*client_red, *client_green, *client_blue));
+	end();
+};
+
+ColorPanel::~ColorPanel()
+{
+}
+
+void	ColorPanel::Callback(Fl_Callback *cb, void *v)
+{
+	custom_callback = 1;
+	Fl_Window::callback(cb, v);
+}
+
+ColorDialog::ColorDialog(MyWin *in_win, int ww, int hh, int& use_r, int& use_g, int& use_b, int& use_a, char *title) : Dialog(360, 300, ww, hh, "Color Dialog")
+{
+int	outer, inner;
+
 	my_window = in_win;
 	set_non_modal();
 
 	last_x = 0;
 	last_y = 0;
 
-	client_red = use_r;
-	client_green = use_g;
-	client_blue = use_b;
-	client_alpha = use_a;
-	int rr = 128;
-	if(client_red != NULL)
-	{
-		rr = *client_red;
-	}
-	int gg = 128;
-	if(client_green != NULL)
-	{
-		gg = *client_green;
-	}
-	int bb = 128;
-	if(client_blue != NULL)
-	{
-		bb = *client_blue;
-	}
-	int aa = 255;
-	if(client_alpha != NULL)
-	{
-		aa = *client_alpha;
-	}
-	int y_pos = 35;
-	red = new ColorSlider(40, y_pos, 300, 20, 128, "Red");
-	red->callback(color_dialog_cb, this);
-	y_pos += 22;
-	green = new ColorSlider(40, y_pos, 300, 20, 128, "Green");
-	green->callback(color_dialog_cb, this);
-	y_pos += 22;
-	blue = new ColorSlider(40, y_pos, 300, 20, 128, "Blue");
-	blue->callback(color_dialog_cb, this);
-	y_pos += 22;
-	alpha = new ColorSlider(40, y_pos, 300, 20, 255, "Alpha");
-	alpha->callback(color_dialog_cb, this);
-	if(use_a == NULL)
-	{
-		alpha->hide();
-	}
-	red->value(rr);
-	green->value(gg);
-	blue->value(bb);
-	alpha->value(aa);
-
-	sample = new Fl_Box(350, 50, 50, 50);
-	sample->box(FL_FRAME_BOX);
-	sample->color(fl_rgb_color(rr, gg, bb));
-
-	close = new MyButton(350, 30, 50, 20, "Close");
-	close->box(FL_FLAT_BOX);
-	close->color(BLACK);
-	close->labelcolor(YELLOW);
-	close->labelsize(9);
-	close->callback(color_dialog_close_cb, this);
+	client_red = &use_r;
+	client_green = &use_g;
+	client_blue = &use_b;
+	client_alpha = &use_a;
+	color_panel = new ColorPanel(in_win, client_red, client_green, client_blue, client_alpha, 2, 35, w() - 4, h() - 37);
 }
 
 ColorDialog::~ColorDialog()
@@ -11794,6 +12212,12 @@ int	ColorDialog::handle(int event)
 		flag = Dialog::handle(event);
 	}
 	return(flag);
+}
+
+void	ColorDialog::hide()
+{
+	save_global_palette_as_JSON();
+	Dialog::hide();
 }
 
 // SECTION *********************************** FAKE WINDOW *******************************************
@@ -12007,6 +12431,7 @@ int		loop;
 	stopped = 1;
 	forced_aspect_x = 1.0;
 	forced_aspect_y = 1.0;
+	hot_fps = my_window->minimum_fps;
 	fd = -1;
 	total_frames = 0;
 	true_total_frames = 0;
@@ -16187,6 +16612,8 @@ int	inner;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
 						win->CropFrame(mat, &mat, use_x, use_y, use_w, use_h);
+						cv::resize(mat, mat, cv::Size(my_window->output_width, my_window->output_height));
+						SetCairo();
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_TEXT)
@@ -16234,6 +16661,7 @@ int	inner;
 								{
 									cv::resize(mat, mat, cv::Size(my_window->output_width, my_window->output_height));
 								}
+								SetCairo();
 							}
 							else
 							{
@@ -16244,11 +16672,13 @@ int	inner;
 								{
 									cv::resize(mat, mat, cv::Size(my_window->output_width, my_window->output_height));
 								}
+								SetCairo();
 							}
 						}
 						else
 						{
 							win->CropFrame(mat, &mat, use_x, use_y, use_w, use_h);
+							SetCairo();
 						}
 					}
 				}
@@ -16274,10 +16704,15 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
+						if(use_x < 0) use_x = 0;
+						if(use_y < 0) use_y = 0;
 						Mat out;
 						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
 						bitwise_not(out, out);
-						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+						use_w = out.cols;
+						use_h = out.rows;
+						out.copyTo(mat.rowRange(use_y, use_y + use_h).colRange(use_x, use_x + use_w));
+						SetCairo();
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_BRIGHTEN)
@@ -16304,6 +16739,8 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
+						if(use_x < 0) use_x = 0;
+						if(use_y < 0) use_y = 0;
 						Mat out;
 						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
 						if(win->misc_copy[loop]->saturation != 1.0)
@@ -16326,7 +16763,10 @@ int	inner;
 						{
 							brightness_mat(out, win->misc_copy[loop]->brightness);
 						}
-						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+						use_w = out.cols;
+						use_h = out.rows;
+						out.copyTo(mat.rowRange(use_y, use_y + use_h).colRange(use_x, use_x + use_w));
+						SetCairo();
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_DARKEN)
@@ -16353,10 +16793,15 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
+						if(use_x < 0) use_x = 0;
+						if(use_y < 0) use_y = 0;
 						Mat out;
 						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
 						flip(out, out, 1);
-						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+						use_w = out.cols;
+						use_h = out.rows;
+						out.copyTo(mat.rowRange(use_y, use_y + use_h).colRange(use_x, use_x + use_w));
+						SetCairo();
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_SATURATE)
@@ -16367,10 +16812,15 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
+						if(use_x < 0) use_x = 0;
+						if(use_y < 0) use_y = 0;
 						Mat out;
 						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
 						change_saturation(out, 1.25);
-						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+						use_w = out.cols;
+						use_h = out.rows;
+						out.copyTo(mat.rowRange(use_y, use_y + use_h).colRange(use_x, use_x + use_w));
+						SetCairo();
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_DESATURATE)
@@ -16381,10 +16831,15 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
+						if(use_x < 0) use_x = 0;
+						if(use_y < 0) use_y = 0;
 						Mat out;
 						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
 						change_saturation(out, 0.75);
-						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+						use_w = out.cols;
+						use_h = out.rows;
+						out.copyTo(mat.rowRange(use_y, use_y + use_h).colRange(use_x, use_x + use_w));
+						SetCairo();
 					}
 				}
 				else if(win->misc_copy[loop]->type == MISC_COPY_VFLIP)
@@ -16395,10 +16850,15 @@ int	inner;
 						int use_y = win->misc_copy[loop]->yy;
 						int use_w = win->misc_copy[loop]->ww;
 						int use_h = win->misc_copy[loop]->hh;
+						if(use_x < 0) use_x = 0;
+						if(use_y < 0) use_y = 0;
 						Mat out;
 						win->CropFrame(mat, &out, use_x, use_y, use_w - 1, use_h - 1);
 						flip(out, out, 0);
-						out.copyTo(mat.rowRange(use_y, use_y + (use_h - 1)).colRange(use_x, use_x + (use_w - 1)));
+						use_w = out.cols;
+						use_h = out.rows;
+						out.copyTo(mat.rowRange(use_y, use_y + use_h).colRange(use_x, use_x + use_w));
+						SetCairo();
 					}
 				}
 			}
@@ -18028,8 +18488,8 @@ static Mat local_mat;
 					{
 						if(my_window->my_muxer[use] != NULL)
 						{
-							my_window->my_muxer[loop]->Pause();
-							my_window->my_muxer[loop]->Stop();
+							my_window->my_muxer[use]->Pause();
+							my_window->my_muxer[use]->Stop();
 							my_window->my_muxer[use]->FinishMux();
 							pthread_mutex_lock(&my_window->muxer_mutex);
 							delete my_window->my_muxer[use];
@@ -22556,14 +23016,11 @@ char	buf[4096];
 	sprintf(buf, "%d", my_win->requested_h);
 	nsw->height->value(buf);
 	nsw->font_sz->value("32");
-	nsw->red->value(0);
-	nsw->green->value(0);
-	nsw->blue->value(0);
-	nsw->alpha->value(0);
-	nsw->text_red->value(255);
-	nsw->text_green->value(255);
-	nsw->text_blue->value(255);
-	nsw->text_alpha->value(255);
+
+	nsw->local_text_red = 255;
+	nsw->local_text_green = 255;
+	nsw->local_text_blue = 255;
+	nsw->local_text_alpha = 255;
 	nsw->font_browser->select(1);
 }
 
@@ -22601,14 +23058,22 @@ char buf[4096];
 		char *hh = (char *)height->value();
 		char *fz = (char *)font_sz->value();
 		char *font_name = (char *)nsw->font_browser->text(nsw->font_browser->value());
-		int rr = (int)nsw->red->value();
-		int gg = (int)nsw->green->value();
-		int bb = (int)nsw->blue->value();
-		int aa = (int)nsw->alpha->value();
-		int t_rr = (int)nsw->text_red->value();
-		int t_gg = (int)nsw->text_green->value();
-		int t_bb = (int)nsw->text_blue->value();
-		int t_aa = (int)nsw->text_alpha->value();
+		if(font_name != NULL)
+		{
+			if(strlen(font_name) > 7)
+			{
+				font_name += 7;
+			}
+		}
+		int rr = (int)nsw->local_red;
+		int gg = (int)nsw->local_green;
+		int bb = (int)nsw->local_blue;
+		int aa = (int)nsw->local_alpha;
+
+		int t_rr = (int)nsw->local_text_red;
+		int t_gg = (int)nsw->local_text_green;
+		int t_bb = (int)nsw->local_text_blue;
+		int t_aa = (int)nsw->local_text_alpha;
 		if(text != NULL)
 		{
 			if(strlen(text) == 0)
@@ -22711,14 +23176,16 @@ char buf[4096];
 			char *hh = (char *)height->value();
 			char *fz = (char *)font_sz->value();
 			char *font_name = (char *)nsw->font_browser->text(nsw->font_browser->value());
-			int rr = (int)nsw->red->value();
-			int gg = (int)nsw->green->value();
-			int bb = (int)nsw->blue->value();
-			int aa = (int)nsw->alpha->value();
-			int t_rr = (int)nsw->text_red->value();
-			int t_gg = (int)nsw->text_green->value();
-			int t_bb = (int)nsw->text_blue->value();
-			int t_aa = (int)nsw->text_alpha->value();
+
+			int rr = (int)nsw->local_red;
+			int gg = (int)nsw->local_green;
+			int bb = (int)nsw->local_blue;
+			int aa = (int)nsw->local_alpha;
+
+			int t_rr = (int)nsw->local_text_red;
+			int t_gg = (int)nsw->local_text_green;
+			int t_bb = (int)nsw->local_text_blue;
+			int t_aa = (int)nsw->local_text_alpha;
 			if(strlen(text) > 0)
 			{
 				if(strcmp(cam->path, text) != 0)
@@ -24372,20 +24839,18 @@ char			buf[4096];
 void	new_source_adj_color_cb(Fl_Widget *w, void *v)
 {
 	NewSourceWindow *nsw = (NewSourceWindow *)v;
-	int rr = (int)nsw->red->value();
-	int gg = (int)nsw->green->value();
-	int bb = (int)nsw->blue->value();
-	nsw->color_box->color(fl_rgb_color(rr, gg, bb));
+	int rr = (int)nsw->local_red;
+	int gg = (int)nsw->local_green;
+	int bb = (int)nsw->local_blue;
 	nsw->redraw();
 }
 
 void	new_source_adj_text_color_cb(Fl_Widget *w, void *v)
 {
 	NewSourceWindow *nsw = (NewSourceWindow *)v;
-	int rr = (int)nsw->text_red->value();
-	int gg = (int)nsw->text_green->value();
-	int bb = (int)nsw->text_blue->value();
-	nsw->text_color_box->color(fl_rgb_color(rr, gg, bb));
+	int rr = (int)nsw->local_text_red;
+	int gg = (int)nsw->local_text_green;
+	int bb = (int)nsw->local_text_blue;
 	nsw->redraw();
 }
 
@@ -24466,54 +24931,32 @@ int		loop;
 	cx += 110;
 
 	int y_pos = new_yp + 240;
-	red = new ColorSlider(60, y_pos, 300, 18, 0, "Red");
-	red->labelcolor(YELLOW);
-	red->callback(new_source_adj_color_cb, this);
-	red->copy_tooltip("The red value for the background of the source, if applicable.");
-	y_pos += 20;
-	green = new ColorSlider(60, y_pos, 300, 18, 0, "Green");
-	green->labelcolor(YELLOW);
-	green->callback(new_source_adj_color_cb, this);
-	green->copy_tooltip("The green value for the background of the source, if applicable.");
-	y_pos += 20;
-	blue = new ColorSlider(60, y_pos, 300, 18, 0, "Blue");
-	blue->labelcolor(YELLOW);
-	blue->callback(new_source_adj_color_cb, this);
-	blue->copy_tooltip("The blue value for the background of the source, if applicable.");
-	y_pos += 20;
-	alpha = new ColorSlider(60, y_pos, 300, 18, 0, "Alpha");
-	alpha->labelcolor(YELLOW);
-	alpha->copy_tooltip("The alpha value for the background of the source, if applicable.");
-	y_pos += 22;
+	local_red = 0;
+	local_blue = 0;
+	local_green = 0;
+	local_alpha = 255;
+	local_text_red = 255;
+	local_text_blue = 255;
+	local_text_green = 255;
+	local_text_alpha = 255;
 
-	int start_y = y_pos;
-	text_red = new ColorSlider(60, y_pos, 300, 18, 255, "Text Red");
-	text_red->labelcolor(YELLOW);
-	text_red->callback(new_source_adj_text_color_cb, this);
-	text_red->copy_tooltip("The red value for the text appearing in the source, if applicable.");
-	y_pos += 20;
-	text_green = new ColorSlider(60, y_pos, 300, 18, 255, "Text Green");
-	text_green->labelcolor(YELLOW);
-	text_green->callback(new_source_adj_text_color_cb, this);
-	text_green->copy_tooltip("The green value for the text appearing in the source, if applicable.");
-	y_pos += 20;
-	text_blue = new ColorSlider(60, y_pos, 300, 18, 255, "Text Blue");
-	text_blue->labelcolor(YELLOW);
-	text_blue->callback(new_source_adj_text_color_cb, this);
-	text_blue->copy_tooltip("The blue value for the text appearing in the source, if applicable.");
-	y_pos += 20;
-	text_alpha = new ColorSlider(60, y_pos, 300, 18, 255, "Text Alpha");
-	text_alpha->labelcolor(YELLOW);
-	text_alpha->copy_tooltip("The alpha value for the text appearing in the source, if applicable.");
-	y_pos += 20;
+	color_panel = new ColorPanel(in_win, &local_red, &local_green, &local_blue, &local_alpha, 4, y_pos, 450, 142);
+	color_panel->red->copy_tooltip("The red value for the background of the source, if applicable.");
+	color_panel->green->copy_tooltip("The green value for the background of the source, if applicable.");
+	color_panel->blue->copy_tooltip("The blue value for the background of the source, if applicable.");
+	color_panel->alpha->copy_tooltip("The alpha value for the background of the source, if applicable.");
+	y_pos += 150;
 
-	color_box = new Fl_Box(370, new_yp + 240, 75, 75);
-	color_box->box(FL_FRAME_BOX);
-	color_box->color(BLACK);
-
-	text_color_box = new Fl_Box(370, start_y, 75, 75);
-	text_color_box->box(FL_FRAME_BOX);
-	text_color_box->color(WHITE);
+	local_text_red = 255;
+	local_text_blue = 255;
+	local_text_green = 255;
+	local_text_alpha = 255;
+	text_color_panel = new ColorPanel(in_win, &local_text_red, &local_text_green, &local_text_blue, &local_text_alpha, 4, y_pos, 450, 142);
+	text_color_panel->red->copy_tooltip("The red value for the text appearing in the source, if applicable.");
+	text_color_panel->green->copy_tooltip("The green value for the text appearing in the source, if applicable.");
+	text_color_panel->blue->copy_tooltip("The blue value for the text appearing in the source, if applicable.");
+	text_color_panel->alpha->copy_tooltip("The alpha value for the text appearing in the source, if applicable.");
+	y_pos += 150;
 
 	font_browser = new Fl_Hold_Browser(60, y_pos, 385, 70, "Font");
 	font_browser->color(BLACK);
@@ -24530,7 +24973,9 @@ int		loop;
 	for(loop = 0;loop < nn;loop++)
 	{
 		char *str = (char *)Fl::get_font_name(loop);
-		font_browser->add(str);
+		char buf[256];
+		sprintf(buf, "@F%05d%s", loop, str);
+		font_browser->add(buf);
 	}
 	font_browser->select(1);
 
@@ -24903,14 +25348,14 @@ int	loop;
 					}
 				}
 			}
-			red->value(cam->red);
-			green->value(cam->green);
-			blue->value(cam->blue);
-			alpha->value(cam->alpha);
-			text_red->value(cam->text_red);
-			text_green->value(cam->text_green);
-			text_blue->value(cam->text_blue);
-			text_alpha->value(cam->text_alpha);
+			local_red = cam->red;
+			local_green = cam->green;
+			local_blue = cam->blue;
+			local_alpha = cam->alpha;
+			local_text_red = cam->text_red;
+			local_text_green = cam->text_green;
+			local_text_blue = cam->text_blue;
+			local_text_alpha = cam->text_alpha;
 		}
 		show();
 		resize(x(), y(), 590, h());
@@ -29339,8 +29784,8 @@ void	PTZ_Window::GoToPTZPosition(int speed, int in_pan, int in_tilt, int in_zoom
 	int attempts = 0;
 	while((done == 0) && (attempts < 10))
 	{
-		int target_pan = in_pan / 16;
-		int target_tilt = in_tilt / 16;
+		int target_pan = in_pan;
+		int target_tilt = in_tilt;
 		my_window->ViscaCommand(instance, PTZ_ABSOLUTE_POSITION, 4, speed, speed, target_pan, target_tilt);
 		while(my_window->visca_command != 0)
 		{
@@ -32729,7 +33174,7 @@ void	MyWin::RecordOn(Camera *cam)
 		override_button->show();
 	}
 	Camera *recording_now = RecordingCamera();
-	if(recording_now != NULL)
+	if((recording_now != NULL) && (single_stream == 1))
 	{
 		recording_now->triggers_requested = 0;
 	}
@@ -33846,6 +34291,7 @@ int	outer;
 	progress_scrubber->end();
 
 	number_of_fonts = Fl::set_fonts(NULL);
+
 	Fl::add_clipboard_notify(clipboard_notify, this);
 	start_win->Update("Read external programs");
 	ReadInExternalPrograms();
@@ -34362,6 +34808,7 @@ int	inner;
 				fprintf(fp, "\t\t\"highlight\": %d,\n", local_shape->highlight);
 				fprintf(fp, "\t\t\"thickness\": %d,\n", local_shape->thickness);
 				fprintf(fp, "\t\t\"filled\": %d,\n", local_shape->filled);
+				fprintf(fp, "\t\t\"square\": %d,\n", local_shape->square);
 				fprintf(fp, "\t\t\"erase\": %d,\n", local_shape->erase);
 				fprintf(fp, "\t\t\"background r\": %d,\n", local_shape->background_r);
 				fprintf(fp, "\t\t\"background g\": %d,\n", local_shape->background_g);
@@ -34980,6 +35427,7 @@ int	inner;
 				success = json_parse_int(item, "highlight", shape[cnt]->highlight);
 				success = json_parse_int(item, "thickness", shape[cnt]->thickness);
 				success = json_parse_int(item, "filled", shape[cnt]->filled);
+				success = json_parse_int(item, "square", shape[cnt]->square);
 				success = json_parse_int(item, "erase", shape[cnt]->erase);
 				success = json_parse_int(item, "background r", shape[cnt]->background_r);
 				success = json_parse_int(item, "background g", shape[cnt]->background_g);
@@ -35799,6 +36247,7 @@ int sh;
 		success = json_parse_int(immediate, "shape", def->shape);
 		success = json_parse_int(immediate, "use size", def->use_size);
 		success = json_parse_int(immediate, "filled", def->filled);
+		success = json_parse_int(immediate, "square", def->square);
 		success = json_parse_int(immediate, "box type", def->box_type);
 		success = json_parse_int(immediate, "point cnt", def->cnt);
 
@@ -39511,6 +39960,7 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 							im->rectangle->alpha = idw->rectangle_color_alpha;
 							im->rectangle->style = idw->rectangle_style;
 							im->rectangle->filled = idw->rectangle_filled;
+							im->rectangle->square = idw->rectangle_square;
 							im->rectangle->erase = idw->rectangle_erase;
 						}
 					}
@@ -39554,6 +40004,7 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 							im->rectangle->alpha = 255;
 							im->rectangle->style = FL_SOLID;
 							im->rectangle->filled = 0;
+							im->rectangle->square = 0;
 							im->rectangle->erase = 0;
 						}
 					}
@@ -39597,6 +40048,7 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 							im->ellipse->alpha = idw->rectangle_color_alpha;
 							im->ellipse->style = idw->rectangle_style;
 							im->ellipse->filled = idw->rectangle_filled;
+							im->ellipse->square = idw->rectangle_square;
 							im->ellipse->erase = idw->rectangle_erase;
 						}
 					}
@@ -39640,6 +40092,7 @@ int	MyWin::HandlePushToEditImmediate(Camera *cam)
 							im->ellipse_passthru->alpha = idw->rectangle_color_alpha;
 							im->ellipse_passthru->style = idw->rectangle_style;
 							im->ellipse_passthru->filled = idw->rectangle_filled;
+							im->ellipse_passthru->square = idw->rectangle_square;
 							im->ellipse_passthru->erase = idw->rectangle_erase;
 						}
 					}
@@ -41328,10 +41781,10 @@ void	color_it_set_all_cb(Fl_Widget *w, void *v)
 		cam->color_it_tolerance_g[nn] = (int)ciw->green_tolerance->value();
 		cam->color_it_tolerance_b[nn] = (int)ciw->blue_tolerance->value();
 
-		cam->color_it_replace_r[nn] = (int)ciw->red_replace->value();
-		cam->color_it_replace_g[nn] = (int)ciw->green_replace->value();
-		cam->color_it_replace_b[nn] = (int)ciw->blue_replace->value();
-		cam->color_it_replace_a[nn] = (int)ciw->alpha_replace->value();
+		cam->color_it_replace_r[nn] = ciw->local_red;
+		cam->color_it_replace_g[nn] = ciw->local_green;
+		cam->color_it_replace_b[nn] = ciw->local_blue;
+		cam->color_it_replace_a[nn] = ciw->local_alpha;
 	}
 }
 
@@ -41484,28 +41937,21 @@ int	loop;
 				else if(strcmp(str, "Copy to Clipboard") == 0)
 				{
 					Mat local;
-					int use_x = xx - cam->image_sx;
-					int use_y = yy - cam->image_sy;
-					while((use_x + ww) >= cam->mat.cols)
+					int xx = 0;
+					int yy = 0;
+					int ww = cam->display_width;
+					int hh = cam->display_height;
+					if((win->rubberband_x > -1)
+					&& (win->rubberband_y > -1)
+					&& (win->rubberband_w > -1)
+					&& (win->rubberband_h > -1))
 					{
-						ww--;
+						xx = win->rubberband_x - cam->image_sx;
+						yy = win->rubberband_y - cam->image_sy;
+						ww = win->rubberband_w;
+						hh = win->rubberband_h;
 					}
-					while((use_y + hh) >= cam->mat.rows)
-					{
-						hh--;
-					}
-					win->CropFrame(cam->mat, &local, use_x, use_y, ww, hh);
-
-					Fl_Copy_Surface *copy_surf = new Fl_Copy_Surface(ww, hh);
-					Fl_Surface_Device::push_current(copy_surf);
-					fl_color(WHITE);
-					fl_rectf(0, 0, ww, hh);
-
-					Mat local_mat;
-					cvtColor(local, local_mat, COLOR_RGBA2RGB);
-					fl_draw_image(local_mat.ptr(), 0, 0, ww, hh, 3);
-					Fl_Surface_Device::pop_current();
-					delete copy_surf;
+					copy_to_clipboard(cam, xx, yy, ww, hh);
 				}
 				else if(strcmp(str, "Source Camera") == 0)
 				{
@@ -41898,6 +42344,10 @@ int	loop;
 							popup->browser->add("Dynamic Copy");
 							popup->browser->add("Static Copy");
 							popup->browser->add("Copy to Clipboard");
+							if(Fl::clipboard_contains(Fl::clipboard_image)) 
+							{
+								popup->browser->add("Paste from Clipboard");
+							}
 							if(cam->source_camera == NULL)
 							{
 								popup->browser->add("Source Camera");
@@ -41967,6 +42417,7 @@ int	loop;
 									popup->browser->add("Resize");
 								}
 							}
+							popup->browser->add("Copy to Clipboard");
 							if(Fl::clipboard_contains(Fl::clipboard_image)) 
 							{
 								popup->browser->add("Paste from Clipboard");
@@ -42209,40 +42660,44 @@ static int 	stat_me = 0;
 					break;
 					case(FL_PASTE):
 					{
-						if(strcmp(Fl::event_clipboard_type(), Fl::clipboard_image) == 0) 
+						Mat out;
+						int	rr = mat_from_copy_buffer(out);
+						if(rr == 1)
 						{
 							if(clipboard_changed == 1)
 							{
-								Fl_RGB_Image *im = (Fl_RGB_Image*)Fl::event_clipboard();
-								if(im != NULL)
+								int real_ww = out.cols;
+								int real_hh = out.rows;
+								int use_x = rubberband_x - cam->image_sx;
+								int use_y = rubberband_y - cam->image_sy;
+								int ww = rubberband_w;
+								int hh = rubberband_h;
+								if((ww <= 0) || (hh <= 0))
 								{
-									Mat local;
-									unsigned char *ptr = (unsigned char *)im->data()[0];
-									int use_x = Fl::event_x() - cam->image_sx;
-									int use_y = Fl::event_y() - cam->image_sy;
-									int ww = im->w();
-									int hh = im->h();
-									if((ww > 0) && (hh > 0) && (ptr != NULL))
+									use_x = Fl::event_x() - cam->image_sx;
+									use_y = Fl::event_y() - cam->image_sy;
+									ww = real_ww;
+									hh = real_hh;
+									if((ww <= 0) || (hh <= 0))
 									{
-										Mat use;
-										if(im->d() == 3)
-										{
-											Mat local(hh, ww, CV_8UC3, (void *)ptr);
-											cvtColor(local, local, COLOR_RGB2RGBA);
-											use = local.clone();
-										}
-										else if(im->d() == 4)
-										{
-											Mat local(hh, ww, CV_8UC4, (void *)ptr);
-											use = local.clone();
-										}
-										int rr = AddMiscCopy(cam, MISC_COPY_STATIC, use, 0, NULL, use_x, use_y, ww, hh);
-										if(rr > -1)
-										{
-											MiscPaste();
-										}
+										ww = real_ww;
+										hh = real_hh;
 									}
-									flag = 1;
+								}
+								if((ww > 0) && (hh > 0))
+								{
+									Mat use;
+									cv::resize(out, out, cv::Size(ww, hh));
+									if(out.channels() == 3)
+									{
+										cvtColor(out, out, COLOR_RGB2RGBA);
+									}
+									use = out.clone();
+									rr = AddMiscCopy(cam, MISC_COPY_STATIC, use, 0, NULL, use_x, use_y, ww, hh);
+									if(rr > -1)
+									{
+										MiscPaste();
+									}
 								}
 							}
 							else
@@ -42259,17 +42714,38 @@ static int 	stat_me = 0;
 					{
 						int key = Fl::event_key();
 						flag = HandleKeyboard(event, cam);
-						if(key == 'b')
+						int state = Fl::event_state();
+						if((state & FL_CTRL) == FL_CTRL)
 						{
-							if(cam->anim_preview == 0)
+							if(key == 'v')
 							{
-								cam->anim_preview = 1;
+								Fl::paste(*this, 1, Fl::clipboard_image);
+								flag = 1;
 							}
-							else
+							if((key == 'c') || (key == 'x'))
 							{
-								cam->anim_preview = 0;
+								int xx = 0;
+								int yy = 0;
+								int ww = cam->display_width;
+								int hh = cam->display_height;
+								if((rubberband_x > -1)
+								&& (rubberband_y > -1)
+								&& (rubberband_w > -1)
+								&& (rubberband_h > -1))
+								{
+									xx = rubberband_x - cam->image_sx;
+									yy = rubberband_y - cam->image_sy;
+									ww = rubberband_w;
+									hh = rubberband_h;
+								}
+								copy_to_clipboard(cam, xx, yy, ww, hh);
+								if(key == 'x')
+								{
+									Mat local;
+									AddMiscCopy(cam, MISC_COPY_MASK, local, 1, NULL, xx, yy, ww, hh);
+								}
+								flag = 1;
 							}
-							flag = 1;
 						}
 					}
 					break;
@@ -43207,11 +43683,29 @@ int cnt_array[10][10];
 
 void	MyWin::CropFrame(Mat in, Mat *out, int xx, int yy, int ww, int hh)
 {
+	if(xx < 0) 
+	{
+		ww += xx;
+		xx = 0;
+	}
+	if(yy < 0) 
+	{
+		yy += yy;
+		yy = 0;
+	}
 	int extent_w = xx + ww;
+	if(extent_w >= in.cols)
+	{
+		ww -= (extent_w - in.cols);
+		ww--;
+	}
 	int extent_h = yy + hh;
-	if((extent_w < in.cols) && (extent_h < in.rows)
-	&& (extent_w > 0) && (extent_h > 0)
-	&& (ww > 0) && (hh > 0))
+	if(extent_h >= in.rows)
+	{
+		hh -= (extent_h - in.rows);
+		hh--;
+	}
+	if((ww > 0) && (hh > 0))
 	{
 		cv::Rect roi;
 		roi.x = xx;
@@ -43219,6 +43713,10 @@ void	MyWin::CropFrame(Mat in, Mat *out, int xx, int yy, int ww, int hh)
 		roi.width = ww;
 		roi.height = hh;
 		*out = in(roi).clone();
+	}
+	else
+	{
+printf("BAD CROP: %d %d %d %d\n", xx, yy, ww, hh);
 	}
 }
 
@@ -48208,7 +48706,7 @@ int	inner;
 			displayed_source = cam->id;
 			cam->ActivateBoundMics();
 			alt_displayed_source = -1;
-			if((single_stream == 1) || (muxing == 1))
+			if(single_stream == 1)
 			{
 				if(last_cam != NULL)
 				{
@@ -49304,6 +49802,7 @@ void	ImDefault::SetToDialog()
 				alpha = idw->rectangle_color_alpha;
 				style = idw->rectangle_style;
 				filled = idw->rectangle_filled;
+				square = idw->rectangle_square;
 				erase = idw->rectangle_erase;
 			}
 			else
@@ -49360,6 +49859,7 @@ void	ImDefault::Copy(Immediate *in_im, ImDefault *source)
 	shape = source->shape;
 	use_size = source->use_size;
 	filled = source->filled;
+	square = source->square;
 	selecting = source->selecting;
 	erase = source->erase;
 	box_type = source->box_type;
@@ -49408,6 +49908,7 @@ ImRectangle::ImRectangle(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww
 	blue = 255;
 	style = 0;
 	filled = 0;
+	square = 0;
 	erase = 0;
 	SetToDialog();
 }
@@ -49426,6 +49927,8 @@ void	ImRectangle::draw()
 		int sy = my_immediate->relative_y;
 		int sw = w();
 		int sh = h();
+		int use_w = sw;
+		int use_h = sh;
 
 		if(erase == 1)
 		{
@@ -49453,7 +49956,12 @@ void	ImRectangle::draw()
 			cairo_translate(cr, sx + (sw / 2), sy + (sh / 2));
 			cairo_scale(cr, scale_w, scale_h);
 			cairo_rotate(cr, my_immediate->angle);
-			cairo_rectangle(cr, -(sw / 2), -(sh / 2), sw, sh);
+			if(square == 1)
+			{
+				use_w = sw;
+				use_h = sw;
+			}
+			cairo_rectangle(cr, -(sw / 2), -(sh / 2), use_w, use_h);
 			if(filled == 0)
 			{
 				cairo_stroke(cr);
@@ -49464,7 +49972,7 @@ void	ImRectangle::draw()
 			}
 			cairo_restore(cr);
 		}
-		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
+		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, use_w, use_h);
 	}
 }
 
@@ -49645,8 +50153,15 @@ ImImage::ImImage(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh
 	my_immediate = in_im;
 	if((in_im->idw->image_mat.rows > 0) && (in_im->idw->image_mat.cols > 0) && (!in_im->idw->image_mat.empty()))
 	{
-		char *filename = (char *)in_im->idw->image_file_path->value();
-		strcpy(image_file_path, filename);
+		if(in_im->idw->from_paste == 0)
+		{
+			char *filename = (char *)in_im->idw->image_file_path->value();
+			strcpy(image_file_path, filename);
+		}
+		else
+		{
+			my_mat = in_im->idw->image_mat.clone();
+		}
 	}
 	SetToDialog();
 }
@@ -49665,7 +50180,10 @@ void	ImImage::draw()
 		if(my_mat.empty())
 		{
 			my_mat = imread(image_file_path);
-			cvtColor(my_mat, my_mat, COLOR_BGR2RGBA);
+			if(!my_mat.empty())
+			{
+				cvtColor(my_mat, my_mat, COLOR_BGR2RGBA);
+			}
 		}
 		if(!my_mat.empty())
 		{
@@ -49724,6 +50242,7 @@ ImEllipse::ImEllipse(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, in
 	blue = 255;
 	style = 0;
 	filled = 0;
+	square = 0;
 	erase = 0;
 	SetToDialog();
 }
@@ -49764,14 +50283,22 @@ void	ImEllipse::draw()
 			my_cairo_set_source_rgba(cr, red, green, blue, use_alpha);
 			double cx = (double)(sx + (sw / 2.0));
 			double cy = (double)(sy + (sh / 2.0));
+			if(square == 1)
+			{
+				cx = (double)(sx + (sw / 2.0));
+				cy = (double)(sy + (sw / 2.0));
+			}
 			cairo_matrix_t save_matrix;
 			cairo_get_matrix(cr, &save_matrix);
 			cairo_translate(cr, cx, cy);
 			cairo_rotate(cr, my_immediate->angle);
 			double sy = 1.0;
-			if(sw > 0)
+			if(square == 0)
 			{
-				sy = (double)sh / (double)sw;
+				if(sw > 0)
+				{
+					sy = (double)sh / (double)sw;
+				}
 			}
 			cairo_scale(cr, 1.0, sy);
 			cairo_arc(cr, 0, 0, sw / 2.0, 0.0, 2 * M_PI);
@@ -49787,7 +50314,14 @@ void	ImEllipse::draw()
 			}
 			cairo_restore(cr);
 		}
-		my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
+		if(square == 0)
+		{
+			my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), h());
+		}
+		else
+		{
+			my_immediate->resize(sx + cam->image_sx, sy + cam->image_sy, w(), w());
+		}
 	}
 }
 
@@ -49802,6 +50336,7 @@ ImEllipsePassThru::ImEllipsePassThru(MyWin *in_win, Immediate *in_im, int xx, in
 	blue = 255;
 	style = 0;
 	filled = 0;
+	square = 0;
 	erase = 0;
 	SetToDialog();
 }
@@ -51499,6 +52034,7 @@ int	inner;
 	fprintf(fp, "\t\t\t\"shape\": %d,\n", use_default->shape);
 	fprintf(fp, "\t\t\t\"use size\": %d,\n", use_default->use_size);
 	fprintf(fp, "\t\t\t\"filled\": %d,\n", use_default->filled);
+	fprintf(fp, "\t\t\t\"square\": %d,\n", use_default->square);
 	fprintf(fp, "\t\t\t\"box type\": %d,\n", use_default->box_type);
 	fprintf(fp, "\t\t\t\"point cnt\": %d,\n", use_default->cnt);
 	fprintf(fp, "\t\t\t\"Point\": [\n");
@@ -52716,7 +53252,7 @@ void	color_it_clear_all_cb(Fl_Widget *w, void *v)
 	}
 }
 
-ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(425, 240, "Dynamic Coloring")
+ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(465, 280, "Dynamic Coloring")
 {
 	my_window = in_win;
 	last_x = 0;
@@ -52728,26 +53264,27 @@ ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(425, 240, "Dynamic Coloring
 	
 	red_tolerance = new ColorSlider(100, y_pos, 300, 20, 24, "Red Tolerance");
 	red_tolerance->callback(color_it_set_all_cb, this);
+	red_tolerance->copy_tooltip("Amount of difference in the red channel to cause selection");
 	y_pos += 22;
 	green_tolerance = new ColorSlider(100, y_pos, 300, 20, 24, "Green Tolerance");
 	green_tolerance->callback(color_it_set_all_cb, this);
+	green_tolerance->copy_tooltip("Amount of difference in the green channel to cause selection");
 	y_pos += 22;
 	blue_tolerance = new ColorSlider(100, y_pos, 300, 20, 24, "Blue Tolerance");
 	blue_tolerance->callback(color_it_set_all_cb, this);
+	blue_tolerance->copy_tooltip("Amount of difference in the green channel to cause selection");
 	y_pos += 32;
 
-	red_replace = new ColorSlider(100, y_pos, 300, 20, 0, "Red Replace");
-	red_replace->callback(color_it_set_all_cb, this);
-	y_pos += 22;
-	green_replace = new ColorSlider(100, y_pos, 300, 20, 0, "Green Replace");
-	green_replace->callback(color_it_set_all_cb, this);
-	y_pos += 22;
-	blue_replace = new ColorSlider(100, y_pos, 300, 20, 0, "Blue Replace");
-	blue_replace->callback(color_it_set_all_cb, this);
-	y_pos += 22;
-	alpha_replace = new ColorSlider(100, y_pos, 300, 20, 0, "Alpha Replace");
-	alpha_replace->callback(color_it_set_all_cb, this);
-	y_pos += 42;
+	local_red = 255;
+	local_blue = 255;
+	local_green = 255;
+	local_alpha = 255;
+	color_panel = new ColorPanel(in_win, &local_red, &local_green, &local_blue, &local_alpha, 4, y_pos, 450, 142);
+	color_panel->red->copy_tooltip("Amount of red to use in replacement color");
+	color_panel->green->copy_tooltip("Amount of green to use in replacement color");
+	color_panel->blue->copy_tooltip("Amount of blue to use in replacement color");
+	color_panel->alpha->copy_tooltip("Amount of alpha to use in replacement color");
+	y_pos += 155;
 
 	MyButton *clear_last_button = new MyButton(60, y_pos, 70, 20, "Clear Last");
 	clear_last_button->box(FL_FLAT_BOX);
@@ -52755,6 +53292,7 @@ ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(425, 240, "Dynamic Coloring
 	clear_last_button->labelcolor(YELLOW);
 	clear_last_button->labelsize(11);
 	clear_last_button->align(FL_ALIGN_CENTER);
+	clear_last_button->copy_tooltip("Restore the last selected color to original coloring");
 	clear_last_button->callback(color_it_clear_last_cb, this);
 	MyButton *clear_all_button = new MyButton((w() / 2) - 35, y_pos, 70, 20, "Clear All");
 	clear_all_button->box(FL_FLAT_BOX);
@@ -52762,6 +53300,7 @@ ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(425, 240, "Dynamic Coloring
 	clear_all_button->labelcolor(YELLOW);
 	clear_all_button->labelsize(11);
 	clear_all_button->align(FL_ALIGN_CENTER);
+	clear_all_button->copy_tooltip("Restore the all colors to original coloring");
 	clear_all_button->callback(color_it_clear_all_cb, this);
 	MyButton *done = new MyButton(w() - 130, y_pos, 70, 20, "Done");
 	done->box(FL_FLAT_BOX);
@@ -52769,6 +53308,7 @@ ColorItWindow::ColorItWindow(MyWin *in_win) : Dialog(425, 240, "Dynamic Coloring
 	done->labelcolor(YELLOW);
 	done->labelsize(11);
 	done->align(FL_ALIGN_CENTER);
+	done->copy_tooltip("Close dialog");
 	done->callback(hide_window_cb, this);
 	end();
 }
@@ -55056,7 +55596,8 @@ void	thumb_background_button_cb(Fl_Widget *w, void *v)
 	int red = 200;
 	int green = 200;
 	int blue = 200;
-	if(my_color_chooser("Background Color", red, green, blue))
+	int alpha = 255;
+	if(my_color_chooser("Background Color", red, green, blue, alpha))
 	{
 		Camera *cam = win->camera[tg->index];
 		if(cam != NULL)
@@ -55086,7 +55627,8 @@ void	thumb_text_color_button_cb(Fl_Widget *w, void *v)
 	int red = 200;
 	int green = 200;
 	int blue = 200;
-	if(my_color_chooser("Text Color", red, green, blue))
+	int alpha = 255;
+	if(my_color_chooser("Text Color", red, green, blue, alpha))
 	{
 		Camera *cam = win->camera[tg->index];
 		if(cam != NULL)
@@ -59500,11 +60042,18 @@ char	buf[256];
 	Fl::set_color(DARK_BLUE, gsw->dark_blue_color_r, gsw->dark_blue_color_g, gsw->dark_blue_color_b, gsw->dark_blue_color_a);
 	Fl::set_color(CYAN, gsw->cyan_color_r, gsw->cyan_color_g, gsw->cyan_color_b, gsw->cyan_color_a);
 
+	char *font_name = "sans";
 	Fl_Hold_Browser *hold = (Fl_Hold_Browser *)gsw->font_browser;
 	char *str = (char *)hold->text(hold->value());
 	if(str != NULL)
 	{
-		Fl::set_font(FL_HELVETICA, str);
+		if(strlen(str) > 7)
+		{
+			char *cp = str;
+			cp += 7;
+			Fl::set_font(FL_HELVETICA, cp);
+			font_name = cp;
+		}
 	}
 	MyWin *win = gsw->my_window;
 	win->redraw();
@@ -59604,7 +60153,7 @@ char	buf[256];
 		fprintf(fp, "\t\"color dark blue\": [%d,%d,%d],\n", red, green, blue);
 		Fl::get_color(CYAN, red, green, blue);
 		fprintf(fp, "\t\"color cyan\": [%d,%d,%d],\n", red, green, blue);
-		fprintf(fp, "\t\"font\": \"%s\"\n", str);
+		fprintf(fp, "\t\"font\": \"%s\"\n", font_name);
 		fprintf(fp, "}\n");
 		fclose(fp);
 	}
@@ -59864,7 +60413,16 @@ int	loop;
 	}
 }
 
-GUI_SettingsWindow::GUI_SettingsWindow(MyWin *in_win) : Dialog(400, 100, 320, 880, "GUI Settings")
+void	GUI_font_sample_cb(Fl_Widget *w, void *v)
+{
+	GUI_SettingsWindow *gsw = (GUI_SettingsWindow *)v;
+	int font = gsw->font_browser->value();
+	font--;
+	gsw->sample->textfont(font);
+	gsw->sample->redraw();
+}
+
+GUI_SettingsWindow::GUI_SettingsWindow(MyWin *in_win) : Dialog(400, 100, 320, 905, "GUI Settings")
 {
 int	loop;
 
@@ -60091,7 +60649,17 @@ int	loop;
 	cyan_color_button->color(fl_rgb_color(cyan_color_r, cyan_color_g, cyan_color_b));
 	cyan_color_button->callback(gui_setting_cyan_color_cb, this);
 	yp += 42;
-	font_browser = new Fl_Hold_Browser(10, yp, 300, 200, "Font");
+
+	sample = new MyInput(60, yp, 245, 20, "Sample");
+	sample->textsize(11);
+	sample->labelsize(9);
+	sample->box(FL_FRAME_BOX);
+	sample->color(BLACK);
+	sample->textcolor(WHITE);
+	sample->value("This is sample text");
+	yp += 42;
+
+	font_browser = new Fl_Hold_Browser(10, yp, 300, 180, "Font");
 	font_browser->color(BLACK);
 	font_browser->box(FL_FRAME_BOX);
 	font_browser->textcolor(WHITE);
@@ -60101,15 +60669,18 @@ int	loop;
 	font_browser->selection_color(YELLOW);
 	font_browser->scrollbar.color(BLACK);
 	font_browser->align(FL_ALIGN_TOP);
+	font_browser->callback(GUI_font_sample_cb, this);
 
 	int nn = my_window->number_of_fonts;
 	for(loop = 0;loop < nn;loop++)
 	{
 		char *str = (char *)Fl::get_font_name(loop);
-		font_browser->add(str);
+		char buf[256];
+		sprintf(buf, "@F%05d%s", loop, str);
+		font_browser->add(buf);
 	}
 	font_browser->select(1);
-	yp += 204;
+	yp += 184;
 	int bottom = yp + 12;
 
 	yp = new_yp + 10;
@@ -61963,10 +62534,13 @@ ImageWindow::ImageWindow(int in_index, MyWin *win, Camera *cam, Camera *in_dest,
 
 ImageWindow::~ImageWindow()
 {
-	if(my_window->resize_frame->use == this)
+	if(my_window->resize_frame != NULL)
 	{
-		my_window->resize_frame->use = NULL;
-		my_window->resize_frame->hide();
+		if(my_window->resize_frame->use == this)
+		{
+			my_window->resize_frame->use = NULL;
+			my_window->resize_frame->hide();
+		}
 	}
 	if(popup != NULL)
 	{
@@ -65433,6 +66007,21 @@ int		loop;
 		else if(folder_DEPTH == 4)
 		{
 			global_folder_mat = Mat(folder_WIDTH, folder_HEIGHT, CV_8UC4, folder_bytes);
+		}
+		if(access("color_palette.json", F_OK) == 0)
+		{
+			load_global_palette_as_JSON();
+		}
+		else
+		{
+			for(loop = 0;loop < 32;loop++)
+			{
+				global_palette_red[loop] = (int)(drand48() * 255.0);
+				global_palette_green[loop] = (int)(drand48() * 255.0);
+				global_palette_blue[loop] = (int)(drand48() * 255.0);
+				global_palette_alpha[loop] = 255;
+			}
+			save_global_palette_as_JSON();
 		}
 		start_win = new StartWindow(message_delay, 0, 0, ww, hh, global_argc + 1, "Starting");
 		start_win->box(FL_FLAT_BOX);

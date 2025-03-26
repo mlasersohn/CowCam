@@ -467,6 +467,7 @@ class	MySlider;
 class	ColorSlider;
 class	MiscCopy;
 class	ImmediateNameWindow;
+class	ColorPanel;
 
 class	ShortcutWindow : public Fl_Window
 {
@@ -976,6 +977,7 @@ public:
 	int			highlight;
 	int			thickness;
 	int			filled;
+	int			square;
 	int			erase;
 
 	int			background_r;
@@ -1446,34 +1448,56 @@ public:
 	ColorSlider	*green_tolerance;
 	ColorSlider	*blue_tolerance;
 
-	ColorSlider	*red_replace;
-	ColorSlider	*green_replace;
-	ColorSlider	*blue_replace;
-	ColorSlider	*alpha_replace;
+	int			local_red;
+	int			local_green;
+	int			local_blue;
+	int			local_alpha;
+	ColorPanel	*color_panel;
 };
 
-class	ColorDialog : public Dialog
+class	ColorPanel : public Fl_Window
 {
 public:
-			ColorDialog(MyWin *in_win, int ww, int hh, char *title = NULL, int *in_red = NULL, int *in_green = NULL, int *in_blue = NULL, int *in_alpha = NULL);
-			~ColorDialog();
-	void	draw();
-	int		handle(int event);
-
-	MyWin		*my_window;
+		ColorPanel(MyWin *in_win, int *red, int *green, int *blue, int *alpha, int xx, int yy, int ww, int hh);
+		~ColorPanel();
+	void	Callback(Fl_Callback *cb, void *v);
 
 	ColorSlider	*red;
 	ColorSlider	*green;
 	ColorSlider	*blue;
 	ColorSlider	*alpha;
+	int			custom_callback;
+
+	Fl_Box			*sample;
+	MyButton		*palette_button[32];
+	MyToggleButton	*palette_set_button[32];
+
+	int			*client_red;
+	int			*client_green;
+	int			*client_blue;
+	int			*client_alpha;
+};
+
+class	ColorDialog : public Dialog
+{
+public:
+			ColorDialog(MyWin *in_win, int ww, int hh, int& in_red, int& in_green, int& in_blue, int& in_alpha, char *title = NULL);
+			~ColorDialog();
+	void	draw();
+	int		handle(int event);
+	void	hide();
+
+	MyWin		*my_window;
+	ColorPanel	*color_panel;
 
 	int			*client_red;
 	int			*client_green;
 	int			*client_blue;
 	int			*client_alpha;
 
-	Fl_Box		*sample;
-	MyButton	*close;
+	Fl_Box			*sample;
+	MyButton		*palette_button[32];
+	MyToggleButton	*palette_set_button[32];
 
 	int			last_x;
 	int			last_y;
@@ -1537,14 +1561,12 @@ public:
 	
 	Fl_Box				*font_output;
 	Fl_Hold_Browser		*font_browser;
-	Fl_Hor_Slider		*font_red_slider;
-	Fl_Output			*font_red_output;
-	Fl_Hor_Slider		*font_green_slider;
-	Fl_Output			*font_green_output;
-	Fl_Hor_Slider		*font_blue_slider;
-	Fl_Output			*font_blue_output;
-	Fl_Hor_Slider		*font_alpha_slider;
-	Fl_Output			*font_alpha_output;
+
+	int					local_red;
+	int					local_green;
+	int					local_blue;
+	int					local_alpha;
+	ColorPanel			*color_panel;
 	Fl_Hor_Slider		*font_size_slider;
 	Fl_Output			*font_size_output;
 	Fl_Choice			*drawing_text_box;
@@ -1616,6 +1638,7 @@ public:
 		Fl_Output			*font_blue_output;
 		Fl_Hor_Slider		*font_alpha_slider;
 		Fl_Output			*font_alpha_output;
+		MyButton			*font_palette_button;
 		Fl_Hor_Slider		*font_size_slider;
 		Fl_Output			*font_size_output;
 		Fl_Choice			*drawing_text_box;
@@ -1637,6 +1660,7 @@ public:
 		Fl_Output		*line_blue_output;
 		Fl_Hor_Slider	*line_alpha_slider;
 		Fl_Output		*line_alpha_output;
+		MyButton		*line_palette_button;
 		Fl_Hor_Slider	*line_size_slider;
 		Fl_Output		*line_size_output;
 		MyToggleButton	*line_style_solid_button;
@@ -1663,6 +1687,7 @@ public:
 		Fl_Output		*rectangle_blue_output;
 		Fl_Hor_Slider	*rectangle_alpha_slider;
 		Fl_Output		*rectangle_alpha_output;
+		MyButton		*rectangle_palette_button;
 		Fl_Hor_Slider	*rectangle_size_slider;
 		Fl_Output		*rectangle_size_output;
 		MyToggleButton	*rectangle_style_solid_button;
@@ -1672,6 +1697,7 @@ public:
 		MyToggleButton	*rectangle_style_join_round_button;
 		MyToggleButton	*rectangle_style_join_bevel_button;
 		MyToggleButton	*rectangle_filled_button;
+		MyToggleButton	*rectangle_square_button;
 		MyToggleButton	*rectangle_erase_button;
 
 	MyGroup	*freehand_group;
@@ -1682,8 +1708,7 @@ public:
 		Fl_Output		*freehand_green_output;
 		Fl_Hor_Slider	*freehand_blue_slider;
 		Fl_Output		*freehand_blue_output;
-		Fl_Hor_Slider	*freehand_alpha_slider;
-		Fl_Output		*freehand_alpha_output;
+		MyButton		*freehand_palette_button;
 		Fl_Hor_Slider	*freehand_size_slider;
 		Fl_Output		*freehand_size_output;
 		MyToggleButton	*freehand_shape_square_button;
@@ -1695,8 +1720,9 @@ public:
 		MyToggleButton	*freehand_shape_key_button;
 	MyGroup	*image_group;
 		RectangleSample		*image_sample;
-		MyToggleButton	*image_file_button;
+		MyToggleButton		*image_file_button;
 		Fl_Input			*image_file_path;
+		MyToggleButton		*image_paste_button;
 	MyGroup	*pixelate_group;
 		Fl_Hor_Slider		*pixelate_size_slider;
 		Fl_Output			*pixelate_size_output;
@@ -1746,6 +1772,7 @@ public:
 	int		rectangle_size;
 	int		rectangle_style;
 	int		rectangle_filled;
+	int		rectangle_square;
 	int		rectangle_erase;
 
 	char	freehand_key;
@@ -1753,6 +1780,7 @@ public:
 	Mat		image_mat;
 
 	int		pixelate_size;
+	int		from_paste;
 };
 
 class	MyInput : public Fl_Input
@@ -1813,6 +1841,7 @@ public:
 	int			shape;
 	int			use_size;
 	int			filled;
+	int			square;
 	int			selecting;
 	int			erase;
 	int			box_type;
@@ -2429,6 +2458,7 @@ public:
 	MyButton	*dark_blue_color_button;
 	Fl_Box		*cyan_color_box;
 	MyButton	*cyan_color_button;
+	MyInput		*sample;
 	Fl_Hold_Browser	*font_browser;
 
 	unsigned char	background_color_r;
@@ -3486,16 +3516,20 @@ public:
 	Fl_Float_Input		*height;
 	Fl_Int_Input		*font_sz;
 	Fl_Hold_Browser		*font_browser;
-	ColorSlider			*red;
-	ColorSlider			*green;
-	ColorSlider			*blue;
-	ColorSlider			*alpha;
-	ColorSlider			*text_red;
-	ColorSlider			*text_green;
-	ColorSlider			*text_blue;
-	ColorSlider			*text_alpha;
-	Fl_Box				*color_box;
-	Fl_Box				*text_color_box;
+
+
+	int	local_red;
+	int	local_green;
+	int	local_blue;
+	int	local_alpha;
+	int	local_text_red;
+	int	local_text_green;
+	int	local_text_blue;
+	int	local_text_alpha;
+
+	ColorPanel			*color_panel;
+	ColorPanel			*text_color_panel;
+
 	SelectCameraWindow	*select_camera_window;
 	SelectX11Window		*select_x11_window;
 	SelectAudioWindow	*select_audio_window;

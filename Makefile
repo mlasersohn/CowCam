@@ -19,13 +19,10 @@ MCC=clang
 
 INCS = folder.h argv_split.h dr_mp3.h embed_app.h html_window.h muxer.h PulseAudio.h cowcam.h dr_flac.h dr_wav.h image_memory.h osg.h render_html.h vlc_window.h
 
-# CFLAGS = $(DBUG) -fno-diagnostics-color -Wno-unused-result -Wno-write-strings -no-pie -fPIC -c -DFLTK_HAVE_CAIRO -D_GNU_SOURCE -D_REENTRANT -DFLTK_1_1 -I. -I/usr/local/include/opencv4 -I/usr/local/include -I/usr/X11R6/include -I/usr/include/cairo -I/usr/local/include/ndi -I/usr/include/cairo
-
-CFLAGS = $(DBUG) -fno-diagnostics-color -Wno-unused-result -Wno-write-strings -fPIC -c -DFLTK_HAVE_CAIRO -D_GNU_SOURCE -D_REENTRANT -DFLTK_1_1 -I. -I/usr/local/include/opencv4 -I/usr/local/include -I/usr/X11R6/include -I/usr/include/cairo -I/usr/local/include/ndi -I/usr/include/cairo -I/usr/local/include/lunasvg
+CFLAGS = $(DBUG) -fno-diagnostics-color -Wno-unused-result -Wno-write-strings -c -DFLTK_HAVE_CAIRO -D_GNU_SOURCE -D_REENTRANT -DFLTK_1_1 -I. -I/usr/local/include/opencv4 -I/usr/local/include -I/usr/X11R6/include -I/usr/include/cairo -I/usr/local/include/ndi -I/usr/include/cairo -I/usr/local/include/lunasvg
 
 LD = $(MCC)
-#LDFLAGS = $(DBUG) -fPIC -no-pie -L/usr/local/lib -L/usr/lib -L/usr/X11R6/lib
-LDFLAGS = $(DBUG) -fPIC -L/usr/local/lib -L/usr/lib -L/usr/X11R6/lib
+LDFLAGS = $(DBUG) -L/usr/local/lib -L/usr/lib -L/usr/X11R6/lib
 
 AR = lib
 
