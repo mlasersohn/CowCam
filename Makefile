@@ -19,7 +19,7 @@ MCC=clang
 
 INCS = folder.h argv_split.h dr_mp3.h embed_app.h html_window.h muxer.h PulseAudio.h cowcam.h dr_flac.h dr_wav.h image_memory.h osg.h render_html.h vlc_window.h
 
-CFLAGS = $(DBUG) -fno-diagnostics-color -Wno-unused-result -Wno-write-strings -c -DFLTK_HAVE_CAIRO -D_GNU_SOURCE -D_REENTRANT -DFLTK_1_1 -I. -I/usr/local/include/opencv4 -I/usr/local/include -I/usr/X11R6/include -I/usr/include/cairo -I/usr/local/include/ndi -I/usr/include/cairo -I/usr/local/include/lunasvg
+CFLAGS = $(DBUG) -fno-diagnostics-color -Wno-deprecated-declarations -Wno-unused-result -Wno-write-strings -c -DFLTK_HAVE_CAIRO -D_GNU_SOURCE -D_REENTRANT -DFLTK_1_1 -I. -I/usr/local/include/opencv4 -I/usr/local/include -I/usr/X11R6/include -I/usr/include/cairo -I/usr/local/include/ndi -I/usr/include/cairo -I/usr/local/include/lunasvg
 
 LD = $(MCC)
 LDFLAGS = $(DBUG) -L/usr/local/lib -L/usr/lib -L/usr/X11R6/lib
@@ -122,7 +122,7 @@ networking.o: networking.cpp $(INCS)
 cowcam: cowcam.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o curl.o cow_simple_pulse.o irc.o read_wave.o libhtml_window.so libosg_camera.so
 	@echo
 	@echo "Link cowcam"
-	$(LD) -o cowcam $(LDFLAGS) cowcam.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o curl.o cow_simple_pulse.o irc.o read_wave.o -Xlinker -Bdynamic $(STDDYN)
+	$(LD) -o cowcam $(LDFLAGS) cowcam.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o curl.o cow_simple_pulse.o irc.o read_wave.o $(STDDYN)
 
 intro: intro.cpp intro.h
 	@echo

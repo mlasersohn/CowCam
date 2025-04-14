@@ -152,4 +152,7 @@ public:
 	int		using_simple_stream;
 	pa_simple	*simple_pulse_stream;
 	char		*desktop_monitor;
+
+	int			original_width;
+	int			original_height;
 };

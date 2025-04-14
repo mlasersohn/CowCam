@@ -516,6 +516,13 @@ public:
 	char		path[256];
 };
 
+class	FontBrowser : public Fl_Hold_Browser
+{
+public:
+			FontBrowser(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~FontBrowser();
+};
+
 class	MyRepeatButton : public Fl_Repeat_Button
 {
 public:
@@ -1369,6 +1376,7 @@ public:
 	void		hide();
 
 	int			hover;
+	int			font_sz;
 	MainMenu	*my_menu;
 };
 
@@ -1560,7 +1568,7 @@ public:
 	char			selected_font[4096];
 	
 	Fl_Box				*font_output;
-	Fl_Hold_Browser		*font_browser;
+	FontBrowser			*font_browser;
 
 	int					local_red;
 	int					local_green;
@@ -1629,7 +1637,7 @@ public:
 	MyGroup	*text_group;
 		Fl_Box				*font_output;
 		FontSample			*font_sample;
-		Fl_Hold_Browser		*font_browser;
+		FontBrowser			*font_browser;
 		Fl_Hor_Slider		*font_red_slider;
 		Fl_Output			*font_red_output;
 		Fl_Hor_Slider		*font_green_slider;
@@ -2256,6 +2264,7 @@ public:
 	MyButton	*set_text_color;
 	MyButton	*pause_av;
 	MyButton	*mute_av;
+	PopupMenu	*popup;
 	int			index;
 	int			displayed;
 
@@ -2384,6 +2393,7 @@ public:
 	int					last_y;
 
 	MyButton			*done;
+	MyButton			*copy_to_all;
 	MyButton			*clear;
 
 	MyToggleButton	*day[7];
@@ -2420,8 +2430,8 @@ public:
 class	GUI_SettingsWindow : public Dialog
 {
 public:
-		GUI_SettingsWindow(MyWin *);
-		~GUI_SettingsWindow();
+			GUI_SettingsWindow(MyWin *);
+			~GUI_SettingsWindow();
 
 	MyWin		*my_window;
 	
@@ -2430,6 +2440,7 @@ public:
 	MyLightButton *retain_cameras_button;
 	MyLightButton *retain_audio_button;
 	MyLightButton *retain_ptz_button;
+	MyLightButton *lock_ptz_mouse_button;
 	MyLightButton *retain_all_button;
 	MyLightButton *animate_panels_button;
 	MyLightButton *use_tooltips_button;
@@ -2459,7 +2470,7 @@ public:
 	Fl_Box		*cyan_color_box;
 	MyButton	*cyan_color_button;
 	MyInput		*sample;
-	Fl_Hold_Browser	*font_browser;
+	FontBrowser		*font_browser;
 
 	unsigned char	background_color_r;
 	unsigned char	background_color_g;
@@ -2648,7 +2659,6 @@ public:
 	MyLightButton	*frame_scaling_button;
 	MyLightButton	*crop_scaling_button;
 	MyLightButton	*crop_output_button;
-	MyLightButton	*single_stream_button;
 	MyLightButton	*create_tag_file_button;
 	MyLightButton *display_recording_button;
 	MyLightButton *recording_follow_display_button;
@@ -2916,6 +2926,7 @@ public:
 	void			ReadVectorFile(Mat& mat, char *filename);
 	void			TestObjectDetection();
 	void			SetObjectInAllOtherCameras();
+	int				EventInFilter();
 
 	int					hot;
 	Mat					hot_mat;
@@ -2946,6 +2957,8 @@ public:
 	double				darkness_trigger;
 	double				darkness_score;
 	int					motion_score;
+	Muxer				*my_muxer[128];
+	int					muxer_cnt;
 	int					ever_opened;
 	int					static_initialized;
 	long int			last_grab_time;
@@ -3196,6 +3209,7 @@ public:
 
 	int					v4l_capable;
 	int					anim_preview;
+	time_t				last_retrieve;
 };
 
 class	MyVISCACamera : public VISCACamera_t
@@ -3515,8 +3529,7 @@ public:
 	Fl_Float_Input		*width;
 	Fl_Float_Input		*height;
 	Fl_Int_Input		*font_sz;
-	Fl_Hold_Browser		*font_browser;
-
+	FontBrowser			*font_browser;
 
 	int	local_red;
 	int	local_green;
@@ -3566,9 +3579,12 @@ public:
 	MyButton		*osg_select;
 	MyButton		*pseudo_camera_select;
 	MyButton		*plugin_camera_select;
+	MyToggleButton	*italic_button;
+	MyToggleButton	*bold_button;
 
 	MyWin			*my_window;
 	int				edit_mode;
+	char			selected_font_name[256];
 };
 
 class	EncodeSpeedWindow : public MyGroup
@@ -3689,6 +3705,11 @@ public:
 	int		pan_tilt_style;
 	int		prefer_ndi;
 	int		prefer_v4l;
+	time_t	last_here;
+	int		auto_focus_status;
+	int		auto_exposure_status;
+	int		digital_zoom_status;
+	int		backlight_status;
 
 	VISCAInterface_t		*ptz_current_interface;
 	int						ptz_interface_index;
@@ -3828,7 +3849,6 @@ public:
 			, int in_desktop_y
 			, int in_desktop_w
 			, int in_desktop_h
-			, int in_single_stream
 			, int in_follow_mode
 			, int in_transition
 			, char *in_transition_plugin
@@ -3928,6 +3948,7 @@ public:
 	void		RecordOff();
 	void		SetupObjectDetection();
 	void		RecordAll();
+	void		RecordAllMuxed();
 	void		DisplayRecordingCamera();
 	void		SetAllCamerasToStream(Camera *in_cam);
 	void		SetAllCamerasToStop();
@@ -3951,6 +3972,7 @@ public:
 	int			ptz_joystick_handler();
 	void		SendToNetwork();
 	void		DrawAudioGraph(Camera *cam);
+	void		GrabDesktop(Mat& result, int retain_size = 0);
 	void		GrabDesktop(int retain_size = 0);
 	void		GrabCameraArea();
 	void		Done();
@@ -4035,7 +4057,7 @@ public:
 	void		BuildSelectOutputWindow();
 	void		LoadOutputPathList(char *filename);
 	void		SaveOutputPathList(char *filename);
-	void		SetUseOutputPath(int index, char *buf);
+	void		SetUseOutputPath(int index, char *buf, Camera *cam = NULL);
 	int			PushToSelectColors(Camera *cam);
 	FilterDialog	*MakeFilterDialog(char *name);
 	void			UpdateThumbButtons();
@@ -4120,6 +4142,10 @@ public:
 	void				LoadPluginTransition(char *name);
 	Camera				*FindCameraByAlias(char *tst);
 	void				SnapAll();
+	void				GrabWindowImage(Window win, Mat& use_mat);
+	int					EventInPTZWindow();
+	void				BuildMuxerList(int& out_cnt);
+	void				ClearAllCurrentMuxers(Camera *cam);
 
 	MyGroup		*resize_grp;
 	int			current_source;
@@ -4216,7 +4242,9 @@ public:
 	char		*record_on_start_alias;
 
 	Muxer									*my_muxer[128];
+	Muxer									*use_muxer[1024];
 	int										muxer_cnt;
+	Muxer									*record_all_muxer;
 	NDIlib_send_instance_t					ndi_send;
 	NDIlib_video_frame_v2_t					ndi_video_frame;
 	NDIlib_audio_frame_interleaved_16s_t	ndi_audio_frame;
@@ -4282,8 +4310,11 @@ public:
 	int			retain_cameras;
 	int			retain_audio;
 	int			retain_ptz;
+	int			lock_ptz_mouse_move;
 	int			hide_status;
 	int			auto_scale;
+	XImage				*shared_image;
+	XShmSegmentInfo		shminfo;
 	int						ptz_home_on_launch;
 	int						ptz_window_index;
 	int						visca_command;
@@ -4357,6 +4388,7 @@ public:
 	int					button_refresh;
 
 	MenuButton	*record_button;
+	MenuButton	*record_all_button;
 	MenuButton	*power_button;
 	MenuButton	*mute_video_button;
 	MenuButton	*freeze_button;
@@ -4523,6 +4555,7 @@ public:
 	Camera				*last_cam;
 	int					trigger_select_mode;
 	int					record_all;
+	int					record_all_muxing;
 	int					record_desktop;
 	int					desktop_x;
 	int					desktop_y;

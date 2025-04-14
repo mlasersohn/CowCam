@@ -197,6 +197,9 @@ Muxer::Muxer(MyWin *in_win, ReviewWin *in_review, int from_raw)
 	frame_timecode = 0.0;
 	paused = 0;
 
+	original_width = 0;
+	original_height = 0;
+
 	using_simple_stream = 0;
 	simple_pulse_stream = NULL;
 	desktop_monitor = NULL;
@@ -1050,6 +1053,8 @@ int i;
 	desktop_monitor = in_desktop_mon;
 	mixer = in_mixer;
 	not_audible = 0;
+	original_width = in_width;
+	original_height = in_height;
 	if(use_audio == 2)
 	{
 		use_audio = 1;
@@ -1300,6 +1305,10 @@ static const pa_sample_spec pulse_ss = {
 		{
 			if(audio_dev == -2)
 			{
+				if(desktop_monitor == NULL)
+				{
+					rate = requested_rate;
+				}
 				if(desktop_monitor != NULL)
 				{
 					int error = 0;
