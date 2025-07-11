@@ -74,9 +74,9 @@ int		x, y;
 	cv::imwrite(filename, out);
 }
 
-int	extract_video(int *progress, char *in_filename, char *out_filename, int in_sequence)
+int	extract_video(void *update_win, int *progress, char *in_filename, char *out_filename, int in_sequence)
 {
-void			update_extracting_message(int type);
+void			update_extracting_message(void *update_win, int type);
 AVFormatContext *pFormatCtx = NULL;
 int				 i, videoStream;
 AVCodecContext	*pCodecCtx = NULL;
@@ -194,7 +194,7 @@ cow3++;
 												timecode = (long int)(((double)packet.pts * (double)((double)units.num / (double)units.den)) * 1000.0);
 												SaveFrameToFile(fd, pFrameRGB, pCodecCtx->width, pCodecCtx->height, timecode);
 												i++;
-												update_extracting_message(1);
+												update_extracting_message(update_win, 1);
 											}
 										}
 										// Free the packet that was allocated by av_read_frame
@@ -233,7 +233,7 @@ cow6++;
 											timecode = (long int)(((double)packet.pts * (double)((double)units.num / (double)units.den)) * 1000.0);
 											SaveFrameAsPNG(out_filename, pFrameRGB, pCodecCtx->width, pCodecCtx->height, i);
 											i++;
-											update_extracting_message(1);
+											update_extracting_message(update_win, 1);
 										}
 									}
 									// Free the packet that was allocated by av_read_frame

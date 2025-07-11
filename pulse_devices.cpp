@@ -82,15 +82,16 @@ void pa_sinklist_cb(pa_context *c, const pa_sink_info *l, int eol, void *userdat
 }
 
 // See above.  This callback is pretty much identical to the previous
-void pa_sourcelist_cb(pa_context *c, const pa_source_info *l, int eol, void *userdata) {
+void pa_sourcelist_cb(pa_context *c, const pa_source_info *l, int eol, void *userdata) 
+{
 	pa_devicelist_t *pa_devicelist = (pa_devicelist_t *)userdata;
 	int ctr = 0;
 
-	if (eol > 0) {
-	return;
+	if(eol > 0)
+	{
+		return;
 	}
-
-	for (ctr = 0; ctr < 16; ctr++) 
+	for(ctr = 0; ctr < 16; ctr++) 
 	{
 		if(!pa_devicelist[ctr].initialized) 
 		{

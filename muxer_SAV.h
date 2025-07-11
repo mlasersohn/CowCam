@@ -8,10 +8,6 @@ typedef short SAMPLE;
 #define STREAM_PIX_FMT		AV_PIX_FMT_YUV420P
 #define SCALE_FLAGS		SWS_BICUBIC
 
-#define	CHECK_TYPE_AUDIO		0
-#define	CHECK_TYPE_VIDEO		1
-#define	CHECK_TYPE_CONTAINER	2
-
 // COW - FORCE THIS TO MATCH MIXER AND MIC
 #define FRAMES_PER_BUFFER   (1024)
 
@@ -41,12 +37,11 @@ class	PulseMixer;
 class	MyFormat
 {
 public:
-		MyFormat(char *in_name, char *in_extensions, AVOutputFormat *ofmt);
+		MyFormat(char *in_name, char *in_extensions);
 		~MyFormat();
 		void	AddAudio(char *in_name, int id);
 		void	AddVideo(char *in_name, int id);
 
-	AVOutputFormat	*output_format;
 	int		invalid;
 	char	name[1024];
 	char	extensions[1024];
@@ -56,6 +51,8 @@ public:
 	char	*audio_codec[1024];
 	int		audio_id[1024];
 	int		audio_codec_cnt;
+	int		bad_combination[1024][2];
+	int		bad_combination_cnt;
 };
 
 // a wrapper around a single output AVStream
@@ -103,10 +100,10 @@ public:
 	int write_video_frame(AVFormatContext *oc, OutputStream *ost);
 	void close_stream(AVFormatContext *oc, OutputStream *ost);
 	void EncodeAudioAndVideo(void *in_buffer);
-	int TestMux(char *in_container, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *output_filename, int in_width, int in_height, double in_fps, double in_rate);
+	int TestMux(enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *output_filename, int in_width, int in_height, double in_fps, double in_rate);
 	void	Flush();
 
-	int InitMux(int encode_audio, char *container, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *url, char *desk_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_channels, int in_frame_cnt, int *crop_x, int *crop_y);
+	int InitMux(int encode_audio, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *url, char *desk_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_channels, int in_frame_cnt, int *crop_x, int *crop_y);
 	void FinishMux();
 
 	MyWin	*my_window;
@@ -163,5 +160,4 @@ public:
 
 	time_t		time_to_write_frame;
 	double		average_time_to_write_frame;
-	int			in_simple_record;
 };

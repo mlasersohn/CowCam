@@ -10,9 +10,9 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
  
-long int decode_audio_file(int *progress, const char* path, const int sample_rate, int out_channels, short int **data, int *size) 
+long int decode_audio_file(void *update_win, int *progress, const char* path, const int sample_rate, int out_channels, short int **data, int *size) 
 {
-void	update_extracting_message(int type);
+void	update_extracting_message(void *update_win, int type);
  
 	// initialize all muxers, demuxers and protocols for libavformat
 	// (does nothing if called twice during the course of one program execution)
@@ -119,7 +119,7 @@ void	update_extracting_message(int type);
 		*data = (short int *)realloc(*data, (nn + frame->nb_samples) * (sizeof(short int) * out_channels));
 		memcpy(*data + nn, buffer, frame_count * sizeof(short int) * out_channels);
 		nn += (frame_count * out_channels);
-		update_extracting_message(-1);
+		update_extracting_message(update_win, -1);
 	}
 	*size = (int)nn;
  
@@ -134,13 +134,13 @@ void	update_extracting_message(int type);
 	return(rr);
 }
 
-int	extract_audio(int *progress, char *in_filename, char *out_filename, int sample_rate, int channels)
+int	extract_audio(void *update_win, int *progress, char *in_filename, char *out_filename, int sample_rate, int channels)
 {
 short int	*data;
 int		size;
 
 	// decode data
-	long int nn = decode_audio_file(progress, in_filename, sample_rate, channels, &data, &size);
+	long int nn = decode_audio_file(update_win, progress, in_filename, sample_rate, channels, &data, &size);
 	if(nn < 0)
 	{
 		return -1;

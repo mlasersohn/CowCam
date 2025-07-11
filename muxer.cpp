@@ -112,7 +112,7 @@ extern "C"
 #include	<cairo.h>
 
 #include	"libircclient.h"
-#include    <Processing.NDI.Lib.h>
+#include	<Processing.NDI.Lib.h>
 
 #include	<cjson/cJSON.h>
 
@@ -181,6 +181,9 @@ Muxer::Muxer(MyWin *in_win, ReviewWin *in_review, int from_raw)
 	stop_activity = 0;
 	url = NULL;
 	fresh_image = 0;
+	in_simple_record = 0;
+	oc = NULL;
+	raw_frame = NULL;
 
 	encode_video = 0;
 	encode_audio = 0;
@@ -196,6 +199,8 @@ Muxer::Muxer(MyWin *in_win, ReviewWin *in_review, int from_raw)
 	start_time = 0;
 	frame_timecode = 0.0;
 	paused = 0;
+	time_to_write_frame = 0;
+	average_time_to_write_frame = 1000000000.0;
 
 	original_width = 0;
 	original_height = 0;
@@ -213,6 +218,28 @@ Muxer::Muxer(MyWin *in_win, ReviewWin *in_review, int from_raw)
 
 Muxer::~Muxer()
 {
+	if(oc != NULL)
+	{
+		close_stream(oc, &video_st);
+		close_stream(oc, &audio_st);
+		avformat_free_context(oc);
+		oc = NULL;
+	}
+	if(raw_frame != NULL)
+	{
+		free(raw_frame);
+		raw_frame = NULL;
+	}
+	if(recordedSamples != NULL)
+	{
+		free(recordedSamples);
+		recordedSamples = NULL;
+	}
+	if(simple_pulse_stream != NULL)
+	{
+		pa_simple_free(simple_pulse_stream);
+		simple_pulse_stream = NULL;
+	}
 }
 
 int Muxer::write_frame(AVFormatContext *fmt_ctx, AVCodecContext *c, AVStream *st, AVFrame *frame)
@@ -220,37 +247,52 @@ int Muxer::write_frame(AVFormatContext *fmt_ctx, AVCodecContext *c, AVStream *st
 int ret;
 
 	// send the frame to the encoder
+	time_t start = precise_time();
 	ret = avcodec_send_frame(c, frame);
-	if(ret < 0) 
+	if(ret > -1) 
 	{
-		fprintf(stderr, "Error sending a frame to the encoder: %s\n", av_err2str(ret));
-		exit(1);
+		while(ret >= 0) 
+		{
+			AVPacket pkt = { 0 };
+			ret = avcodec_receive_packet(c, &pkt);
+			if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+			{
+				break;
+			}
+			else if(ret > -1) 
+			{
+				// rescale output packet timestamp values from codec to stream timebase
+				av_packet_rescale_ts(&pkt, c->time_base, st->time_base);
+				pkt.stream_index = st->index;
+		
+				ret = av_interleaved_write_frame(fmt_ctx, &pkt);
+				av_packet_unref(&pkt);
+				if(ret < 0) 
+				{
+					fprintf(stdout, "Error: Failed while writing output packet: %s\n", av_err2str(ret));
+					time_to_write_frame += 1000000;
+				}
+			}
+			else
+			{
+				fprintf(stdout, "Error: failed encoding a frame: %s\n", av_err2str(ret));
+				time_to_write_frame += 1000000;
+			}
+		}
 	}
-	while(ret >= 0) 
+	else
 	{
-		AVPacket pkt = { 0 };
-		ret = avcodec_receive_packet(c, &pkt);
-		if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-		{
-			break;
-		}
-		else if(ret < 0) 
-		{
-			fprintf(stderr, "Error encoding a frame: %s\n", av_err2str(ret));
-			exit(1);
-		}
-		// rescale output packet timestamp values from codec to stream timebase
-		av_packet_rescale_ts(&pkt, c->time_base, st->time_base);
-		pkt.stream_index = st->index;
-
-		ret = av_interleaved_write_frame(fmt_ctx, &pkt);
-		av_packet_unref(&pkt);
-		if(ret < 0) 
-		{
-			fprintf(stderr, "Error while writing output packet: %s\n", av_err2str(ret));
-			exit(1);
-		}
+		fprintf(stdout, "Error: While sending a frame to the encoder: %s\n", av_err2str(ret));
+		time_to_write_frame += 1000000;
 	}
+	time_t elapsed = precise_time() - start;
+	time_to_write_frame += elapsed;
+	int div = 1;
+	if(video_frames > 0)
+	{
+		div = video_frames;
+	}
+	average_time_to_write_frame = (double)((double)time_to_write_frame / 1000000.0) / (double)div;
 	return ret == AVERROR_EOF ? 1 : 0;
 }
 
@@ -290,121 +332,142 @@ void Muxer::add_stream(int use_nvidia, OutputStream *ost, AVFormatContext *oc, c
 	}
 	if(!(*codec)) 
 	{
-		fprintf(stderr, "Could not find encoder for '%s'\n", avcodec_get_name(codec_id));
+		fprintf(stdout, "Error: Could not find encoder for '%s'\n", avcodec_get_name(codec_id));
 		exit(1);
 	}
 	ost->st = avformat_new_stream(oc, NULL);
 	if(!ost->st) 
 	{
-		fprintf(stderr, "Could not allocate stream\n");
+		fprintf(stdout, "Error: Could not allocate stream\n");
 		exit(1);
 	}
-	ost->st->id = oc->nb_streams-1;
+	ost->st->id = oc->nb_streams - 1;
 	c = avcodec_alloc_context3(*codec);
-	if(!c) 
+	if(c) 
 	{
-		fprintf(stderr, "Could not alloc an encoding context\n");
-		exit(1);
-	}
-	ost->enc = c;
+		ost->enc = c;
 
-	switch ((*codec)->type) 
-	{
-		case AVMEDIA_TYPE_AUDIO:
+		switch ((*codec)->type) 
 		{
-			if(url != NULL)
+			case AVMEDIA_TYPE_AUDIO:
 			{
-				c->sample_fmt = AV_SAMPLE_FMT_FLTP;
-			}
-			else
-			{
-				c->sample_fmt = (*codec)->sample_fmts ?  (*codec)->sample_fmts[0] : AV_SAMPLE_FMT_S16;
-			}
-			c->bit_rate = 128000;
-			c->sample_rate = (int)in_hz;
-			if((*codec)->supported_samplerates) 
-			{
-				c->sample_rate = (*codec)->supported_samplerates[0];
-				for(i = 0; (*codec)->supported_samplerates[i]; i++) 
+				if(url != NULL)
 				{
-					if((*codec)->supported_samplerates[i] == (int)in_hz)
+					c->sample_fmt = AV_SAMPLE_FMT_FLTP;
+				}
+				else
+				{
+					c->sample_fmt = (*codec)->sample_fmts ?  (*codec)->sample_fmts[0] : AV_SAMPLE_FMT_S16;
+				}
+				c->bit_rate = 128000;
+				c->sample_rate = -1;
+				if((*codec)->supported_samplerates) 
+				{
+					for(i = 0; (*codec)->supported_samplerates[i]; i++) 
 					{
-						c->sample_rate = (int)in_hz;
+						if((*codec)->supported_samplerates[i] == (int)in_hz)
+						{
+							c->sample_rate = (int)in_hz;
+						}
 					}
 				}
-			}
-			c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
-			if(used_channels == 1)
-			{
-				c->channel_layout = AV_CH_LAYOUT_MONO;
-			}
-			else
-			{
-				c->channel_layout = AV_CH_LAYOUT_STEREO;
-			}
-			if((*codec)->channel_layouts) 
-			{
-				c->channel_layout = (*codec)->channel_layouts[0];
-				for(i = 0; (*codec)->channel_layouts[i]; i++) 
+				else
 				{
-					if((*codec)->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
+					c->sample_rate = (int)in_hz;
+				}
+				if(c->sample_rate != -1)
+				{
+					c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
+					if(used_channels == 1)
+					{
+						c->channel_layout = AV_CH_LAYOUT_MONO;
+					}
+					else
 					{
 						c->channel_layout = AV_CH_LAYOUT_STEREO;
 					}
+					if((*codec)->channel_layouts) 
+					{
+						c->channel_layout = (*codec)->channel_layouts[0];
+						for(i = 0; (*codec)->channel_layouts[i]; i++) 
+						{
+							if((*codec)->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
+							{
+								c->channel_layout = AV_CH_LAYOUT_STEREO;
+							}
+						}
+					}
+					c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
+					ost->st->time_base = (AVRational){ 1, c->sample_rate };
+				}
+				else
+				{
+					fprintf(stdout, "Error: Illegal sample rate %d for this codec\n", (int)in_hz);
+					if((*codec)->supported_samplerates) 
+					{
+						for(i = 0; (*codec)->supported_samplerates[i]; i++) 
+						{
+							fprintf(stdout, "%d ", (*codec)->supported_samplerates[i]);
+						}
+						fprintf(stdout, "\n");
+					}
 				}
 			}
-			c->channels = av_get_channel_layout_nb_channels(c->channel_layout);
-			ost->st->time_base = (AVRational){ 1, c->sample_rate };
+			break;
+			case AVMEDIA_TYPE_VIDEO:
+			{
+				c->codec_id = codec_id;
+				c->bit_rate = (in_height * in_width * 24 * in_fps) / 1024; 
+
+				// COW - does there need to be a minimum? 
+				// COW REMOVED if(c->bit_rate < 2500000) c->bit_rate = 2500000;
+				if(c->bit_rate < 2500000) c->bit_rate = 2500000;
+
+				// Resolution must be a multiple of two.
+				c->width = in_width;
+				c->height = in_height;
+
+				// timebase: This is the fundamental unit of time (in seconds) in terms
+				// of which frame timestamps are represented. For fixed-fps content,
+				// timebase should be 1/framerate and timestamp increments should be
+				// identical to 1.
+
+				ost->st->time_base = (AVRational){ 1, (int)in_fps };
+				c->time_base = ost->st->time_base;
+
+				c->gop_size = 30; /* emit one intra frame every 30 frames at most */
+				c->pix_fmt = STREAM_PIX_FMT;
+				if((*codec)->pix_fmts)
+				{
+					// COW - TRY TO USE FORMAT SUPPLIED BY CODEC
+					c->pix_fmt = (*codec)->pix_fmts[0];
+				}
+				if(c->codec_id == AV_CODEC_ID_MPEG2VIDEO) 
+				{
+					// just for testing, we also add B-frames
+					c->max_b_frames = 2;
+				}
+				if(c->codec_id == AV_CODEC_ID_MPEG1VIDEO) 
+				{
+					// Needed to avoid using macroblocks in which some coeffs overflow.
+					// This does not happen with normal video, it just happens here as
+					// the motion of the chroma plane does not match the luma plane.
+					c->mb_decision = 2;
+				}
+			}
+			break;
+			default:
+			break;
 		}
-		break;
-		case AVMEDIA_TYPE_VIDEO:
+		// Some formats want stream headers to be separate.
+		if(oc->oformat->flags & AVFMT_GLOBALHEADER)
 		{
-			c->codec_id = codec_id;
-			c->bit_rate = (in_height * in_width * 24 * in_fps) / 1024; 
-
-			// COW - does there need to be a minimum? 
-			// COW REMOVED if(c->bit_rate < 2500000) c->bit_rate = 2500000;
-
-			// Resolution must be a multiple of two.
-			c->width = in_width;
-			c->height = in_height;
-
-			// timebase: This is the fundamental unit of time (in seconds) in terms
-			// of which frame timestamps are represented. For fixed-fps content,
-			// timebase should be 1/framerate and timestamp increments should be
-			// identical to 1.
-
-			ost->st->time_base = (AVRational){ 1, (int)in_fps };
-			c->time_base = ost->st->time_base;
-
-			c->gop_size = 30; /* emit one intra frame every 30 frames at most */
-			c->pix_fmt = STREAM_PIX_FMT;
-			if((*codec)->pix_fmts)
-			{
-				// COW - TRY TO USE FORMAT SUPPLIED BY CODEC
-   				c->pix_fmt = (*codec)->pix_fmts[0];
-			}  
-			if(c->codec_id == AV_CODEC_ID_MPEG2VIDEO) 
-			{
-				// just for testing, we also add B-frames
-				c->max_b_frames = 2;
-			}
-			if(c->codec_id == AV_CODEC_ID_MPEG1VIDEO) 
-			{
-				// Needed to avoid using macroblocks in which some coeffs overflow.
-				// This does not happen with normal video, it just happens here as
-				// the motion of the chroma plane does not match the luma plane.
-				c->mb_decision = 2;
-			}
+			c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 		}
-		break;
-		default:
-		break;
 	}
-	// Some formats want stream headers to be separate.
-	if(oc->oformat->flags & AVFMT_GLOBALHEADER)
+	else
 	{
-		c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+		fprintf(stdout, "Error: Could not alloc an encoding context\n");
 	}
 }
 
@@ -414,25 +477,27 @@ AVFrame *Muxer::alloc_audio_frame(enum AVSampleFormat sample_fmt, uint64_t chann
 int ret;
 
 	AVFrame *frame = av_frame_alloc();
-	if(!frame) 
+	if(frame) 
 	{
-		fprintf(stderr, "Error allocating an audio frame\n");
-		exit(1);
-	}
-	frame->format = sample_fmt;
-	frame->channel_layout = channel_layout;
-	frame->sample_rate = sample_rate;
-	frame->nb_samples = nb_samples;
-	if(nb_samples) 
-	{
-		ret = av_frame_get_buffer(frame, 0);
-		if(ret < 0) 
+		frame->format = sample_fmt;
+		frame->channel_layout = channel_layout;
+		frame->sample_rate = sample_rate;
+		frame->nb_samples = nb_samples;
+		if(nb_samples) 
 		{
-			fprintf(stderr, "Error allocating an audio buffer\n");
-			exit(1);
+			ret = av_frame_get_buffer(frame, 0);
+			if(ret < 0) 
+			{
+				fprintf(stdout, "Error: Failed allocating an audio buffer\n");
+				exit(1);
+			}
 		}
 	}
-	return frame;
+	else
+	{
+		fprintf(stdout, "Error: Failed allocating an audio frame\n");
+	}
+	return(frame);
 }
 
 int Muxer::open_audio(AVFormatContext *oc, const AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg)
@@ -450,7 +515,7 @@ AVDictionary *opt = NULL;
 	av_dict_free(&opt);
 	if(ret < 0) 
 	{
-		fprintf(stderr, "Could not open audio codec: %s\n", av_err2str(ret));
+		fprintf(stdout, "Error: Could not open audio codec: %s\n", av_err2str(ret));
 		return(-100);
 	}
 	// init signal generator
@@ -471,13 +536,19 @@ AVDictionary *opt = NULL;
 	number_of_audio_samples = 1024;
 
 	ost->frame = alloc_audio_frame(c->sample_fmt, c->channel_layout, c->sample_rate, nb_samples);
-	ost->tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, c->channel_layout, c->sample_rate, nb_samples);
-
+	if(used_channels == 1)
+	{
+		ost->tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, AV_CH_LAYOUT_MONO, c->sample_rate, nb_samples);
+	}
+	else
+	{
+		ost->tmp_frame = alloc_audio_frame(AV_SAMPLE_FMT_S16, AV_CH_LAYOUT_STEREO, c->sample_rate, nb_samples);
+	}
 	// copy the stream parameters to the muxer
 	ret = avcodec_parameters_from_context(ost->st->codecpar, c);
 	if(ret < 0)
 	{
-		fprintf(stderr, "Could not copy the stream parameters\n");
+		fprintf(stdout, "Error: Could not copy the stream parameters\n");
 		return(-200);
 	}
 
@@ -485,21 +556,21 @@ AVDictionary *opt = NULL;
 	ost->swr_ctx = swr_alloc();
 	if(!ost->swr_ctx) 
 	{
-		fprintf(stderr, "Could not allocate resampler context\n");
+		fprintf(stdout, "Error: Could not allocate resampler context\n");
 		return(-300);
 	}
 	// set options
-	av_opt_set_int       (ost->swr_ctx, "in_channel_count",   c->channels,       0);
-	av_opt_set_int       (ost->swr_ctx, "in_sample_rate",     c->sample_rate,    0);
-	av_opt_set_sample_fmt(ost->swr_ctx, "in_sample_fmt",      AV_SAMPLE_FMT_S16, 0);
-	av_opt_set_int       (ost->swr_ctx, "out_channel_count",  c->channels,       0);
-	av_opt_set_int       (ost->swr_ctx, "out_sample_rate",    c->sample_rate,    0);
-	av_opt_set_sample_fmt(ost->swr_ctx, "out_sample_fmt",     c->sample_fmt,     0);
+	av_opt_set_int	   (ost->swr_ctx, "in_channel_count",   c->channels,	   0);
+	av_opt_set_int	   (ost->swr_ctx, "in_sample_rate",	 c->sample_rate,	0);
+	av_opt_set_sample_fmt(ost->swr_ctx, "in_sample_fmt",	  AV_SAMPLE_FMT_S16, 0);
+	av_opt_set_int	   (ost->swr_ctx, "out_channel_count",  c->channels,	   0);
+	av_opt_set_int	   (ost->swr_ctx, "out_sample_rate",	c->sample_rate,	0);
+	av_opt_set_sample_fmt(ost->swr_ctx, "out_sample_fmt",	 c->sample_fmt,	 0);
 
 	// initialize the resampling context
 	if((ret = swr_init(ost->swr_ctx)) < 0) 
 	{
-		fprintf(stderr, "Failed to initialize the resampling context\n");
+		fprintf(stdout, "Error: Failed to initialize the resampling context\n");
 		return(-400);
 	}
 	return(0);
@@ -555,34 +626,47 @@ AVFrame *frame;
 int ret;
 int dst_nb_samples;
 
+	int rr = -1;
 	c = ost->enc;
 	frame = get_audio_frame(ost, in_buffer);
 	if(frame != NULL) 
 	{
 		// convert samples from native format to destination codec format, using the resampler
 		// compute destination number of samples
-		dst_nb_samples = av_rescale_rnd(swr_get_delay(ost->swr_ctx, c->sample_rate) + frame->nb_samples, c->sample_rate, c->sample_rate, AV_ROUND_UP);
+		dst_nb_samples = av_rescale_rnd(frame->nb_samples, c->sample_rate, c->sample_rate, AV_ROUND_UP);
 		av_assert0(dst_nb_samples == frame->nb_samples);
 		
 		// when we pass a frame to the encoder, it may keep a reference to it internally;
 		// make sure we do not overwrite it here
 		ret = av_frame_make_writable(ost->frame);
-		if(ret < 0)
+		if(ret > -1)
 		{
-			exit(1);
+			// convert to destination format
+			ret = swr_convert(ost->swr_ctx, ost->frame->data, dst_nb_samples, (const uint8_t **)frame->data, frame->nb_samples);
+			if(ret > -1) 
+			{
+				frame = ost->frame;
+				frame->pts = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
+				ost->samples_count += dst_nb_samples;
+				if(c->codec != NULL)
+				{
+					rr = write_frame(oc, c, ost->st, frame);
+				}
+				else
+				{
+					fprintf(stdout, "Error: Audio codec is NULL\n");
+				}
+			}
+			else
+			{
+				fprintf(stdout, "Error: while converting\n");
+			}
 		}
-		// convert to destination format
-		ret = swr_convert(ost->swr_ctx, ost->frame->data, dst_nb_samples, (const uint8_t **)frame->data, frame->nb_samples);
-		if(ret < 0) 
+		else
 		{
-			fprintf(stderr, "Error while converting\n");
-			exit(1);
+			fprintf(stdout, "Error: Cannot make frame writable\n");
 		}
-		frame = ost->frame;
-		frame->pts = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
-		ost->samples_count += dst_nb_samples;
 	}
-	int rr = write_frame(oc, c, ost->st, frame);
 	return(rr);
 }
 
@@ -605,8 +689,7 @@ int ret;
 	ret = av_frame_get_buffer(picture, 0);
 	if(ret < 0) 
 	{
-		fprintf(stderr, "Could not allocate frame data.\n");
-		exit(1);
+		fprintf(stdout, "Error: Could not allocate frame data.\n");
 	}
 	return(picture);
 }
@@ -624,14 +707,14 @@ AVDictionary *opt = NULL;
 	av_dict_free(&opt);
 	if(ret < 0) 
 	{
-		fprintf(stderr, "Could not open video codec: %s\n", av_err2str(ret));
+		fprintf(stdout, "Error: Could not open video codec: %s\n", av_err2str(ret));
 		return(-1);
 	}
 	// allocate and init a re-usable frame
 	ost->frame = alloc_picture(c->pix_fmt, c->width, c->height);
 	if(!ost->frame) 
 	{
-		fprintf(stderr, "Could not allocate video frame\n");
+		fprintf(stdout, "Error: Could not allocate video frame\n");
 		return(-2);
 	}
 	// If the output format is not YUV420P, then a temporary YUV420P
@@ -643,7 +726,7 @@ AVDictionary *opt = NULL;
 		ost->tmp_frame = alloc_picture(AV_PIX_FMT_YUV420P, c->width, c->height);
 		if(!ost->tmp_frame) 
 		{
-			fprintf(stderr, "Could not allocate temporary picture\n");
+			fprintf(stdout, "Error: Could not allocate temporary picture\n");
 			return(-3);
 		}
 	}
@@ -651,13 +734,12 @@ AVDictionary *opt = NULL;
 	ret = avcodec_parameters_from_context(ost->st->codecpar, c);
 	if(ret < 0) 
 	{
-		fprintf(stderr, "Could not copy the stream parameters\n");
+		fprintf(stdout, "Error: Could not copy the stream parameters\n");
 		return(-3);
 	}
 	return(0);
 }
 
-// Prepare a dummy image. 
 void Muxer::fill_yuv_image(AVFrame *pict, int frame_index, int width, int height)
 {
 	// Y, Cb and Cr
@@ -665,12 +747,18 @@ void Muxer::fill_yuv_image(AVFrame *pict, int frame_index, int width, int height
 	unsigned char *ptr = (unsigned char *)GetFrame();
 	if(ptr != NULL)
 	{
-		int nn1 = height * width;
-		int nn2 = (height / 2) * (width / 2);
+		// COW NOTE: I am no longer copying this data from one frame to the other
+		// COW NOTE: This may cause the original "data" to be left unfreed
+		// COW NOTE: and this data (from a Mat) to be freed in its stead
+		int size = height * width;
+		pict->data[0] = ptr;						// Y plane
+		pict->data[1] = pict->data[0] + size;		// U plane
+		pict->data[2] = pict->data[1] + size / 4;	// V plane (assuming 4:2:0 subsampling)
 
-		memcpy(pict->data[0], ptr, nn1);
-		memcpy(pict->data[1], ptr + nn1, nn2);
-		memcpy(pict->data[2], ptr + nn1 + nn2, nn2);
+		// manually setting linesizes (assuming no padding for simplicity)
+		pict->linesize[0] = width;
+		pict->linesize[1] = width / 2;
+		pict->linesize[2] = width / 2;
 	}
 	pthread_mutex_unlock(&my_window->mux_mutex);
 }
@@ -680,46 +768,53 @@ AVFrame *Muxer::get_video_frame(OutputStream *ost)
 	AVCodecContext *c = ost->enc;
 	// when we pass a frame to the encoder, it may keep a reference to it
 	// internally; make sure we do not overwrite it here
-	if(av_frame_make_writable(ost->frame) < 0)
+	if(av_frame_make_writable(ost->frame) > -1)
 	{
-		exit(1);
-	}
-	if(c->pix_fmt != AV_PIX_FMT_YUV420P) 
-	{
-		// as we only generate a YUV420P picture, we must convert it
-		// to the codec pixel format if needed
-		if(!ost->sws_ctx) 
+		if(c->pix_fmt != AV_PIX_FMT_YUV420P) 
 		{
-			ost->sws_ctx = sws_getContext(
-				c->width, 
-				c->height, 
-				AV_PIX_FMT_YUV420P, 
-				c->width, 
-				c->height, 
-				c->pix_fmt, 
-				SCALE_FLAGS, 
-				NULL, 
-				NULL, 
-				NULL);
+			// as we only generate a YUV420P picture, we must convert it
+			// to the codec pixel format if needed
+			int no_go = 0;
 			if(!ost->sws_ctx) 
 			{
-				fprintf(stderr, "Could not initialize the conversion context\n");
-				exit(1);
+				ost->sws_ctx = sws_getContext(
+					c->width, 
+					c->height, 
+					AV_PIX_FMT_YUV420P, 
+					c->width, 
+					c->height, 
+					c->pix_fmt, 
+					SCALE_FLAGS, 
+					NULL, 
+					NULL, 
+					NULL);
+				if(!ost->sws_ctx) 
+				{
+					fprintf(stdout, "Error: Could not initialize the conversion context\n");
+					no_go = 1;
+				}
+			}
+			if(no_go == 0)
+			{
+				fill_yuv_image(ost->tmp_frame, ost->next_pts, c->width, c->height);
+				sws_scale(
+					ost->sws_ctx, 
+					(const uint8_t * const *)ost->tmp_frame->data, 
+					ost->tmp_frame->linesize, 
+					0, 
+					c->height, 
+					ost->frame->data, 
+					ost->frame->linesize);
 			}
 		}
-		fill_yuv_image(ost->tmp_frame, ost->next_pts, c->width, c->height);
-		sws_scale(
-			ost->sws_ctx, 
-			(const uint8_t * const *)ost->tmp_frame->data, 
-			ost->tmp_frame->linesize, 
-			0, 
-			c->height, 
-			ost->frame->data, 
-			ost->frame->linesize);
-	} 
-	else 
+		else 
+		{
+			fill_yuv_image(ost->frame, ost->next_pts, c->width, c->height);
+		}
+	}
+	else
 	{
-		fill_yuv_image(ost->frame, ost->next_pts, c->width, c->height);
+		fprintf(stdout, "Error: Cannot make frame writable\n");
 	}
 	ost->frame->pts = ost->next_pts;
 	ost->next_pts++;
@@ -734,7 +829,35 @@ int Muxer::write_video_frame(AVFormatContext *oc, OutputStream *ost)
 	AVFrame *frame = get_video_frame(ost);
 	if(frame != NULL)
 	{
-		rr =  write_frame(oc, ost->enc, ost->st, frame);
+		if((frame->width > 0) && (frame->height > 0))
+		{
+			if(ost != NULL)
+			{
+				if(ost->enc != NULL)
+				{
+					if(ost->enc->codec != NULL)
+					{
+						rr = write_frame(oc, ost->enc, ost->st, frame);
+					}
+					else
+					{
+						fprintf(stdout, "Error: OST->ENC->CODEC is NULL\n");
+					}
+				}
+				else
+				{
+					fprintf(stdout, "Error: OST->ENC is NULL\n");
+				}
+			}
+			else
+			{
+				fprintf(stdout, "Error: OST is NULL\n");
+			}
+		}
+		else
+		{
+			fprintf(stdout, "Error: Video frame size is zero\n");
+		}
 	}
 	return(rr);
 }
@@ -746,11 +869,26 @@ void	Muxer::Flush()
 
 void Muxer::close_stream(AVFormatContext *oc, OutputStream *ost)
 {
-	avcodec_free_context(&ost->enc);
-	av_frame_free(&ost->frame);
-	av_frame_free(&ost->tmp_frame);
-	sws_freeContext(ost->sws_ctx);
-	swr_free(&ost->swr_ctx);
+	if(ost != NULL)
+	{
+		avcodec_free_context(&ost->enc);
+		if(ost->frame)
+		{
+			av_frame_free(&ost->frame);
+		}
+		if(ost->tmp_frame)
+		{
+			av_frame_free(&ost->tmp_frame);
+		}
+		if(ost->sws_ctx) 
+		{
+			sws_freeContext(ost->sws_ctx);
+		}
+		if(ost->swr_ctx) 
+		{
+			swr_free(&ost->swr_ctx);
+		}
+	}
 }
 
 void	Muxer::EncodeAudioAndVideo(void *in_buffer)
@@ -773,7 +911,11 @@ extern long int precise_time();
 				{
 					if((current_frame % realtime_factor) == 0)
 					{
-						write_video_frame(oc, &video_st);
+						int rr = write_video_frame(oc, &video_st);
+						if(rr == -1)
+						{
+							encode_done = 1;
+						}
 						if(!encode_audio)
 						{
 							usleep(15000);
@@ -785,7 +927,11 @@ extern long int precise_time();
 					int nn = abs(realtime_factor);
 					for(int loop = 0;loop < nn;loop++)
 					{
-						write_video_frame(oc, &video_st);
+						int rr = write_video_frame(oc, &video_st);
+						if(rr == -1)
+						{
+							encode_done = 1;
+						}
 					}
 				}
 				current_frame++;
@@ -797,7 +943,11 @@ extern long int precise_time();
 		}
 		else if(video_st.enc != NULL)
 		{
-			write_video_frame(oc, &video_st);
+			int rr = write_video_frame(oc, &video_st);
+			if(rr == -1)
+			{
+				encode_done = 1;
+			}
 			usleep(12000);
 			current_frame++;
 			if(my_window != NULL)
@@ -820,66 +970,179 @@ extern long int precise_time();
 	encode_audio = save_encode_audio;
 }
 
-void enumerate_codecs() 
+int	CheckBadName(int type, char *name)
 {
-    std::vector<const AVCodec*> encoderList;
-    void *codecState = nullptr;
-    const AVCodec *codec = av_codec_iterate(&codecState);
-    while(codec) 
-    {
-        encoderList.push_back(codec);
-        codec = av_codec_iterate(&codecState);
-    }
-    void *muxerState = nullptr;
-    const AVOutputFormat *ofmt = av_muxer_iterate(&muxerState);
-    while(ofmt) 
-    {
-        if(ofmt->extensions != NULL)
-        {
-            if(strlen(ofmt->extensions) > 0)
-            {
-	        	MyFormat *mine = new MyFormat((char *)ofmt->name, (char *)ofmt->extensions);
-                for(auto codec : encoderList) 
-                {
-                    if(av_codec_is_encoder(codec))
-                    {
-                        if(avformat_query_codec(ofmt, codec->id, FF_COMPLIANCE_NORMAL) == 1) 
-                        {
-                            if((codec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) == 0) 
-                            {
-                                if(avcodec_get_type(codec->id) == AVMEDIA_TYPE_AUDIO) 
-                                {
-                                    mine->AddAudio((char *)avcodec_get_name(codec->id), codec->id);
-                                }
-                                if(avcodec_get_type(codec->id) == AVMEDIA_TYPE_VIDEO) 
-                                {
-                                    mine->AddVideo((char *)avcodec_get_name(codec->id), codec->id);
-                                    if(codec->id == AV_CODEC_ID_H263)
-                                    {
-										// COW - for some reason, this one needs to be added by hand
-                                        mine->AddVideo((char *)avcodec_get_name(AV_CODEC_ID_H264), AV_CODEC_ID_H264);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-	        if((mine->video_codec_cnt > 0) && (mine->audio_codec_cnt > 0))
-	        {
-		        global_my_format[global_my_format_cnt] = mine;
-		        global_my_format_cnt++;
-	        }
-	        else
-	        {
-		        delete mine;
-	        }
-            }
-        }
-        ofmt = av_muxer_iterate(&muxerState);
-    }
+int		loop;
+char	buf[256];
+
+	int bad = 0;
+	FILE *fp = NULL;
+	if(type == CHECK_TYPE_AUDIO)
+	{
+		fp = fopen("audio_codec_bad_list.txt", "r");
+	}
+	else if(type == CHECK_TYPE_VIDEO)
+	{
+		fp = fopen("video_codec_bad_list.txt", "r");
+	}
+	else if(type == CHECK_TYPE_CONTAINER)
+	{
+		fp = fopen("container_bad_list.txt", "r");
+	}
+	if(fp != NULL)
+	{
+		while(fgets(buf, 256, fp))
+		{
+			if(strncasecmp(name, buf, strlen(name)) == 0)
+			{
+				bad = 1;
+			}
+		}
+		fclose(fp);
+	}
+	return(bad);
 }
 
-void enumerate_test(void (*output_cb)(char *), int test_w, int test_h, int test_fps, int test_hz) 
+int	CheckGoodName(int type, char *name)
+{
+int		loop;
+char	buf[256];
+
+	int good = 0;
+	FILE *fp = NULL;
+	if(type == CHECK_TYPE_AUDIO)
+	{
+		fp = fopen("audio_codec_good_list.txt", "r");
+	}
+	else if(type == CHECK_TYPE_VIDEO)
+	{
+		fp = fopen("video_codec_good_list.txt", "r");
+	}
+	else if(type == CHECK_TYPE_CONTAINER)
+	{
+		fp = fopen("container_good_list.txt", "r");
+	}
+	if(fp != NULL)
+	{
+		while(fgets(buf, 256, fp))
+		{
+			if(strncasecmp(name, buf, strlen(name)) == 0)
+			{
+				good = 1;
+			}
+		}
+		fclose(fp);
+	}
+	return(good);
+}
+
+AVOutputFormat	*find_output_format_by_name(char *name)
+{
+	AVOutputFormat *rr = NULL;
+	void *muxerState = nullptr;
+	const AVOutputFormat *ofmt = av_muxer_iterate(&muxerState);
+	while(ofmt) 
+	{
+		if(strcmp(name, ofmt->name) == 0)
+		{
+			rr = (AVOutputFormat *)ofmt;
+		}
+		ofmt = av_muxer_iterate(&muxerState);
+	}
+	return(rr);
+}
+
+void enumerate_codecs() 
+{
+	std::vector<const AVCodec*> encoderList;
+	void *codecState = nullptr;
+	const AVCodec *codec = av_codec_iterate(&codecState);
+	while(codec) 
+	{
+		encoderList.push_back(codec);
+		codec = av_codec_iterate(&codecState);
+	}
+	void *muxerState = nullptr;
+	const AVOutputFormat *ofmt = av_muxer_iterate(&muxerState);
+	while(ofmt) 
+	{
+		int bad = CheckBadName(CHECK_TYPE_CONTAINER, (char *)ofmt->name);
+		int good = CheckGoodName(CHECK_TYPE_CONTAINER, (char *)ofmt->name);
+		if((bad == 0) || (good == 1))
+		{
+			if(ofmt->extensions != NULL)
+			{
+				if(strlen(ofmt->extensions) > 0)
+				{
+					MyFormat *mine = new MyFormat((char *)ofmt->name, (char *)ofmt->extensions, (AVOutputFormat *)ofmt);
+					for(auto codec : encoderList) 
+					{
+						if(av_codec_is_encoder(codec))
+						{
+							if(avformat_query_codec(ofmt, codec->id, FF_COMPLIANCE_NORMAL) == 1) 
+							{
+								if((codec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) == 0) 
+								{
+									if(avcodec_get_type(codec->id) == AVMEDIA_TYPE_AUDIO) 
+									{
+										int no_go = 0;
+										char *name = (char *)avcodec_get_name(codec->id);
+										if(name != NULL)
+										{
+											if(name != NULL)
+											{
+												int bad = CheckBadName(CHECK_TYPE_AUDIO, name);
+												int good = CheckGoodName(CHECK_TYPE_AUDIO, name);
+												if((bad == 0) || (good == 1))
+												{
+													mine->AddAudio(name, codec->id);
+												}
+											}
+										}
+									}
+									if(avcodec_get_type(codec->id) == AVMEDIA_TYPE_VIDEO) 
+									{
+										if(codec->id == AV_CODEC_ID_H263)
+										{
+											// COW - for some reason, this one needs to be added by hand
+											mine->AddVideo((char *)avcodec_get_name(AV_CODEC_ID_H264), AV_CODEC_ID_H264);
+										}
+										else
+										{
+											int no_go = 0;
+											char *name = (char *)avcodec_get_name(codec->id);
+											if(name != NULL)
+											{
+												int bad = CheckBadName(CHECK_TYPE_VIDEO, name);
+												int good = CheckGoodName(CHECK_TYPE_VIDEO, name);
+												if((bad == 0) || (good == 1))
+												{
+													mine->AddVideo(name, codec->id);
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					if((mine->video_codec_cnt > 0) && (mine->audio_codec_cnt > 0))
+					{
+						global_my_format[global_my_format_cnt] = mine;
+						global_my_format_cnt++;
+					}
+					else
+					{
+						delete mine;
+					}
+				}
+			}
+		}
+		ofmt = av_muxer_iterate(&muxerState);
+	}
+}
+
+void enumerate_test(MyWin *in_win, void (*output_cb)(char *), int test_w, int test_h, int test_fps, int test_hz) 
 {
 int		loop;
 int		video;
@@ -887,9 +1150,21 @@ int		audio;
 int		inner;
 char	buf[1024];
 char	filename[4096];
+char	used_extension[256][24];
 
-	for(loop = 0;loop < global_my_format_cnt;loop++)
+	FILE *fp = NULL;
+	if(in_win != NULL)
 	{
+		fp = fopen("test_codecs.txt", "w");
+	}
+	int extensions_used = 0;
+	int local_sudden_stop = 0;
+	for(loop = 0;((loop < global_my_format_cnt) && (local_sudden_stop == 0));loop++)
+	{
+		if(in_win != NULL)
+		{
+			local_sudden_stop = in_win->mux_test_sudden_stop;
+		}
 		MyFormat *mf = global_my_format[loop];
 		strcpy(buf, mf->extensions);
 		char *cp = buf;
@@ -898,82 +1173,130 @@ char	filename[4096];
 			if(*cp == ',') *cp = '\0';
 			cp++;
 		}
-		sprintf(filename, "test_vid.%s", buf);
-		for(video = 0;video < mf->video_codec_cnt;video++)
+		int no_go = 0;
+		for(inner = 0;((inner < extensions_used) && (no_go == 0));inner++)
 		{
-			int video_id = mf->video_id[video];
-			for(audio = 0;audio < mf->audio_codec_cnt;audio++)
+			if(strcmp(buf, used_extension[inner]) == 0)
 			{
-				int audio_id = mf->audio_id[audio];
-				Muxer *mux = new Muxer(NULL, NULL, 0);
-				char out_buf[32768];
-				char video_result[4096];
-				char audio_result[4096];
-				int	nn1 = my_find_codec_by_id(0, video_id, video_result);
-				int	nn2 = my_find_codec_by_id(1, audio_id, audio_result);
-				int err = mux->TestMux((AVCodecID)video_id, (AVCodecID)audio_id, filename, test_w, test_h, test_fps, test_hz);
-				delete mux;
-				if(err != 0)
+				no_go = 1;
+			}
+		}
+		if(no_go == 0)
+		{
+			strcpy(used_extension[extensions_used], buf);
+			extensions_used++;
+			sprintf(filename, "test_vid.%s", buf);
+			for(video = 0;((video < mf->video_codec_cnt) && (local_sudden_stop == 0));video++)
+			{
+				if(in_win != NULL)
 				{
-					if(output_cb != NULL)
+					local_sudden_stop = in_win->mux_test_sudden_stop;
+				}
+				int video_id = mf->video_id[video];
+				if(video_id > 0)
+				{
+					char video_result[4096];
+					int	nn1 = my_find_codec_by_id(0, video_id, video_result);
+					for(audio = 0;((audio < mf->audio_codec_cnt) && (local_sudden_stop == 0));audio++)
 					{
-						sprintf(out_buf, "FAILED: [%s][%s]\n", video_result, audio_result);
-						output_cb(out_buf);
-						for(inner = 0;inner < global_log_cnt;inner++)
+						if(in_win != NULL)
 						{
-							sprintf(out_buf, "\t%s", global_log[inner]);
-							output_cb(out_buf);
+							local_sudden_stop = in_win->mux_test_sudden_stop;
+						}
+						int audio_id = mf->audio_id[audio];
+						if(audio_id > 0)
+						{
+							Muxer *mux = new Muxer(NULL, NULL, 0);
+							char out_buf[32768];
+							char audio_result[4096];
+							int	nn2 = my_find_codec_by_id(1, audio_id, audio_result);
+							int err = mux->TestMux(mf->name, (AVCodecID)video_id, (AVCodecID)audio_id, filename, test_w, test_h, test_fps, test_hz);
+							delete mux;
+							if(err != 0)
+							{
+								if(output_cb != NULL)
+								{
+									sprintf(out_buf, "FAILED: [%s][%s]\n", video_result, audio_result);
+									output_cb(out_buf);
+									for(inner = 0;inner < global_log_cnt;inner++)
+									{
+										sprintf(out_buf, "\t%s", global_log[inner]);
+										output_cb(out_buf);
+									}
+								}
+								if((err & 1) == 1)
+								{
+									mf->video_id[video] = 0;
+								}
+								if((err & 2) == 2)
+								{
+									mf->audio_id[audio] = 0;
+								}
+							}
+							else
+							{
+								if(output_cb != NULL)
+								{
+									sprintf(out_buf, "SUCCESS: [%s][%s][%s]\n", mf->name, video_result, audio_result);
+									output_cb(out_buf);
+									if(in_win != NULL)
+									{
+										fprintf(fp, "%s:%s:%d %s:%d %s\n", mf->name, filename, video_id, video_result, audio_id, audio_result);
+									}
+								}
+							}
+							global_log_cnt = 0;
 						}
 					}
-					if((err & 1) == 1)
-					{
-						mf->video_id[video] = 0;
-					}
-					if((err & 2) == 2)
-					{
-						mf->audio_id[audio] = 0;
-					}
 				}
-				else
-				{
-					if(output_cb != NULL)
-					{
-						sprintf(out_buf, "SUCCESS: [%s][%s]\n", video_result, audio_result);
-						output_cb(out_buf);
-					}
-				}
-				global_log_cnt = 0;
 			}
 		}
 	}
-	for(loop = 0;loop < global_my_format_cnt;loop++)
+	int go_on = 1;
+	if(in_win != NULL)
 	{
-		int v_cnt = 0;
-		int a_cnt = 0;
-		MyFormat *mf = global_my_format[loop];
-		mf->invalid = 0;
-		for(video = 0;video < mf->video_codec_cnt;video++)
+		fclose(fp);
+		go_on = 0;
+		if(in_win->mux_test_sudden_stop == 0)
 		{
-			if(mf->video_id[video] != 0)
+			go_on = 1;
+		}
+	}
+	if(go_on == 1)
+	{
+		for(loop = 0;loop < global_my_format_cnt;loop++)
+		{
+			int v_cnt = 0;
+			int a_cnt = 0;
+			MyFormat *mf = global_my_format[loop];
+			mf->invalid = 0;
+			for(video = 0;video < mf->video_codec_cnt;video++)
 			{
-				v_cnt++;
+				if(mf->video_id[video] != 0)
+				{
+					v_cnt++;
+				}
+			}
+			for(audio = 0;audio < mf->audio_codec_cnt;audio++)
+			{
+				if(mf->audio_id[audio] != 0)
+				{
+					a_cnt++;
+				}
+			}
+			if((v_cnt == 0) || (a_cnt == 0))
+			{
+				mf->invalid = 1;
 			}
 		}
-		for(audio = 0;audio < mf->audio_codec_cnt;audio++)
-		{
-			if(mf->audio_id[audio] != 0)
-			{
-				a_cnt++;
-			}
-		}
-		if((v_cnt == 0) || (a_cnt == 0))
-		{
-			mf->invalid = 1;
-		}
+	}
+	if(in_win != NULL)
+	{
+		in_win->mux_test_sudden_stop++;
 	}
 }
 
-int	Muxer::TestMux(enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *output_filename, int in_width, int in_height, double in_fps, double in_rate)
+int	Muxer::TestMux(char *container, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *output_filename, int in_width, int in_height, double in_fps, double in_rate)
 {
 const AVOutputFormat *fmt;
 const char *filename;
@@ -986,34 +1309,22 @@ int i;
 	int using_audio = 0;
 	filename = output_filename;
 	double used_rate = 44100;
-	avformat_alloc_output_context2(&oc, NULL, NULL, filename);
+	AVOutputFormat *found_container = NULL;
+	if(container != NULL)
+	{
+		found_container = find_output_format_by_name(container);
+	}
+	avformat_alloc_output_context2(&oc, found_container, NULL, filename);
 	if(!oc)
 	{
 		return(1);
 	}
-	fmt = oc->oformat;
-	if(fmt->video_codec != AV_CODEC_ID_NONE)
+	if(in_fps < 0.01) 
 	{
-		if(in_fps < 0.01) 
-		{
-			in_fps = 0.01;
-		}
-		enum AVCodecID use_video_codec = fmt->video_codec;
-		if(video_codec_id > 0)
-		{
-			use_video_codec = video_codec_id;
-		}
-		add_stream(0, &video_st, oc, &video_codec, use_video_codec, in_width, in_height, in_fps, 0.0);
+		in_fps = 0.01;
 	}
-	if(fmt->audio_codec != AV_CODEC_ID_NONE)
-	{
-		enum AVCodecID use_audio_codec = fmt->audio_codec;
-		if(audio_codec_id > 0)
-		{
-			use_audio_codec = audio_codec_id;
-		}
-		add_stream(0, &audio_st, oc, &audio_codec, use_audio_codec, 0, 0, 0, used_rate);
-	}
+	add_stream(0, &video_st, oc, &video_codec, video_codec_id, in_width, in_height, in_fps, 0.0);
+	add_stream(0, &audio_st, oc, &audio_codec, audio_codec_id, 0, 0, 0, used_rate);
 	int video_err = open_video(oc, video_codec, &video_st, opt);
 	int audio_err = open_audio(oc, audio_codec, &audio_st, opt);
 	int r = 0;
@@ -1028,10 +1339,11 @@ int i;
 	close_stream(oc, &video_st);
 	close_stream(oc, &audio_st);
 	avformat_free_context(oc);
+	oc = NULL;
 	return(r);
 }
 
-int	Muxer::InitMux(int use_audio, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *in_url, char *in_desktop_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_channels, int in_frame_cnt, int *in_crop_x, int *in_crop_y)
+int	Muxer::InitMux(int use_audio, char *in_container, enum AVCodecID video_codec_id, enum AVCodecID audio_codec_id, char *video_in, char *audio_in, char *output_filename, char *in_url, char *in_desktop_mon, PulseMixer *in_mixer, int audio_device, int in_width, int in_height, double in_fps, double in_rate, int in_channels, int in_frame_cnt, int *in_crop_x, int *in_crop_y)
 {
 const AVOutputFormat *fmt;
 const char *filename;
@@ -1122,8 +1434,13 @@ int i;
 			used_rate = 11025.0;
 		}
 	}
+	AVOutputFormat *found_container = NULL;
+	if(in_container != NULL)
+	{
+		found_container = find_output_format_by_name(in_container);
+	}
 	// allocate the output media context
-	avformat_alloc_output_context2(&oc, NULL, NULL, filename);
+	avformat_alloc_output_context2(&oc, found_container, NULL, filename);
 	if(!oc) 
 	{
 		printf("Could not deduce output format from file extension: using FLV.\n");
@@ -1138,7 +1455,7 @@ int i;
 	// Add the audio and video streams using the default format codecs
 	// and initialize the codecs.
 
-	if((fmt->video_codec != AV_CODEC_ID_NONE) && (using_video == 1))
+	if(using_video == 1)
 	{
 		if(in_fps < 0.01) 
 		{
@@ -1164,7 +1481,7 @@ int i;
 		have_video = 1;
 		encode_video = 1;
 	}
-	if((fmt->audio_codec != AV_CODEC_ID_NONE) && ((audio_device != -1) || (using_audio == 1)))
+	if((audio_device != -1) || (using_audio == 1))
 	{
 		enum AVCodecID use_audio_codec = fmt->audio_codec;
 		if(audio_codec_id > 0)
@@ -1201,20 +1518,21 @@ int i;
 		}
 		if(ret < 0) 
 		{
-			fprintf(stderr, "Could not open '%s': %s\n", filename, av_err2str(ret));
+			fprintf(stdout, "Error: Could not open '%s': %s\n", filename, av_err2str(ret));
 			return(1);
 		}
 		// Write the stream header, if any.
 		ret = avformat_write_header(oc, &opt);
 		if(ret < 0) 
 		{
-			fprintf(stderr, "Error occurred when opening output file: %s\n", av_err2str(ret));
+			fprintf(stdout, "Error: Error occurred when opening output file: %s\n", av_err2str(ret));
 			return(1);
 		}
 		Record(used_rate);
 	}
 	else
 	{
+		fprintf(stdout, "Error: Error occurred when opening either audio or video\n");
 		return(1);
 	}
 	return(0);
@@ -1234,11 +1552,13 @@ void	Muxer::FinishMux()
 	}
 	avio_closep(&oc->pb);
 	avformat_free_context(oc);
+	oc = NULL;
 }
 
-int     simple_record(int *flag)
+int	 simple_record(int *flag)
 {
 	Muxer *mux = (Muxer *)flag;
+	mux->in_simple_record = 1;
 	if(mux->stop_activity == 0)
 	{
 		int nn = FRAMES_PER_BUFFER * sizeof(SAMPLE) * NUM_CHANNELS;
@@ -1279,15 +1599,16 @@ int     simple_record(int *flag)
 			mux->audio_samples += FRAMES_PER_BUFFER;
 		}
 	}
+	mux->in_simple_record = 0;
 	return(0);
 }
 
 double	Muxer::Open(int audio_dev, double requested_rate, int requested_channels)
 {
 static const pa_sample_spec pulse_ss = {
-        .format = PA_SAMPLE_S16LE,
-        .rate = (uint32_t)requested_rate,
-        .channels = (uint8_t)requested_channels
+		.format = PA_SAMPLE_S16LE,
+		.rate = (uint32_t)requested_rate,
+		.channels = (uint8_t)requested_channels
 };
 
 	double rate = 0.0;
@@ -1331,7 +1652,7 @@ static const pa_sample_spec pulse_ss = {
 	return(rate);
 }
 
-int     mux_record(int *flag)
+int	 mux_record(int *flag)
 {
 int	loop;
 
@@ -1450,7 +1771,6 @@ void	Muxer::Stop()
 		{
 			double samples_per_second = (double)audio_samples / (double)nn;
 			double frames_per_second = (double)video_frames / (double)nn;
-			printf("%p TIME: %d AUDIO SAMPLES: %d (%f) VIDEO FRAMES: %d (%f)\n", this, nn, audio_samples, samples_per_second, video_frames, frames_per_second);
 		}
 		if(simple_pulse_stream != NULL)
 		{
@@ -1578,9 +1898,10 @@ void	*Muxer::GetFrame()
 	return(ptr);
 }
 
-MyFormat::MyFormat(char *in_name, char *in_extensions)
+MyFormat::MyFormat(char *in_name, char *in_extensions, AVOutputFormat *ofmt)
 {
 	invalid = 0;
+	output_format = ofmt;
 	strcpy(name, "");
 	if(in_name != NULL)
 	{

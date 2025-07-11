@@ -111,6 +111,7 @@
 #define	CAMERA_TYPE_SLIDESHOW			22
 #define	CAMERA_TYPE_VECTOR				23
 #define	CAMERA_TYPE_SPLIT				24
+#define	CAMERA_TYPE_FULLSCREEN			25
 
 #define	MODE_MOVING		1
 #define	MODE_RESIZING	2
@@ -221,6 +222,8 @@
 #define	KEY_OPEN_CAMERAS					57
 #define	KEY_OPEN_AUDIO						58
 #define	KEY_OPEN_PTZ						59
+#define	KEY_VOLUME_UP						60
+#define	KEY_VOLUME_DOWN						61
 
 #define	FILTER_TYPE_VIDEO			0
 #define	FILTER_TYPE_AUDIO			1
@@ -237,6 +240,7 @@
 #define	RED			72
 #define	BLUE		73
 #define	CYAN		74
+#define	DARK_GREEN	75
 
 #define	FONT_STYLE_BOLD		1
 #define	FONT_STYLE_ITALIC	2
@@ -372,6 +376,7 @@
 #define	STREAMING_FILE			0
 #define	STREAMING_NET			1
 #define	STREAMING_NDI			2
+#define	STREAMING_VIRTUAL		3
 
 #define	SEND_NDI_VIDEO			0
 #define	SEND_NDI_AUDIO			1
@@ -431,6 +436,15 @@
 #define	FRAME_OBJECT_TYPE_IMAGE_WINDOW	0
 #define	FRAME_OBJECT_TYPE_IMMEDIATE		1
 
+#define	VIRTUAL_OUTPUT_FORMAT_YUYV	0
+#define	VIRTUAL_OUTPUT_FORMAT_RGB	1
+#define	VIRTUAL_OUTPUT_FORMAT_BGR	2
+
+#define	ACTIVELY_DRAWING_DONE			0
+#define	ACTIVELY_DRAWING_ADD_COORDS		1
+#define	ACTIVELY_DRAWING_MOVE_COORDS	2
+#define	ACTIVELY_DRAWING_DELETE_COORDS	3
+
 struct	NamedKeys
 {
 	char	*name;
@@ -440,6 +454,7 @@ struct	NamedKeys
 class	ReviewWin;
 class	MyWin;
 class	Muxer;
+class	MyButton;
 class	V4L_Button;
 class	PTZ_Button;
 class	MyVISCACamera;
@@ -468,26 +483,29 @@ class	ColorSlider;
 class	MiscCopy;
 class	ImmediateNameWindow;
 class	ColorPanel;
+class	HoverMenu;
+class	NewPTZWindow;
 
 class	ShortcutWindow : public Fl_Window
 {
 public:
-			ShortcutWindow(Fl_Button *b, int xx, int yy, int ww, int hh);
+			ShortcutWindow(MyButton *b, int xx, int yy, int ww, int hh);
 			~ShortcutWindow();
 
 	int		handle(int event);
 
-	Fl_Button	*button;
+	MyButton	*button;
 };
 
 class	MyButton : public Fl_Button
 {
 public:
-			MyButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			MyButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl = NULL);
 			~MyButton();
 
 	int		handle(int event);
 
+	MyWin		*my_window;
 	PopupMenu	*popup;
 	char		path[256];
 };
@@ -495,11 +513,12 @@ public:
 class	MyToggleButton : public Fl_Toggle_Button
 {
 public:
-			MyToggleButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			MyToggleButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl = NULL);
 			~MyToggleButton();
 
 	int			handle(int event);
 
+	MyWin		*my_window;
 	PopupMenu	*popup;
 	char		path[256];
 };
@@ -507,9 +526,10 @@ public:
 class	MyLightButton : public Fl_Light_Button
 {
 public:
-			MyLightButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			MyLightButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl = NULL);
 			~MyLightButton();
 
+	MyWin		*my_window;
 	int			handle(int event);
 
 	PopupMenu	*popup;
@@ -526,11 +546,12 @@ public:
 class	MyRepeatButton : public Fl_Repeat_Button
 {
 public:
-			MyRepeatButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			MyRepeatButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl = NULL);
 			~MyRepeatButton();
 
 	int			handle(int event);
 
+	MyWin		*my_window;
 	PopupMenu	*popup;
 	char		path[256];
 };
@@ -549,11 +570,12 @@ public:
 class	MyFileImageButton : public Fl_Button
 {
 public:
-					MyFileImageButton(int xx, int yy, int ww, int hh, char *lbl = NULL);
+					MyFileImageButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl = NULL);
 					~MyFileImageButton();
 
 	void			draw();
 
+	MyWin			*my_window;
 	Mat				mat;
 };
 
@@ -597,13 +619,14 @@ public:
 class	Dialog : public DragWindow
 {
 public:
-			Dialog(int ww, int hh, char *lbl);
-			Dialog(int xx, int yy, int ww, int hh, char *lbl);
+			Dialog(MyWin *in_win, int ww, int hh, char *lbl);
+			Dialog(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
 			~Dialog();
 	int		handle(int event);
 	void	resize(int xx, int yy, int ww, int hh);
 	void	draw();
 
+	MyWin		*my_window;
 	Fl_Box		*title_box;
 	MyButton	*close;
 	int			expanded;
@@ -684,7 +707,7 @@ public:
 class	FileSelector : public Dialog
 {
 public:
-					FileSelector(char *lbl, char *in_filter, char *result, int select_dir, int new_file);
+					FileSelector(MyWin *in_win, char *lbl, char *in_filter, char *result, int select_dir, int new_file);
 					~FileSelector();
 	int				handle(int event);
 	void			draw();
@@ -699,6 +722,7 @@ public:
 	MyButton		*accept;
 	MyButton		*cancel;
 
+	MyWin			*my_window;
 	char			initial_directory[4096];
 	FileInfo		*file_list[32768];
 	int				file_list_cnt;
@@ -832,9 +856,11 @@ public:
 class	SourceMultiline : public Fl_Multiline_Input
 {
 public:
-				SourceMultiline(int xx, int yy, int ww, int hh, char *lbl);
+				SourceMultiline(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
 				~SourceMultiline();
 	int			handle(int event);
+
+	MyWin		*my_window;
 };
 
 class	Guideline
@@ -885,6 +911,7 @@ public:
 	void			Load(char *filename);
 	void			Save(char *filename);
 	void			Add(char *in_name, char *in_path);
+	void			UpdateQuickMenu();
 
 	Fl_Input		*name_input[1024];
 	MyButton		*path_button[1024];
@@ -914,6 +941,8 @@ public:
 	void		ScrollUpThumbgroup();
 	int			DisplayThumbgroup(int nn);
 	void		ScrollToDisplayed();
+	void		CameraMoveUp(Camera *cam);
+	void		CameraMoveDown(Camera *cam);
 
 	MyWin		*my_window;
 	int			hovering;
@@ -936,12 +965,15 @@ public:
 	void		Do();
 	void		Select(MenuButton *in);
 	void		ClearSelection();
+	void		ShowPopup();
 
 	MyWin		*my_window;
 	int			hovering;
 	MenuButton	*menu_button[1024];
 	int			menu_button_cnt;
 	int			selected;
+	HoverMenu	*hover_menu_shown;
+	PopupMenu	*popup;
 };
 
 class	CurrentFPSWindow : public DragGroup
@@ -1154,13 +1186,18 @@ public:
 class	PopupMenu : public Fl_Window
 {
 public:
-					PopupMenu(int xx, int yy, int ww, int hh);
+					PopupMenu(MyWin *in_win, int xx, int yy, int ww, int hh);
 					~PopupMenu();
 	int				handle(int event);
+	void			show();
+	void			hide();
+
 	void			Resize(int xx, int yy, int ww, int hh);
 	void			Fit();
 
 	Fl_Hold_Browser	*browser;
+
+	MyWin			*my_window;
 };
 
 class	DragBox : public Fl_Box
@@ -1338,6 +1375,15 @@ public:
 	void		draw();
 };
 
+class	RotateFilterDialog : public FilterDialog
+{
+public:
+				RotateFilterDialog(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
+				~RotateFilterDialog();
+	int			handle(int event);
+	void		draw();
+};
+
 class	BlendFilterDialog : public FilterDialog
 {
 public:
@@ -1365,19 +1411,30 @@ public:
 	void		draw();
 };
 
+class	HoverMenu : public DragWindow
+{
+public:
+			HoverMenu(MyWin *in_win, int ww, int hh);
+			~HoverMenu();
+	int		handle(int event);
+};
+
 class	MenuButton : public MyButton
 {
 public:
-				MenuButton(MainMenu *in_menu, int font_sz, int xx, int yy, int ww, int hh, char *lbl);
+				MenuButton(MyWin *in_win, MainMenu *in_menu, int font_sz, int xx, int yy, int ww, int hh, char *lbl);
 				~MenuButton();
 	int			handle(int event);
 	void		draw();
 	void		show();
 	void		hide();
 
+	void		AttachHoverMenu(HoverMenu *in_hover_menu);
+
 	int			hover;
 	int			font_sz;
 	MainMenu	*my_menu;
+	HoverMenu	*hover_menu;
 };
 
 class	ObjectMenu : public Dialog
@@ -1470,6 +1527,7 @@ public:
 		~ColorPanel();
 	void	Callback(Fl_Callback *cb, void *v);
 
+	MyWin		*my_window;
 	ColorSlider	*red;
 	ColorSlider	*green;
 	ColorSlider	*blue;
@@ -1575,7 +1633,7 @@ public:
 	int					local_blue;
 	int					local_alpha;
 	ColorPanel			*color_panel;
-	Fl_Hor_Slider		*font_size_slider;
+	MySlider			*font_size_slider;
 	Fl_Output			*font_size_output;
 	Fl_Choice			*drawing_text_box;
 	MyLightButton		*text_italic_button;
@@ -1591,6 +1649,7 @@ public:
 			~ImmediateDrawingWindow();
 	int		handle(int event);
 	void	hide();
+
 	void	GeneralSetup();
 	void	TextSetup();
 	void	LineSetup();
@@ -1616,6 +1675,7 @@ public:
 	MyButton	*passthru_ellipse;
 	MyButton	*passthru_polygon;
 	MyButton	*delete_im;
+	MyButton	*delete_all_im;
 	MyButton	*hide_im;
 	MyButton	*hide_all;
 	MyButton	*show_all;
@@ -1623,7 +1683,7 @@ public:
 	Immediate	*selected_widget;
 
 	MyGroup	*general_group;
-		Fl_Hor_Slider		*grid_size_slider;
+		MySlider			*grid_size_slider;
 		Fl_Output			*grid_size_output;
 		LayerLabelButton	*layer_select_button[8];
 		MyToggleButton	*layer_visible_button[8];
@@ -1638,16 +1698,16 @@ public:
 		Fl_Box				*font_output;
 		FontSample			*font_sample;
 		FontBrowser			*font_browser;
-		Fl_Hor_Slider		*font_red_slider;
+		MySlider			*font_red_slider;
 		Fl_Output			*font_red_output;
-		Fl_Hor_Slider		*font_green_slider;
+		MySlider			*font_green_slider;
 		Fl_Output			*font_green_output;
-		Fl_Hor_Slider		*font_blue_slider;
+		MySlider			*font_blue_slider;
 		Fl_Output			*font_blue_output;
-		Fl_Hor_Slider		*font_alpha_slider;
+		MySlider			*font_alpha_slider;
 		Fl_Output			*font_alpha_output;
 		MyButton			*font_palette_button;
-		Fl_Hor_Slider		*font_size_slider;
+		MySlider			*font_size_slider;
 		Fl_Output			*font_size_output;
 		Fl_Choice			*drawing_text_box;
 		MyToggleButton	*text_foreground_color_button;
@@ -1660,16 +1720,16 @@ public:
 
 	MyGroup	*line_group;
 		LineSample		*line_sample;
-		Fl_Hor_Slider	*line_red_slider;
+		MySlider		*line_red_slider;
 		Fl_Output		*line_red_output;
-		Fl_Hor_Slider	*line_green_slider;
+		MySlider		*line_green_slider;
 		Fl_Output		*line_green_output;
-		Fl_Hor_Slider	*line_blue_slider;
+		MySlider		*line_blue_slider;
 		Fl_Output		*line_blue_output;
-		Fl_Hor_Slider	*line_alpha_slider;
+		MySlider		*line_alpha_slider;
 		Fl_Output		*line_alpha_output;
 		MyButton		*line_palette_button;
-		Fl_Hor_Slider	*line_size_slider;
+		MySlider		*line_size_slider;
 		Fl_Output		*line_size_output;
 		MyToggleButton	*line_style_solid_button;
 		MyToggleButton	*line_style_dash_button;
@@ -1687,16 +1747,16 @@ public:
 
 	MyGroup	*rectangle_group;
 		RectangleSample	*rectangle_sample;
-		Fl_Hor_Slider	*rectangle_red_slider;
+		MySlider		*rectangle_red_slider;
 		Fl_Output		*rectangle_red_output;
-		Fl_Hor_Slider	*rectangle_green_slider;
+		MySlider		*rectangle_green_slider;
 		Fl_Output		*rectangle_green_output;
-		Fl_Hor_Slider	*rectangle_blue_slider;
+		MySlider		*rectangle_blue_slider;
 		Fl_Output		*rectangle_blue_output;
-		Fl_Hor_Slider	*rectangle_alpha_slider;
+		MySlider		*rectangle_alpha_slider;
 		Fl_Output		*rectangle_alpha_output;
 		MyButton		*rectangle_palette_button;
-		Fl_Hor_Slider	*rectangle_size_slider;
+		MySlider		*rectangle_size_slider;
 		Fl_Output		*rectangle_size_output;
 		MyToggleButton	*rectangle_style_solid_button;
 		MyToggleButton	*rectangle_style_dash_button;
@@ -1710,14 +1770,14 @@ public:
 
 	MyGroup	*freehand_group;
 		FreehandSample	*freehand_sample;
-		Fl_Hor_Slider	*freehand_red_slider;
+		MySlider		*freehand_red_slider;
 		Fl_Output		*freehand_red_output;
-		Fl_Hor_Slider	*freehand_green_slider;
+		MySlider		*freehand_green_slider;
 		Fl_Output		*freehand_green_output;
-		Fl_Hor_Slider	*freehand_blue_slider;
+		MySlider		*freehand_blue_slider;
 		Fl_Output		*freehand_blue_output;
 		MyButton		*freehand_palette_button;
-		Fl_Hor_Slider	*freehand_size_slider;
+		MySlider		*freehand_size_slider;
 		Fl_Output		*freehand_size_output;
 		MyToggleButton	*freehand_shape_square_button;
 		MyToggleButton	*freehand_shape_circle_button;
@@ -1732,7 +1792,7 @@ public:
 		Fl_Input			*image_file_path;
 		MyToggleButton		*image_paste_button;
 	MyGroup	*pixelate_group;
-		Fl_Hor_Slider		*pixelate_size_slider;
+		MySlider			*pixelate_size_slider;
 		Fl_Output			*pixelate_size_output;
 		MyToggleButton	*pixelate_pixelate_button;
 		MyToggleButton	*pixelate_blur_button;
@@ -1745,6 +1805,7 @@ public:
 	int			orig_h;
 
 	int			grid_size;
+	int			hide_grid;
 	double		gsf;
 
 	int		font_num;
@@ -1789,6 +1850,8 @@ public:
 
 	int		pixelate_size;
 	int		from_paste;
+
+	int		quick_mode;
 };
 
 class	MyInput : public Fl_Input
@@ -1858,6 +1921,13 @@ public:
 	int			*yy;
 	int			*pt_type;
 	int			cnt;
+	int			normalized;
+	int			center_x;
+	int			center_y;
+	int			sux[32768];
+	int			suy[32768];
+	int			su_cnt;
+	int			drag_point;
 
 	char		key;
 	char		freehand_filename[4096];
@@ -1899,6 +1969,8 @@ public:
 	void	draw();
 
 	int		focused;
+	int		last_extent_w;
+	int		last_extent_h;
 };
 
 class	ImRectangle : public ImDefault, public MyGroup
@@ -1972,6 +2044,8 @@ public:
 	void	Revise(int in_x, int in_y);
 	void	DoStamp(cairo_t *cr, double xx, double yy);
 	void	ImageLine(cairo_t *cr, int x0, int y0, int x1, int y1, int in_sz);
+	void	FindCenter(int& mid_x, int& mid_y);
+	void	NormalizeRelativeCoords();
 
 	int		extent_x1;
 	int		extent_y1;
@@ -2053,6 +2127,8 @@ public:
 	void	ZipDown();
 	void	ShowPopup();
 	void	Copy();
+	void	Edit();
+	void	ConvertToPolygon();
 	void	GetColor(int& red, int& green, int& blue, int& alpha);
 	void	SetColor(int red, int green, int blue, int alpha);
 	void	KeyFrame();
@@ -2068,6 +2144,8 @@ public:
 	void	SaveParameters();
 	void	RestoreInitialParameters();
 	void	SaveAsJSON(FILE *fp);
+	void	Raise();
+	void	Lower();
 
 	ImmediateDrawingWindow	*idw;
 	ImmediateNameWindow		*inw;
@@ -2233,7 +2311,7 @@ public:
 	void	draw();
 
 	MyWin	*my_window;
-	int		index;
+	Camera	*camera;
 	Mat		mat;
 	Mat		use_mat;
 	int		dragging;
@@ -2363,18 +2441,22 @@ public:
 class	MySlider : public Fl_Slider
 {
 public:
-		MySlider(int, int, int, int, char * = NULL, MyButton *in_reset = NULL);
-		~MySlider();
-	void	draw();
+				MySlider(MyWin *in_win, int, int, int, int, char * = NULL, MyButton *in_reset = NULL, int in_value_placement = 0);
+				~MySlider();
+	void		draw();
+	int			handle(int event);
 
+	MyWin		*my_window;
 	double		initial_value;
 	MyButton	*reset;
+	int			in_slider;
+	int			value_placement;
 };
 
 class	ColorSlider : public MySlider
 {
 public:
-				ColorSlider(int xx, int yy, int ww, int hh, double val, char *lbl);
+				ColorSlider(MyWin *in_win, int xx, int yy, int ww, int hh, double val, char *lbl);
 				~ColorSlider();
 };
 
@@ -2385,6 +2467,7 @@ public:
 			~TriggerWindow();
 	int		handle(int event);
 	void	show();
+	void	hide();
 
 	void				Update();
 
@@ -2598,6 +2681,22 @@ public:
 	MyButton		*use_none;
 };
 
+class	PythonFilterWindow : public Dialog
+{
+public:
+						PythonFilterWindow(MyWin *win);
+						~PythonFilterWindow();
+	void				Show(int camera_flag);
+
+	MyWin				*my_window;
+	int					use_camera;
+	Fl_Multiline_Input	*code;
+	MyButton			*accept;
+	MyButton			*cancel;
+	MyButton			*clear;
+	MyButton			*load;
+};
+
 class	FilterButton : public Fl_Box
 {
 public:
@@ -2614,16 +2713,24 @@ public:
 };
 
 
-class	StandaloneDisplay : public Fl_Double_Window
+class	StandaloneDisplay : public DragWindow
 {
 public:
-		StandaloneDisplay(Camera *in_cam, int ww, int hh, char *lbl);
-		~StandaloneDisplay();
-	void	draw();
+				StandaloneDisplay(MyWin *in_win, Camera *in_cam, int ww, int hh, char *lbl);
+				~StandaloneDisplay();
+	void		draw();
+	int			handle(int event);
 
-	Camera	*cam;
-	double	ratio_w;
-	double	ratio_h;
+	void		Freeze();
+	void		Defrost();
+
+	MyWin		*my_window;
+	Camera		*cam;
+	double		ratio_w;
+	double		ratio_h;
+	PopupMenu	*popup;
+	int			frozen;
+	Mat			use_mat;
 };
 
 class	VideoSettingsWindow : public Dialog
@@ -2638,6 +2745,8 @@ public:
 	MyWin	*main_win;
 	Fl_Int_Input *output_w;
 	Fl_Int_Input *output_h;
+	MyButton		*copy_from_display;
+	MyButton		*copy_to_display;
 
 	MyToggleButton 		*timestamp_default;
 	Fl_Input 				*timestamp_format;
@@ -2654,7 +2763,9 @@ public:
 
 	MyLightButton	*realtime_encoding_button;
 	MyLightButton	*embed_pip_button;
-	MyButton	*gather_codecs_button;
+	MyButton		*gather_codecs_button;
+	MyButton		*benchmark_codecs_button;
+	MyLightButton	*disable_slow_codecs_button;
 	MyLightButton	*record_all_button;
 	MyLightButton	*frame_scaling_button;
 	MyLightButton	*crop_scaling_button;
@@ -2663,6 +2774,13 @@ public:
 	MyLightButton *display_recording_button;
 	MyLightButton *recording_follow_display_button;
 	MyLightButton	*html_background_transparent;
+	MyLightButton	*clip_format;
+	MyLightButton	*no_overwrite;
+	Fl_Int_Input	*virtual_output_w;
+	Fl_Int_Input	*virtual_output_h;
+	MyLightButton	*virtual_format_yuyv;
+	MyLightButton	*virtual_format_bgr;
+	MyLightButton	*virtual_format_rgb;
 };
 
 class	CameraSettingsWindow : public Dialog
@@ -2681,6 +2799,9 @@ public:
 	Fl_Input		*cam_alias;
 	Fl_Int_Input	*display_w;
 	Fl_Int_Input	*display_h;
+	Fl_Int_Input	*hardware_w;
+	Fl_Int_Input	*hardware_h;
+	MyButton		*set_hardware_resolution_button;
 
 	MySlider		 *contrast_slider;
 	MySlider		 *brightness_slider;
@@ -2917,6 +3038,7 @@ public:
 	void			Freeze();
 	void			Defrost();
 	void			RecvNDI(Mat& in_mat);
+	void			NDI_URL();
 	void			SaveAsJSON(FILE *fp);
 	void			ActivateBoundMics();
 	void			BindMics();
@@ -2927,6 +3049,13 @@ public:
 	void			TestObjectDetection();
 	void			SetObjectInAllOtherCameras();
 	int				EventInFilter();
+	void			InsertAfter(Camera *dest);
+	void			InsertAsZero();
+	void			AddStandaloneDisplay(StandaloneDisplay *sd);
+	void			InitializeVariables();
+	void			Info();
+	char			*TypeString();
+	void			RotateFrame90(int direction, int time);
 
 	int					hot;
 	Mat					hot_mat;
@@ -2944,6 +3073,7 @@ public:
 	int					recording;
 	int					triggers_requested;
 	int					trigger_override;
+	int					record_error;
 	int					result_trigger;
 	time_t				detect_time;
 	int					requested_x;
@@ -2960,6 +3090,7 @@ public:
 	Muxer				*my_muxer[128];
 	int					muxer_cnt;
 	int					ever_opened;
+	int					portrait;
 	int					static_initialized;
 	long int			last_grab_time;
 	int					grab_interval;
@@ -2988,6 +3119,8 @@ public:
 	XShmSegmentInfo		shminfo;
 	char				font_name[256];
 	double				capture_scaling;
+	int					clockwise_rotation;
+	int					counter_clockwise_rotation;
 	Mat					mat;
 	Mat					old_mat;
 	Mat					motion_mat;
@@ -2995,6 +3128,7 @@ public:
 	Mat					literal_mat;
 	Mat					last_mat;
 	unsigned long int	grab_window_id;
+	int					fullscreen_instance;
 	int					once;
 	SaveFIFO			*save_fifo;
 	int					fd;
@@ -3031,6 +3165,7 @@ public:
 	int					slideshow_list_cnt;
 	int					slideshow_current;
 	Mat					slideshow_mat;
+	int					do_not_display;
 	int					split_cols;
 	int					split_rows;
 	char				*split_source[128];
@@ -3039,6 +3174,14 @@ public:
 	NDIlib_recv_instance_t	ndi_recv;
 	int						ndi_capture;
 	int						ndi_ptz;
+
+	char					ndi_fourcc_str[64];
+	int						ndi_width;
+	int						ndi_height;
+	double					ndi_frame_rate;
+	char					ndi_format_type[64];
+	int						ndi_stride;
+
 	int						prefer_ndi;
 	int						prefer_v4l;
 
@@ -3053,7 +3196,8 @@ public:
 
 	char				pseudo_camera_name[256];
 	void				*plugin_camera;
-	StandaloneDisplay	*standalone_display;
+	StandaloneDisplay	*standalone_display[128];
+	int					standalone_display_cnt;
 	int					freeze_video;
 	int					mute_video;
 	double				alternate_interval;
@@ -3143,6 +3287,8 @@ public:
 	int					image_sy;
 	double				display_width;
 	double				display_height;
+	double				old_display_width;
+	double				old_display_height;
 
 	ImageWindow			*image_window[128];
 	int					image_window_cnt;
@@ -3210,6 +3356,28 @@ public:
 	int					v4l_capable;
 	int					anim_preview;
 	time_t				last_retrieve;
+
+	void				*python_filter_function;
+	char				*python_filter_code;
+};
+
+class	NewPTZWindow : public Dialog
+{
+public:
+					NewPTZWindow(MyWin *in_win, int ww, int hh);
+					~NewPTZWindow();
+
+	void			Update();
+
+	MyWin			*my_window;
+	MyInput			*alias;
+	MyInput			*path;
+	MyMenuButton	*bind;
+	MyLightButton	*prefer_v4l;
+	MyLightButton	*prefer_ndi;
+	MyLightButton	*prefer_visca;
+	MyButton		*accept;
+	MyButton		*cancel;
 };
 
 class	MyVISCACamera : public VISCACamera_t
@@ -3226,18 +3394,19 @@ public:
 class	V4L_Button : public MyButton
 {
 public:
-		V4L_Button(ThumbGroup *, int, int, int, int, char *);
+		V4L_Button(MyWin *, ThumbGroup *, int, int, int, int, char *);
 		~V4L_Button();
 	int	handle(int);
 	ThumbGroup	*my_win;
 	int		zooming;
 	int		focusing;
+	MyWin	*my_window;
 };
 
 class	PTZ_Button : public MyButton
 {
 public:
-				PTZ_Button(PTZ_Window *, int, int, int, int, char *);
+				PTZ_Button(MyWin *, PTZ_Window *, int, int, int, int, char *);
 				~PTZ_Button();
 	int			handle(int);
 
@@ -3305,6 +3474,11 @@ public:
 	char					*filter_plugin_name[128];
 	int						filter_plugin_cnt;
 	NDIlib_recv_instance_t	ndi_recv;
+	int						ndi_audio_sample_rate;
+	int						ndi_audio_no_channels;
+	int						ndi_audio_no_samples;
+	char					*ndi_audio_fourcc;
+	int						ndi_audio_channel_stride;
 	int						in_use;
 };
 
@@ -3343,20 +3517,23 @@ public:
 	void				show();
 	void				Start();
 	void				Stop();
+	void				ShowPopup();
 
 	MyButton			*alias_button;
-	MyToggleButton	*select_button;
-	MyToggleButton	*filter_button;
-	Fl_Hor_Fill_Slider	*volume1;
-	Fl_Hor_Fill_Slider	*volume2;
+	MyToggleButton		*select_button;
+	MyToggleButton		*filter_button;
+	Fl_Box				*meter_box;
+	MySlider			*volume1;
+	MySlider			*volume2;
 	MyButton			*delete_button;
-	MyToggleButton	*repeat_button;
+	MyToggleButton		*repeat_button;
 	Fl_Multiline_Input	*alias_in;
 	MyWin				*my_window;
 	char				*device_name;
 	PulseMicrophone		*microphone;
 	int					peak;
 	char				*alias;
+	PopupMenu			*popup;
 };
 
 class	MyMenuButton : public Fl_Menu_Button
@@ -3547,6 +3724,8 @@ public:
 	SelectX11Window		*select_x11_window;
 	SelectAudioWindow	*select_audio_window;
 
+	Fl_Group			*select_button_group;
+
 	MyButton		*create;
 	MyButton		*reset;
 	MyButton		*cancel;
@@ -3554,6 +3733,7 @@ public:
 	MyButton		*audio_select;
 	MyButton		*box_select;
 	MyButton		*window_select;
+	MyButton		*fullscreen_window_select;
 	MyButton		*desktop_select;
 	MyButton		*av_file_select;
 	MyButton		*vector_file_select;
@@ -3603,7 +3783,7 @@ public:
 class	SelectButton : public Fl_Group
 {
 public:
-				SelectButton(int xx, int yy, int ww, int hh, char *lbl);
+				SelectButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl);
 				~SelectButton();
 	void		SetCurrent(int);
 	void		Next();
@@ -3614,6 +3794,7 @@ public:
 	MyButton	*next;
 	Fl_Box		*value_box;
 
+	MyWin		*my_window;
 	char		*list[128];
 	int			current;
 	int			total;
@@ -3662,6 +3843,7 @@ public:
 	void	draw();
 	void	hide();
 	void	show();
+	void	ShowPopup();
 
 	int		AddInterfaceButton(int xx, int yy);
 	int		AddCamerasAndPresets(int start_x, int start_y);
@@ -3692,6 +3874,7 @@ public:
 
 	MyWin	*my_window;
 	Camera	*bound_camera;
+	PopupMenu	*popup;
 	int		instance;
 	int		showing;
 	int		pinned;
@@ -3762,7 +3945,7 @@ public:
 	MyButton				*ptz_camera_preset_page_forward_button;
 	int						ptz_preset_page;
 
-	Fl_Hor_Fill_Slider		*ptz_speed_slider;
+	MySlider			*ptz_speed_slider;
 	MyLightButton			*ptz_lock_to_camera_button;
 	MyLightButton			*ptz_bind_camera_button;
 	MyLightButton			*ptz_auto_focus;
@@ -3815,6 +3998,30 @@ public:
 	Mat		image_mat[128];
 	int		use_updates;
 	FILE	*intro_pipe_fp;
+};
+
+class	CodecCombo
+{
+public:
+			CodecCombo(char *in_container, int in_video_id, int in_audio_id, double in_score)
+			{
+				container = strdup(in_container);
+				video_id = in_video_id;
+				audio_id = in_audio_id;
+				score = in_score;
+			};
+			~CodecCombo()
+			{
+				if(container != NULL)
+				{
+					free(container);
+				}
+			};
+
+	char	*container;
+	int		video_id;
+	int		audio_id;
+	double	score;
 };
 
 class	MyWin : public Fl_Double_Window
@@ -3894,6 +4101,7 @@ public:
 			, int use_transparent_interface
 			, int use_animate_panels
 			, int use_exclude_directories
+			, int use_save_state
 			, char *lbl);
 		~MyWin();
 	void	Shutdown();
@@ -4146,6 +4354,18 @@ public:
 	int					EventInPTZWindow();
 	void				BuildMuxerList(int& out_cnt);
 	void				ClearAllCurrentMuxers(Camera *cam);
+	void				TestMuxPerform(char *container, char *filename, char *ext, int video_id, int audio_id);
+	double				CeaseTestMux();
+	void				RunCodecTest();
+	int					IsBadCodecCombo(char *in_ext, int video_id, int audio_id);
+	int					IsCodecAllBad(char *test_ext, int video_id);
+	int					IsTestedCodecCombo(int video_id, int audio_id);
+	int					IsAudioCodecBadListed(char *test_ext, int audio_id);
+	int					IsVideoCodecBadListed(char *test_ext, int video_id);
+	void				InitializeVariables();
+	void				IncreaseVolume();
+	void				DecreaseVolume();
+	void				FilterCommandButtons();
 
 	MyGroup		*resize_grp;
 	int			current_source;
@@ -4157,6 +4377,7 @@ public:
 	int			audio_source_cnt;
 	Camera		*camera[128];
 	Camera		*recording_camera;
+	int			save_state;
 	int			original_w;
 	int			original_h;
 	int			disregard_settings;
@@ -4166,11 +4387,15 @@ public:
 	Mat			in_mat;
 	Mat			monitor_mat;
 	Mat			desktop_mat;
+	int			testing_mux;
+	Muxer		*tested_mux;
 	int			all_fd;
 	int			clipboard_changed;
 	int			error_timeout;
 	int			refreshed;
 	char		*error_message;
+	int			save_vc;
+	int			save_ac;
 	int			highlight_image_windows;
 	time_t		error_start_time;
 	int			split_bx[10];
@@ -4183,6 +4408,7 @@ public:
 	int			audio_sample_rate;
 	int			audio_channels;
 	int			guideline_cnt;
+	int			mux_test_sudden_stop;
 	int			requested_w;
 	int			requested_h;
 	int			output_width;
@@ -4214,7 +4440,12 @@ public:
 	int			use_tooltips;
 	int			file_selector_layout;
 	int			file_selector_exclude_directories;
+	int					use_dnn_cuda;
 	int					video_count;
+	FILE				*testing_codec_fp;
+	int					audio_sudden_stop;
+	int					audio_preview_playing;
+	PopupMenu			*visible_popup_menu;
 	char				last_used_filename[256];
 	SpecifyURLWindow	*specify_url_window;
 	SpecifyIRCWindow	*specify_irc_window;
@@ -4225,9 +4456,12 @@ public:
 	TimerWindow			*timer_window;
 	AlertWindow			*alert_window;
 	int					html_background;
+	int					clip_format;
+	int					no_overwrite;
 	NDISourceListWindow	*ndi_source_window;
 	MenuButton			*command_button_list[1024];
 	int					command_button_cnt;
+	NewPTZWindow		*new_ptz_window;
 
 	TextEditWindow		*text_edit_window;
 	AnimTimeline		*anim_timeline;
@@ -4241,6 +4475,8 @@ public:
 	int			recording_on_start;
 	char		*record_on_start_alias;
 
+	char		command_filter[256];
+
 	Muxer									*my_muxer[128];
 	Muxer									*use_muxer[1024];
 	int										muxer_cnt;
@@ -4252,6 +4488,12 @@ public:
 	int										ndi_streaming;
 	int										ndi_send_video_format;
 	time_t									ndi_initialized;
+
+	char									virtual_stream_name[256];
+	int										virtual_fd;
+	int										virtual_output_format;
+	int										virtual_output_width;
+	int										virtual_output_height;
 
 	int			fresh_image;
 	int			use_old;
@@ -4322,6 +4564,9 @@ public:
 	int						visca_arg_cnt;
 	MyVISCACamera			visca_camera[NUMBER_OF_CAMERAS];
 
+	int			disable_slow_codecs;
+	int			codec_test_timeout;
+
 	char		*output_name[128];
 	char		*output_path[128];
 	int			output_active[128];
@@ -4387,6 +4632,7 @@ public:
 	int					test_recognition;
 	int					button_refresh;
 
+	MyInput		*search_input;
 	MenuButton	*record_button;
 	MenuButton	*record_all_button;
 	MenuButton	*power_button;
@@ -4395,6 +4641,7 @@ public:
 	MenuButton	*hide_video_button;
 	MenuButton	*load_setup_button;
 	MenuButton	*save_setup_button;
+	MenuButton	*power_all_button;
 	MenuButton	*override_button;
 	MenuButton	*trigger_button;
 	MenuButton	*timestamp_button;
@@ -4427,10 +4674,14 @@ public:
 	MenuButton	*reset_camera_button;
 	MenuButton	*flip_horizontal_button;
 	MenuButton	*flip_vertical_button;
+	MenuButton	*rotate_clockwise_button;
+	MenuButton	*clear_rotate_button;
 	MenuButton	*ptz_lock_window_button;
+	MenuButton	*new_ptz_window_button;
 	MenuButton	*video_settings_button;
 	MenuButton	*camera_settings_button;
 	MenuButton	*snapshot_settings_button;
+	MenuButton	*native_resolution_button;
 	MenuButton	*keyboard_settings_button;
 	MenuButton	*gui_settings_button;
 	MenuButton	*transitions_button;
@@ -4438,6 +4689,8 @@ public:
 	MenuButton	*filter_plugins_button;
 	MenuButton	*audio_filter_plugins_button;
 	MenuButton	*external_pgm_button;
+	MenuButton	*python_filter_button;
+	MenuButton	*python_output_filter_button;
 	MenuButton	*fltk_plugin_button;
 	MenuButton	*immediate_drawing_button;
 	MenuButton	*dynamic_coloring_button;
@@ -4479,6 +4732,7 @@ public:
 	FilterPluginsWindow			*filter_built_in_window;
 	FilterPluginsWindow			*filter_plugins_window;
 	FilterPluginsWindow			*audio_filter_plugins_window;
+	PythonFilterWindow			*python_filter_window;
 	ImmediateDrawingWindow		*immediate_drawing_window;
 	EditOutputWindow			*edit_output_window;
 	SelectOutputWindow			*select_output_window;
@@ -4627,23 +4881,34 @@ public:
 	AVCodecID		use_video_codec;
 	AVCodecID		use_audio_codec;
 	char			use_extension[256];
+	char			save_ext[256];
 	char			use_container[4096];
 	char			video_codec_name[4096];
 	char			audio_codec_name[4096];
 
 	int			render_mouse;
 	int			tutorial_mode;
+
+	void		*python_filter_function;
+	char		*python_filter_code;
+
+	int				power_all;
+	CodecCombo		*bad_codec_combo[10000];
+	int				bad_codec_combo_cnt;
+	CodecCombo		*good_codec_combo[10000];
+	int				good_codec_combo_cnt;
 };
 
 class	TitleBox : public Fl_Window
 {
 public:
-		TitleBox(ReviewWin *in_win, int xx, int yy, int frame);
+		TitleBox(MyWin *in_win, ReviewWin *local_win, int xx, int yy, int frame);
 		~TitleBox();
 
 	int	handle(int);
 	void	draw();
 
+	MyWin				*my_window;
 	Fl_Multiline_Input	*text_in;
 	MyButton			*remove_button;
 	int					draw_mode;
