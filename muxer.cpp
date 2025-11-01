@@ -33,6 +33,13 @@ extern "C"
 #include <libavutil/opt.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/timestamp.h>
+
+#include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
+#include <libavutil/avutil.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/pixdesc.h>
+
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
@@ -307,6 +314,102 @@ enum AVCodecID	codec_by_name(char *name)
 	return(id);
 }
 
+// COW COW
+void print_codec_info(const AVCodec* codec) 
+{
+    if(!codec) 
+	{
+        std::cerr << "Codec not found!" << std::endl;
+        return;
+    }
+    std::cout << "--- Codec Information ---" << std::endl;
+    std::cout << "Name: " << codec->name << std::endl;
+    std::cout << "Long Name: " << codec->long_name << std::endl;
+    std::cout << "Type: "
+              << av_get_media_type_string(codec->type) << std::endl;
+    std::cout << "ID: " << codec->id << std::endl;
+    std::cout << "Capabilities (Flags): " << std::hex << codec->capabilities << std::dec << std::endl;
+
+    // Check and print specific capabilities
+    std::cout << "Capabilities Details:" << std::endl;
+    if(codec->capabilities & AV_CODEC_CAP_DR1) 
+	{
+        std::cout << " - Supports direct rendering method 1" << std::endl;
+    }
+    if(codec->capabilities & AV_CODEC_CAP_SLICE_THREADS) 
+	{
+        std::cout << " - Supports slice-level multithreading" << std::endl;
+    }
+    if(codec->capabilities & AV_CODEC_CAP_FRAME_THREADS) 
+	{
+        std::cout << " - Supports frame-level multithreading" << std::endl;
+    }
+    if(codec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) 
+	{
+        std::cout << " - Experimental codec" << std::endl;
+    }
+    if(codec->capabilities & AV_CODEC_CAP_SMALL_LAST_FRAME) 
+	{
+        std::cout << " - Can handle small last frames" << std::endl;
+    }
+    if(codec->type == AVMEDIA_TYPE_VIDEO) 
+	{
+        std::cout << "\nSupported Pixel Formats:" << std::endl;
+        if(codec->pix_fmts) 
+		{
+            const AVPixelFormat* p = codec->pix_fmts;
+            while(*p != AV_PIX_FMT_NONE) 
+			{
+                const char* fmt_name = av_get_pix_fmt_name(*p);
+                std::cout << " - " << (fmt_name ? fmt_name : "Unknown") << std::endl;
+                p++;
+            }
+        } 
+		else 
+		{
+            std::cout << " - None listed (generic support)" << std::endl;
+        }
+    } 
+	else if(codec->type == AVMEDIA_TYPE_AUDIO) 
+	{
+        std::cout << "\nSupported Sample Formats:" << std::endl;
+        if(codec->sample_fmts) 
+		{
+            const AVSampleFormat* p = codec->sample_fmts;
+            while(*p != AV_SAMPLE_FMT_NONE) 
+			{
+                const char* fmt_name = av_get_sample_fmt_name(*p);
+                std::cout << " - " << (fmt_name ? fmt_name : "Unknown") << std::endl;
+                p++;
+            }
+        }
+        std::cout << "\nSupported Sample Rates:" << std::endl;
+        if(codec->supported_samplerates) 
+		{
+            const int* p = codec->supported_samplerates;
+            while(*p != 0) 
+			{
+                std::cout << " - " << *p << " Hz" << std::endl;
+                p++;
+            }
+        }
+        std::cout << "\nSupported Channel Layouts:" << std::endl;
+        if(codec->channel_layouts) 
+		{
+            const uint64_t* p = codec->channel_layouts;
+            while(*p != 0) 
+			{
+                char buf[128];
+                av_get_channel_layout_string(buf, sizeof(buf), 0, *p);
+                std::cout << " - " << buf << std::endl;
+                p++;
+            }
+        }
+    }
+    std::cout << "-------------------------" << std::endl;
+}
+// COW COW
+
 // Add an output stream.
 void Muxer::add_stream(int use_nvidia, OutputStream *ost, AVFormatContext *oc, const AVCodec **codec, enum AVCodecID codec_id, int in_width, int in_height, double in_fps, double in_hz)
 {
@@ -335,6 +438,9 @@ void Muxer::add_stream(int use_nvidia, OutputStream *ost, AVFormatContext *oc, c
 		fprintf(stdout, "Error: Could not find encoder for '%s'\n", avcodec_get_name(codec_id));
 		exit(1);
 	}
+	// COW COW
+	print_codec_info(*codec);
+	// COW COW
 	ost->st = avformat_new_stream(oc, NULL);
 	if(!ost->st) 
 	{

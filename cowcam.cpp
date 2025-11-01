@@ -434,6 +434,29 @@ struct	NamedKeys named_key[] = {
 
 // SECTION *********************************** UTILITY FUNCTIONS *******************************************
 
+void	get_font_and_color(MyWin *win, int& font_num, char *font_str, int& red, int& green, int& blue, int& alpha)
+{
+	FontAndColor *fac = new FontAndColor();
+	fac->font_number = font_num;
+	strcpy(fac->font_str, font_str);
+	fac->red = red;
+	fac->green = green;
+	fac->blue = blue;
+	fac->alpha = alpha;
+	FontAndColorDialog *facd = new FontAndColorDialog(win, fac);
+	facd->show();
+	while(facd->visible())
+	{
+		Fl::wait(0);
+	}
+	font_num = fac->font_number;
+	strcpy(font_str, fac->font_str);
+	red = fac->red;
+	green = fac->green;
+	blue = fac->blue;
+	alpha = fac->alpha;
+}
+
 bool is_fullscreen(Window window) 
 {
 	Atom wm_state = XInternAtom(fl_display, "_NET_WM_STATE", False);
@@ -1459,13 +1482,13 @@ void	scale_mat_to_fit(Mat& input, Mat& output, int out_w, int out_h)
 	if((width > out_w) || (height > out_h))
 	{
 		double aspect = (double)out_h / (double)height;
-		int use_h = height * aspect;
-		int use_w = width * aspect;
-		if(out_h > out_w)
+		int use_h = (double)height * aspect;
+		int use_w = (double)width * aspect;
+		if(use_w > out_w)
 		{
-			double aspect = (double)out_w / (double)width;
-			use_w = width * aspect;
-			use_h = height * aspect;
+			double aspect = (double)out_w / (double)use_w;
+			use_w = (double)use_w * aspect;
+			use_h = (double)use_h * aspect;
 		}
 		Mat tmp;
 		cv::resize(input, tmp, cv::Size(use_w, use_h));
@@ -2013,7 +2036,6 @@ void	my_cairo_pop_matrix(cairo_t *cr)
 		cairo_set_matrix(cr, &global_cairo_matrix[global_cairo_matrix_cnt]);
 	}
 }
-
 
 void	blur_it(Camera *cam, int factor, int xx, int yy, int ww, int hh)
 {
@@ -2969,6 +2991,26 @@ int		inner;
 			}
 			cp++;
 		}
+	}
+}
+
+void	copy_to_with_alpha(cv::Mat source_image, cv::Mat destination_image, int xx, int yy)
+{
+	if(source_image.channels() == 4) 
+	{
+		cv::Mat alpha_channel;
+		cv::extractChannel(source_image, alpha_channel, 3); // Extract the alpha channel
+
+		// Create a binary mask from the alpha channel (e.g., thresholding)
+		cv::Mat binary_mask;
+		cv::threshold(alpha_channel, binary_mask, 128, 255, cv::THRESH_BINARY);
+
+		// Define the region of interest in the destination image
+		cv::Rect roi(xx, yy, source_image.cols, source_image.rows);
+		cv::Mat destination_roi = destination_image(roi);
+
+		// Copy the source image to the ROI using the binary mask
+		source_image.copyTo(destination_roi, binary_mask);
 	}
 }
 
@@ -4930,9 +4972,9 @@ int	loop;
 				}
 			}
 		}
+		audio_info->my_window->audio_preview_playing = 0;
 		delete audio_info;
 	}
-	audio_info->my_window->audio_preview_playing = 0;
 	return(0);
 }
 
@@ -5021,6 +5063,38 @@ int	loop;
 	}
 	return(total);
 }
+
+
+void	overlay_with_alpha(Mat& img, Mat& ov, int start_x = 0, int start_y = 0)
+{
+	for(int yy = 0;yy < ov.rows;yy++)
+	{
+		for(int xx = 0;xx < ov.cols;xx++)
+		{
+			int x = start_x + xx;
+			int y = start_y + yy;
+			if((x < img.cols) && (y < img.rows))
+			{
+				int alpha = ov.at<Vec4b>(yy, xx)[3];
+				double d_alpha = (double)((1.0 / 255.0) * (double)alpha);
+				double d_beta = 1.0 - d_alpha;
+
+				double r1 = (double)img.at<Vec3b>(y, x)[0];
+				double g1 = (double)img.at<Vec3b>(y, x)[1];
+				double b1 = (double)img.at<Vec3b>(y, x)[2];
+
+				double r2 = (double)ov.at<Vec4b>(yy, xx)[0];
+				double g2 = (double)ov.at<Vec4b>(yy, xx)[1];
+				double b2 = (double)ov.at<Vec4b>(yy, xx)[2];
+
+				img.at<Vec3b>(y, x)[0] = (uchar)((r1 * d_beta) + (r2 * d_alpha));
+				img.at<Vec3b>(y, x)[1] = (uchar)((g1 * d_beta) + (g2 * d_alpha));
+				img.at<Vec3b>(y, x)[2] = (uchar)((b1 * d_beta) + (b2 * d_alpha));
+			}
+		}
+	}
+}
+
 
 void	blend_two(Mat one, Mat two, int xx, int yy, double alpha)
 {
@@ -5505,6 +5579,115 @@ void	chromakey(Mat& src, Mat& result, int use_color, double a1, double a2)
 	res.convertTo(res, CV_8UC4, 255);
 
 	result = res.clone();
+}
+
+// SECTION *********************************** SIMPLE SCROLL *******************************************
+
+SimpleScroll::SimpleScroll(int xx, int yy, int ww, int hh, char *lbl) : Fl_Scroll(xx, yy, ww, hh, lbl)
+{
+	type(0);
+}
+
+SimpleScroll::~SimpleScroll()
+{
+}
+
+void	SimpleScroll::end()
+{
+	Fl_Scroll::end();
+	type(0);
+}
+
+void	SimpleScroll::draw()
+{
+	Fl_Scroll::draw();
+
+  	ScrollInfo si;
+  	recalc_scrollbars(si);
+	int yy = yposition();
+	if((yy + h()) < (si.child.b - si.child.t))
+	{
+		fl_color(YELLOW);
+		int x1 = (x() + w()) - 10;
+		int y1 = h() - 10;
+		fl_line(x1, y1, x1, y1 - 10);
+		fl_line(x1, y1, x1 - 5, y1 - 5);
+		fl_line(x1, y1, x1 + 5, y1 - 5);
+	}
+	if(yy > 0)
+	{
+		fl_color(YELLOW);
+		int x1 = (x() + w()) - 10;
+		int y1 = 10;
+		fl_line(x1, y1, x1, y1 + 10);
+		fl_line(x1, y1, x1 - 5, y1 + 5);
+		fl_line(x1, y1, x1 + 5, y1 + 5);
+	}
+}
+
+int	SimpleScroll::handle(int event)
+{
+	redraw();
+	int flag = 0;
+	if(event == FL_MOUSEWHEEL)
+	{
+		int direction = Fl::event_dy();
+		if(direction > 0)
+		{
+  			ScrollInfo si;
+  			recalc_scrollbars(si);
+
+			int yy = yposition();
+			if((yy + h()) < (si.child.b - si.child.t))
+			{
+				yy += 10;
+				scroll_to(xposition(), yy);
+			}
+			flag = 1;
+		}
+		else if(direction < 0)
+		{
+			int yy = yposition();
+			if(yy > 0)
+			{
+				yy -= 10;
+				scroll_to(xposition(), yy);
+			}
+			flag = 1;
+		}
+	}
+	else if(event == FL_MOVE)
+	{
+		int xx = Fl::event_x();
+		int yy = Fl::event_y();
+		if(yy > (h() - 30))
+		{
+  			ScrollInfo si;
+  			recalc_scrollbars(si);
+
+			int yy = yposition();
+			if((yy + h()) < (si.child.b - si.child.t))
+			{
+				yy += 10;
+				scroll_to(xposition(), yy);
+			}
+		}
+		else if(yy < 30)
+		{
+			int yy = yposition();
+			if(yy > 0)
+			{
+				yy -= 10;
+				scroll_to(xposition(), yy);
+			}
+		}
+		flag = 1;
+	}
+	if(flag == 0)
+	{
+		int flag = Fl_Scroll::handle(event);
+	}
+	return(flag);
 }
 
 // SECTION *********************************** FONT BROWSER *******************************************
@@ -6404,7 +6587,7 @@ void	ResizeFrame::Use(int in_type, Fl_Widget *in_use)
 
 // SECTION *********************************** MY SCROLL *******************************************
 
-MyScroll::MyScroll(int in_item_width, int in_row_height, int xx, int yy, int ww, int hh) : Fl_Scroll(xx, yy, ww, hh)
+MyScroll::MyScroll(int in_item_width, int in_row_height, int xx, int yy, int ww, int hh) : SimpleScroll(xx, yy, ww, hh)
 {
 int	loop;
 
@@ -6526,7 +6709,7 @@ int	MyScroll::handle(int event)
 	}
 	if(flag == 0)
 	{
-		flag = Fl_Scroll::handle(event);
+		flag = SimpleScroll::handle(event);
 	}
 	return(flag);
 }
@@ -6537,13 +6720,13 @@ void	MyScroll::Add(Fl_Widget *wid)
 	{
 		item[item_cnt] = wid;
 		item_cnt++;
-		Fl_Scroll::add(wid);
+		SimpleScroll::add(wid);
 	}
 }
 
 void	MyScroll::add(Fl_Widget *wid)
 {
-	Fl_Scroll::add(wid);
+	SimpleScroll::add(wid);
 }
 
 void	MyScroll::clear()
@@ -6555,7 +6738,7 @@ int	loop;
 		item[loop] = NULL;
 	}
 	item_cnt = 0;
-	Fl_Scroll::clear();
+	SimpleScroll::clear();
 }
 
 void	MyScroll::ScrollToSelection()
@@ -9233,7 +9416,7 @@ int	loop;
 	return(flag);
 }
 
-ArrangeGroup::ArrangeGroup(Fl_Scroll *in_scroll, int in_item_h, int xx, int yy, int ww, int hh, char *lbl) : MyGroup(xx, yy, ww, hh, lbl)
+ArrangeGroup::ArrangeGroup(SimpleScroll *in_scroll, int in_item_h, int xx, int yy, int ww, int hh, char *lbl) : MyGroup(xx, yy, ww, hh, lbl)
 {
 	scroll = in_scroll;
 	item_h = in_item_h;
@@ -11074,6 +11257,14 @@ int		ii;
 	line->clear_visible_focus();
 	line->callback(immediate_drawing_mode_cb, this);
 	yp += 22;
+	loop = new MyButton(my_window, 10, yp, 100, 20, "Loop");
+	loop->labelsize(9);
+	loop->labelcolor(YELLOW);
+	loop->color(DARK_GRAY);
+	loop->box(FL_FLAT_BOX);
+	loop->clear_visible_focus();
+	loop->callback(immediate_drawing_mode_cb, this);
+	yp += 22;
 	rectangle = new MyButton(my_window, 10, yp, 100, 20, "Rectangle");
 	rectangle->labelsize(9);
 	rectangle->labelcolor(YELLOW);
@@ -11105,14 +11296,6 @@ int		ii;
 	polygon->box(FL_FLAT_BOX);
 	polygon->clear_visible_focus();
 	polygon->callback(immediate_drawing_mode_cb, this);
-	yp += 22;
-	loop = new MyButton(my_window, 10, yp, 100, 20, "Loop");
-	loop->labelsize(9);
-	loop->labelcolor(YELLOW);
-	loop->color(DARK_GRAY);
-	loop->box(FL_FLAT_BOX);
-	loop->clear_visible_focus();
-	loop->callback(immediate_drawing_mode_cb, this);
 	yp += 22;
 	freehand = new MyButton(my_window, 10, yp, 100, 20, "Freehand");
 	freehand->labelsize(9);
@@ -13187,7 +13370,7 @@ int		loop;
 	chroma_color = CHROMA_ON_GREEN;
 
 	python_filter_function = NULL;
-	python_filter_code = strdup("#This is an example that draws a rectangle on the incoming frame\n#Note: the defined function must be named \"python_filter\" and must accept the cv::Mat as an argument.\n#\nimport cv2\nimport numpy as np\n\ndef python_filter(img=None):\n  if img is not None:\n	cv2.rectangle(img, (20, 30), (100, 80), (20, 50, 80), -1)\n");
+	python_filter_code = strdup("#This is an example that draws a rectangle on the incoming frame\n#Note: the defined function must be named \"python_filter\" and must accept the cv::Mat as an argument.\n\n#\nimport cv2\nimport numpy as np\n\ndef python_filter(img=None):\n\tif img is not None:\n\t\tcv2.rectangle(img, (20, 30), (100, 80), (20, 50, 80), -1)\n");
 
 	for(loop = 0;loop < 128;loop++)
 	{
@@ -16707,7 +16890,8 @@ void	Camera::TestObjectDetection()
 
 void	Camera::Capture(int test_only)
 {
-void			*python_run_frame_filter(void *in_function, cv::Mat mat);
+void			python_xderefrence(void *ptr);
+void			python_run_frame_filter(void *in_function, cv::Mat mat);
 int				loop;
 int				inner;
 
@@ -17562,7 +17746,43 @@ int				inner;
 					DrawShapes();
 					if(python_filter_function != NULL)
 					{
-						void *r = python_run_frame_filter(python_filter_function, mat);
+						python_run_frame_filter(python_filter_function, mat);
+					}
+					for(loop = 0;loop < my_window->python_runner_cnt;loop++)
+					{
+						if(my_window->python_runner[loop] != NULL)
+						{
+							if(my_window->python_runner[loop]->function != NULL)
+							{
+								if(my_window->python_runner[loop]->frame_cnt > 0)
+								{
+									python_run_frame_filter(my_window->python_runner[loop]->function, mat);
+									my_window->python_runner[loop]->frame_cnt--;
+									if(my_window->python_runner[loop]->frame_cnt == 0)
+									{
+										python_xderefrence(my_window->python_runner[loop]->function);
+										my_window->python_runner[loop]->function = NULL;
+										delete my_window->python_runner[loop];
+										my_window->python_runner[loop] = NULL;
+										PythonRunner *tmp[128];
+										int cnt = 0;
+										for(inner = 0;inner < my_window->python_runner_cnt;inner++)
+										{
+											if(my_window->python_runner[inner] != NULL)
+											{
+												tmp[cnt] = my_window->python_runner[inner];
+												cnt++;
+											}
+										}
+										for(inner = 0;inner < cnt;inner++)
+										{
+											my_window->python_runner[inner] = tmp[inner];
+										}
+										my_window->python_runner_cnt = cnt;
+									}
+								}
+							}
+						}
 					}
 				}
 			}
@@ -20822,9 +21042,7 @@ XColor colors;
 			int cv_flag = CV_8UC4;
 			Mat frame(cv::Size(width, height), cv_flag, use_data);
 
-			// COW - CLEAR THE ALPHA CHANNEL
-			cvtColor(frame, frame, COLOR_BGRA2BGR);
-			cvtColor(frame, frame, COLOR_BGR2RGBA);
+			cvtColor(frame, frame, COLOR_BGRA2RGBA);
 
 			int out_w = my_window->output_width;
 			int out_h = my_window->output_height;
@@ -24153,7 +24371,7 @@ char			buf[4096];
 		int xx = Fl::event_x();
 		int yy = Fl::event_y();
 
-		Fl_Scroll *scroll = new Fl_Scroll(0, new_yp + 20, 200, 780);
+		SimpleScroll *scroll = new SimpleScroll(0, new_yp + 20, 200, 780);
 		int ay = 4;
 		int max_w = -1000;
 		fl_font(FL_HELVETICA, 9);
@@ -24216,7 +24434,6 @@ char			buf[4096];
 		scroll->end();
 		scroll->box(FL_FRAME_BOX);
 		scroll->color(BLACK);
-		scroll->type(Fl_Scroll::VERTICAL);
 		scroll->hscrollbar.hide();
 		end();
 		int sz = 800;
@@ -28706,10 +28923,9 @@ PTZ_LockWindow::PTZ_LockWindow(MyWin *in_win) : Dialog(in_win, 360, 300, 620, 60
 	last_x = 0;
 	last_y = 0;
 
-	scroll = new Fl_Scroll(2, new_yp + 34, 408, h() - 98, "Assigned");
+	scroll = new SimpleScroll(2, new_yp + 34, 408, h() - 98, "Assigned");
 	scroll->box(FL_FLAT_BOX);
 	scroll->color(fl_rgb_color(20, 20, 25));
-	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->labelsize(11);
 	scroll->labelcolor(WHITE);
 	scroll->align(FL_ALIGN_TOP | FL_ALIGN_CENTER);
@@ -29467,8 +29683,9 @@ int	aa, ab, ac;
 	showing = 0;
 	pinned = 0;
 	ptz_current_camera_idx = 0;
-	ptz_pan_speed = 24.0 * 0.5;
-	ptz_tilt_speed = 20.0 * 0.5;
+	ptz_pan_speed = 24.0 * 0.25;
+	ptz_tilt_speed = 20.0 * 0.25;
+
 	ptz_focus_speed = 1;
 	ptz_zoom_speed = 20;
 	ptz_zoomer_speed = 0;
@@ -29863,7 +30080,7 @@ int	PTZ_Window::AddSpeedSlider(int start_x, int start_y)
 	ptz_speed_slider->labelsize(9);
 	ptz_speed_slider->labelcolor(YELLOW);
 	ptz_speed_slider->align(FL_ALIGN_CENTER | FL_ALIGN_TOP);
-	ptz_speed_slider->value(0.5);
+	ptz_speed_slider->value(0.25);
 	ptz_speed_slider->bounds(0.01, 1.0);
 	ptz_speed_slider->copy_tooltip("Set the PTZ speed");
 	ptz_speed_slider->callback(ptz_set_speed_cb, this);
@@ -30572,6 +30789,7 @@ int	loop;
 			if(bound_camera->ptz_lock_interface > -1)
 			{
 				ptz_interface_button->SetCurrent(bound_camera->ptz_lock_interface);
+				ptz_select_interface_cb(NULL, this);
 			}
 		}
 	}
@@ -30590,7 +30808,10 @@ int	loop;
 				{
 					if(bound_camera != my_window->DisplayedCamera())
 					{
-						my_window->DisplayCamera(bound_camera);
+						if(my_window->alt_displayed_source == -1)
+						{
+							my_window->DisplayCamera(bound_camera);
+						}
 					}
 				}
 			}
@@ -31638,12 +31859,11 @@ ListMenu::ListMenu(void *in_win, int xx, int yy, int ww, int hh, char *lbl) : Fl
 	box(FL_FRAME_BOX);
 	color(BLACK);
 	border(0);
-		scroll = new Fl_Scroll(2, 24, ww - 4, h() - 26, lbl);
+		scroll = new SimpleScroll(2, 24, ww - 4, h() - 26, lbl);
 		scroll->align(FL_ALIGN_TOP);
 		scroll->labelcolor(WHITE);
 		scroll->box(FL_FLAT_BOX);
 		scroll->color(BLACK);
-		scroll->type(Fl_Scroll::VERTICAL);
 		scroll->end();
 		scroll->hscrollbar.hide();
 	end();
@@ -32297,9 +32517,8 @@ CommandKeySettingsWindow::CommandKeySettingsWindow(MyWin *in_win, int ww, int hh
 	char *str = NULL;
 	ww = 280;
 
-	Fl_Scroll *scroll = new Fl_Scroll(10, y_pos, 260, 760);
+	SimpleScroll *scroll = new SimpleScroll(10, y_pos, 260, 760);
 	scroll->color(FL_BLACK);
-	scroll->type(Fl_Scroll::VERTICAL);
 
 	str = my_window->CommandKeyName(my_window->command_key[KEY_TOGGLE_RECORD]);
 	command_key_group[cnt] = new CommandKeyGroup(this, 10, y_pos, ww, 18, "TOGGLE RECORD", str); cnt++; y_pos += 18;
@@ -32558,6 +32777,7 @@ MenuButton::MenuButton(MyWin *in_win, MainMenu *in_menu, int font_sz, int xx, in
 {
 	my_menu = in_menu;
 	hover = 0;
+	entered = 0;
 	hover_menu = NULL;
 	box(FL_NO_BOX);
 	labelcolor(YELLOW);
@@ -32575,6 +32795,7 @@ int		MenuButton::handle(int event)
 	int flag = 0;
 	if(event == FL_ENTER)
 	{
+		my_menu->ClearEntered();
 		my_menu->Select(this);
 		if(my_menu->hover_menu_shown != NULL)
 		{
@@ -32588,6 +32809,7 @@ int		MenuButton::handle(int event)
 			hover_menu->show();
 			my_menu->hover_menu_shown = hover_menu;
 		}
+		entered = 1;
 		redraw();
 		window()->redraw();
 		flag = 1;
@@ -32628,7 +32850,14 @@ void	MenuButton::draw()
 	}
 	else
 	{
-		labelfont(FL_HELVETICA);
+		if(entered == 0)
+		{
+			labelfont(FL_HELVETICA);
+		}	
+		else
+		{
+			labelfont(FL_HELVETICA + FL_BOLD);
+		}
 		labelcolor(YELLOW);
 	}
 	MyButton::draw();
@@ -32884,19 +33113,6 @@ int	MainMenu::handle(int event)
 			flag = 1;
 		}
 	}
-	else if(event == FL_MOUSEWHEEL)
-	{
-		int direction = Fl::event_dy();
-		if(direction > 0)
-		{
-			Advance();
-		}
-		else
-		{
-			Retreat();
-		}
-		flag = 1;
-	}
 	else if(event == FL_MOVE)
 	{
 		int mx = Fl::event_x();
@@ -32904,14 +33120,16 @@ int	MainMenu::handle(int event)
 		if(my < y() + 35)
 		{
 			my_window->search_input->show();
-			Fl_Pack *pack = my_window->button_group_pack;
-			pack->resize(pack->x(), my_window->search_input->y() + my_window->search_input->h(), pack->w(), pack->h());
+			SimpleScroll *scroll = my_window->button_group_scroll;
+			scroll->scroll_to(scroll->xposition(), 0);
+			scroll->resize(scroll->x(), my_window->search_input->y() + my_window->search_input->h(), scroll->w(), scroll->h());
+			my_window->search_input->take_focus();
 		}
 		else
 		{
 			my_window->search_input->hide();
-			Fl_Pack *pack = my_window->button_group_pack;
-			pack->resize(pack->x(), my_window->search_input->y(), pack->w(), pack->h());
+			SimpleScroll *scroll = my_window->button_group_scroll;
+			scroll->resize(scroll->x(), my_window->search_input->y(), scroll->w(), scroll->h());
 		}
 	}
 	else if(event == FL_KEYBOARD)
@@ -32926,6 +33144,14 @@ int	MainMenu::handle(int event)
 			}
 			else if(key == FL_Up)
 			{
+				if(selected == 0)
+				{
+					my_window->search_input->show();
+					SimpleScroll *scroll = my_window->button_group_scroll;
+					scroll->scroll_to(scroll->xposition(), 0);
+					scroll->resize(scroll->x(), my_window->search_input->y() + my_window->search_input->h(), scroll->w(), scroll->h());
+					my_window->search_input->take_focus();
+				}
 				Retreat();
 				flag = 1;
 			}
@@ -33054,6 +33280,20 @@ int	loop;
 	}
 }
 
+void	MainMenu::ClearEntered()
+{
+int	loop;
+
+	selected = -1;
+	for(loop = 0;loop < menu_button_cnt;loop++)
+	{
+		if(menu_button[loop] != NULL)
+		{
+			menu_button[loop]->entered = 0;
+		}
+	}
+}
+
 void	MainMenu::Select(MenuButton *in)
 {
 int	loop;
@@ -33069,6 +33309,15 @@ int	loop;
 				selected = loop;
 				menu_button[loop]->hover = 1;
 				done = 1;
+				SimpleScroll *scroll = my_window->button_group_scroll;
+				if(menu_button[loop]->y() < 0)
+				{
+					scroll->scroll_to(scroll->xposition(), scroll->yposition() + (menu_button[loop]->y() - menu_button[loop]->h()));
+				}
+				if(menu_button[loop]->y() > scroll->h())
+				{
+					scroll->scroll_to(scroll->xposition(), scroll->yposition() + ((menu_button[loop]->y() + menu_button[loop]->h()) - scroll->h()));
+				}
 			}
 		}
 	}
@@ -33123,7 +33372,7 @@ int	loop;
 int	inner;
 
 	int done = 0;
-	if(selected < (menu_button_cnt - 1))
+	if(selected < menu_button_cnt)
 	{
 		if(menu_button[selected] != NULL)
 		{
@@ -33748,10 +33997,9 @@ int	loop;
 	rows->value("2");
 	rows->callback(source_select_cols_and_rows_cb, this);
 
-	scroll = new Fl_Scroll((w() / 2) - 150, new_yp + 182, 300, 550);
+	scroll = new SimpleScroll((w() / 2) - 150, new_yp + 182, 300, 550);
 	scroll->box(FL_FRAME_BOX);
 	scroll->color(BLACK);
-	scroll->type(Fl_Scroll::VERTICAL);
 	pack = new Fl_Pack((w() / 2) - 150, new_yp + 182, 300, 100);
 	pack->box(FL_NO_BOX);
 	pack->type(Fl_Pack::VERTICAL);
@@ -34292,15 +34540,19 @@ char	buf[4092];
 	{
 		if(win->muxing == 1)
 		{
-			if(win->last_muxed_list[0] != NULL)
+			if(win->use_last_muxed == NULL)
+			{
+				win->use_last_muxed = win->last_muxed_list[0];
+			}
+			if(win->use_last_muxed != NULL)
 			{
 				win->extracting = -1;
-				int nn = extract_audio(win, &win->extracting, win->last_muxed_list[0], "audio.bin", win->audio_sample_rate, 1);
+				int nn = extract_audio(win, &win->extracting, win->use_last_muxed, "audio.bin", win->audio_sample_rate, 1);
 				if(nn >= 0)
 				{
 					win->FlushMuxerArray();
 					win->extracting = 1;
-					nn = extract_video(win, &win->extracting, win->last_muxed_list[0], "video.bin", 0);
+					nn = extract_video(win, &win->extracting, win->use_last_muxed, "video.bin", 0);
 					if(nn >= 0)
 					{
 						int n_ww = win->camera[win->displayed_source]->width;
@@ -34308,7 +34560,6 @@ char	buf[4092];
 						win->review = new ReviewWin(win, n_ww, n_hh, 24, "Review", "video.bin");
 						cv::Mat local_mat(n_hh, n_ww, CV_8UC3, cv::Scalar(55, 100, 150));
 						memcpy(win->review->frame, local_mat.ptr(), (n_ww * n_hh * 3));
-						win->review->end();
 						win->review->show();
 						win->review->main = win;
 						Fl::add_timeout(0.1, review_win_cb, win->review);
@@ -34334,7 +34585,6 @@ char	buf[4092];
 				int n_hh = win->camera[win->displayed_source]->height;
 				win->review = new ReviewWin(win, n_ww, n_hh, (int)cam->fps, "Review", buf);
 				memcpy(win->review->frame, cam->mat.ptr(), (n_ww * n_hh * 3));
-				win->review->end();
 				win->review->show();
 				win->review->main = win;
 				Fl::add_timeout(0.1, review_win_cb, win->review);
@@ -34791,6 +35041,37 @@ void	transitions_button_cb(Fl_Widget *w, void *v)
 	}
 }
 
+void	python_buttons_cb(Fl_Widget *w, void *v)
+{
+	MyWin *win = (MyWin *)v;
+	if(win->python_button_window != NULL)
+	{
+		if(win->python_button_window->visible())
+		{
+			win->python_button_window->hide();
+		}
+		else
+		{
+			win->python_button_window->show();
+			win->python_button_window->set_non_modal();
+		}
+	}
+}
+
+void	create_python_button_cb(Fl_Widget *w, void *v)
+{
+	MyWin *win = (MyWin *)v;
+	if(!win->create_python_button_window->visible())
+	{
+		win->create_python_button_window->set_non_modal();
+		win->create_python_button_window->show();
+	}
+	else
+	{
+		win->create_python_button_window->hide();
+	}
+}
+
 void	filter_built_in_button_cb(Fl_Widget *w, void *v)
 {
 	MyWin *win = (MyWin *)v;
@@ -35204,31 +35485,39 @@ int	loop;
 
 	Fl_Button *b = (Fl_Button *)w;
 	MyWin *win = (MyWin *)v;
+	int rec_all = 0;
+	if(strcmp(b->label(), "All Record") == 0)
+	{
+		rec_all = 1;
+	}
 	for(loop = 0;loop < win->source_cnt;loop++)
 	{
 		Camera *cam = win->camera[loop];
 		if(cam != NULL)
 		{
-			if(cam->triggers_requested == 0)
+			if(rec_all == 1)
 			{
-				int except = 0;
-				if((cam->record_trigger)
-				|| (cam->darkness_trigger)
-				|| (cam->schedule_start)
-				|| (cam->schedule_stop)
-				|| (cam->schedule_day))
+				if(cam->triggers_requested == 0)
 				{
-					except = 1;
-				}
-				if((win->follow_mode != FOLLOW_MODE_RECORDING_FOLLOWS_DISPLAY) || (except == 1))
-				{
-					win->RecordOn(cam);
-				}
-				else
-				{
-					if(win->DisplayedCamera() == cam)
+					int except = 0;
+					if((cam->record_trigger)
+					|| (cam->darkness_trigger)
+					|| (cam->schedule_start)
+					|| (cam->schedule_stop)
+					|| (cam->schedule_day))
+					{
+						except = 1;
+					}
+					if((win->follow_mode != FOLLOW_MODE_RECORDING_FOLLOWS_DISPLAY) || (except == 1))
 					{
 						win->RecordOn(cam);
+					}
+					else
+					{
+						if(win->DisplayedCamera() == cam)
+						{
+							win->RecordOn(cam);
+						}
 					}
 				}
 			}
@@ -35803,6 +36092,12 @@ int	outer;
 	{
 		ptz_window[loop] = NULL;
 	}
+	python_runner_cnt = 0;
+	python_button_cnt = 0;
+	for(loop = 0;loop < 128;loop++)
+	{
+		python_runner[loop] = NULL;
+	}
 	initial_button_group_x = -1;
 	initial_button_group_y = -1;
 	initial_thumbnail_group_x = -1;
@@ -35847,6 +36142,9 @@ int	outer;
 	snapshot_settings_window = NULL;
 	gui_settings_window = NULL;
 	transitions_window = NULL;
+	create_python_button_window = NULL;
+	python_buttons = NULL;
+	python_button_window = NULL;
 	immediate_drawing_window = NULL;
 	new_source_window = NULL;
 	alias_window = NULL;
@@ -35944,6 +36242,8 @@ int	outer;
 	{
 		last_muxed_list[loop] = NULL;
 	}
+	use_last_muxed = NULL;
+	LoadLastMuxedList();
 	for(loop = 0;loop < 128;loop++)
 	{
 		audio_thumbnail[loop] = NULL;
@@ -36394,6 +36694,14 @@ int	loop;
 		free(python_filter_code);
 		python_filter_code = NULL;
 	}
+	for(loop = 0;loop < python_runner_cnt;loop++)
+	{
+		if(python_runner[loop] != NULL)
+		{
+			delete python_runner[loop];
+			python_runner[loop] = NULL;
+		}
+	}
 	if(anim_timeline != NULL)
 	{
 		anim_timeline->hide();
@@ -36566,6 +36874,19 @@ int	loop;
 		transitions_window->hide();
 		Fl::delete_widget(transitions_window);
 		transitions_window = NULL;
+	}
+	if(create_python_button_window != NULL)
+	{
+		create_python_button_window->hide();
+		Fl::delete_widget(create_python_button_window);
+		create_python_button_window = NULL;
+	}
+	if(python_button_window != NULL)
+	{
+		remove(python_button_window);
+		python_button_window->hide();
+		Fl::delete_widget(python_button_window);
+		python_button_window = NULL;
 	}
 	if(immediate_drawing_window != NULL)
 	{
@@ -37119,6 +37440,8 @@ int	outer, inner;
 	keyboard_settings_button = NULL;
 	gui_settings_button = NULL;
 	transitions_button = NULL;
+	create_python_button = NULL;
+	python_buttons = NULL;
 	filter_built_in_button = NULL;
 	filter_plugins_button = NULL;
 	audio_filter_plugins_button = NULL;
@@ -37156,6 +37479,9 @@ int	outer, inner;
 	gui_settings_window = NULL;
 	embed_app_settings = NULL;
 	transitions_window = NULL;
+	create_python_button_window = NULL;
+	python_buttons = NULL;
+	python_button_window = NULL;
 	pseudo_camera_window = NULL;
 	filter_built_in_window = NULL;
 	filter_plugins_window = NULL;
@@ -37224,6 +37550,8 @@ int	outer, inner;
 	{
 		last_muxed_list[loop] = NULL;
 	}
+	use_last_muxed = NULL;
+	LoadLastMuxedList();
 	for(loop = 0;loop < 3;loop++)
 	{
 		audio_thumbnail_pack[loop] = NULL;
@@ -38102,6 +38430,34 @@ int	inner;
 		}
 		fprintf(fp, "\t],\n");
 	}
+	if(python_button_window != NULL)
+	{
+		Fl_Pack *pack = python_button_window->pack;
+		if(pack != NULL)
+		{
+			int nn = pack->children();
+			fprintf(fp, "\t\"python button cnt\": %d,\n", nn);
+			fprintf(fp, "\t\"python button\": [\n");
+			for(loop = 0;loop < nn;loop++)
+			{
+				PythonButton *pb = (PythonButton *)pack->child(loop);
+				fprintf(fp, "\t\t{\n");
+				fprintf(fp, "\t\t\t\"label\": \"%s\",\n", pb->label());
+				fprintf(fp, "\t\t\t\"path\": \"%s\",\n", pb->path);
+				fprintf(fp, "\t\t\t\"entry function\": \"%s\",\n", pb->entry_function);
+				fprintf(fp, "\t\t\t\"frame cnt\": %d\n", pb->frame_cnt);
+				if(loop < (nn - 1))
+				{
+					fprintf(fp, "\t\t},\n");
+				}
+				else
+				{
+					fprintf(fp, "\t\t}\n");
+				}
+			}
+			fprintf(fp, "\t],\n");
+		}
+	}
 	fprintf(fp, "\t\"pulse microphone cnt\": %d,\n", pulse_microphone_cnt);
 	SaveMicrophonesAsJSON(fp);
 	fprintf(fp, ",\n");
@@ -38145,6 +38501,7 @@ int	inner;
 				fprintf(fp, "\t\t\"font sz\": %d,\n", local_shape->font_sz);
 			}
 		}
+		fprintf(fp, "],\n");
 	}
 	if(dump_type != NULL)
 	{
@@ -38722,6 +39079,43 @@ int		inner;
 	if(start_win != NULL)
 	{
 		start_win->Update("Reading Audio Sources");
+	}
+	success = json_parse_int(json, "python button cnt", python_button_cnt);
+	if(python_button_cnt > 0)
+	{
+		python_button_cnt = 0;
+		if(python_button_window != NULL)
+		{
+			cJSON *python_buttons = NULL;
+			python_buttons = json_parse_array(json, "python button");
+			if(python_buttons != NULL)
+			{
+				int cnt = 0;
+				cJSON *python_button = NULL;
+				cJSON_ArrayForEach(python_button, python_buttons)
+				{
+					int frame_cnt = 0;
+					char *lbl = json_parse_string(python_button, "label");
+					char *path = json_parse_string(python_button, "path");
+					char *entry_function = json_parse_string(python_button, "entry function");
+					success = json_parse_int(python_button, "frame cnt", frame_cnt);
+
+					PythonButton *button = new PythonButton(this, 0, 0, 220, 20, lbl);
+					button->copy_label(lbl);
+					button->path = strdup(path);
+					button->entry_function = strdup(entry_function);
+					button->frame_cnt = frame_cnt;
+
+					Fl_Pack *pack = python_button_window->pack;
+					pack->add(button);
+					pack->resize(pack->x(), pack->y(), pack->w(), pack->children() * 20);
+					python_button_window->show();
+					python_button_window->set_non_modal();
+					cnt++;
+				}
+				python_button_cnt = cnt;
+			}
+		}
 	}
 	success = json_parse_int(json, "pulse microphone cnt", pulse_microphone_cnt);
 	ParseJSONMicrophones(json);
@@ -39951,6 +40345,7 @@ void	sliding_element_close_cb(void *v);
 		}
 	}
 	output_path_cnt = 0;
+	SaveLastMuxedList();
 	for(loop = 0;loop < 64;loop++)
 	{
 		if(last_muxed_list[loop] != NULL)
@@ -39959,6 +40354,7 @@ void	sliding_element_close_cb(void *v);
 			last_muxed_list[loop] = NULL;
 		}
 	}
+	use_last_muxed = NULL;
 	if(pulse_mixer != NULL)
 	{
 		pulse_mixer->done = 1;
@@ -40122,6 +40518,7 @@ int	aa, ab, ac;
 		}
 	}
 	output_path_cnt = 0;
+	SaveLastMuxedList();
 	for(loop = 0;loop < 64;loop++)
 	{
 		if(last_muxed_list[loop] != NULL)
@@ -40130,6 +40527,7 @@ int	aa, ab, ac;
 			last_muxed_list[loop] = NULL;
 		}
 	}
+	use_last_muxed = NULL;
 	if(pulse_mixer != NULL)
 	{
 		pulse_mixer->done = 1;
@@ -41143,15 +41541,15 @@ char	*sorted_list[1024];
 		{
 			sorted_list[loop] = recognize_class_name[loop];
 		}
-		object_page = 0;
 		qsort(sorted_list, recognize_class_cnt, sizeof(char *), cmpstringp);
-		for(loop = 0;loop < recognize_class_cnt;loop++)
+
+		int start = 80 * object_menu->object_page;
+		for(loop = 0;loop < 80;loop++)
 		{
-			int start = 123 * object_page;
-			int end = 123 * (object_page + 1);
-			if((cnt >= start) && (cnt < end))
+			int nn = start + loop;
+			if(nn < recognize_class_cnt)
 			{
-				object_menu->object_name_button[loop]->copy_label(sorted_list[loop]);
+				object_menu->object_name_button[loop]->copy_label(sorted_list[nn]);
 				object_menu->object_name_button[loop]->show();
 				object_menu->object_name_button[loop]->redraw();
 				for(inner = 0;inner < recognize_class_cnt;inner++)
@@ -41173,15 +41571,15 @@ char	*sorted_list[1024];
 			{
 				object_menu->object_name_button[loop]->hide();
 			}
-			cnt++;
 		}
 		object_menu->object_clear_button->show();
 		object_menu->object_all_button->show();
 		object_menu->object_done_button->show();
 		object_menu->object_apply_all_button->show();
-		if(recognize_class_cnt > 123)
+
+		if(recognize_class_cnt > 80)
 		{
-			if((recognize_class_cnt / 123) > object_page)
+			if((recognize_class_cnt / 80) > object_menu->object_page)
 			{
 				object_menu->object_next_button->show();
 			}
@@ -41189,7 +41587,7 @@ char	*sorted_list[1024];
 			{
 				object_menu->object_next_button->hide();
 			}
-			if(object_page > 0)
+			if(object_menu->object_page > 0)
 			{
 				object_menu->object_prev_button->show();
 			}
@@ -46575,6 +46973,13 @@ int		loop;
 						int key = Fl::event_key();
 						if(key == 'b')
 						{
+							FontAndColor *fac = new FontAndColor();
+							FontAndColorDialog *facd = new FontAndColorDialog(this, fac);
+							facd->show();
+							while(facd->visible())
+							{
+								Fl::wait(0);
+							}
 							flag = 1;
 						}
 						flag = HandleKeyboard(event, cam);
@@ -47861,7 +48266,7 @@ int			loop;
 			title_box->box(FL_FRAME_BOX);
 			title_box->labelsize(13);
 			title_box->labelcolor(YELLOW);
-			Fl_Scroll *scroll = new Fl_Scroll(2, 30, 596, hh - 34);
+			SimpleScroll *scroll = new SimpleScroll(2, 30, 596, hh - 34);
 			scroll->box(FL_FLAT_BOX);
 			scroll->color(BLACK);
 			scroll->scrollbar.hide();
@@ -48827,7 +49232,7 @@ void	MyWin::ErrorMessage()
 
 void	MyWin::draw()
 {
-void		*python_run_frame_filter(void *in_function, cv::Mat mat);
+void		python_run_frame_filter(void *in_function, cv::Mat mat);
 struct tm	*tm;
 int			loop;
 char		buf[256];
@@ -48913,7 +49318,7 @@ int			outer;
 							cam->DrawImageWindowsBefore(-1, 1, in_mat, moving_element, someone_is_dragging);
 							if(python_filter_function != NULL)
 							{
-								void *r = python_run_frame_filter(python_filter_function, in_mat);
+								python_run_frame_filter(python_filter_function, in_mat);
 							}
 							if((muxer_cnt > 0) || (follow_mode == FOLLOW_MODE_NONE) || (ndi_streaming == 1))
 							{
@@ -50804,6 +51209,46 @@ int	loop;
 	strcpy(last_used_filename, filename);
 }
 
+void	MyWin::SaveLastMuxedList()
+{
+int	loop;
+
+	FILE *fp = fopen("last_muxed_list.txt", "w");
+	if(fp != NULL)
+	{
+		for(loop = 0;loop < 64;loop++)
+		{
+			if(last_muxed_list[loop] != NULL)
+			{
+				fprintf(fp, "%s\n", last_muxed_list[loop]);
+			}
+		}
+		fclose(fp);
+	}
+}
+
+void	MyWin::LoadLastMuxedList()
+{
+int		loop;
+char	buf[4096];
+
+	FILE *fp = fopen("last_muxed_list.txt", "r");
+	if(fp != NULL)
+	{
+		int cnt = 0;
+		while(fgets(buf, 4096, fp))
+		{
+			strip_lf(buf);
+			if(strlen(buf) > 0)
+			{
+				last_muxed_list[cnt] = strdup(buf);
+				cnt++;
+			}
+		}
+		fclose(fp);
+	}
+}
+
 void	MyWin::SaveInterest()
 {
 int	loop;
@@ -50934,6 +51379,8 @@ void	MyWin::HideButtons()
 	snapshot_settings_button->hide();
 	native_resolution_button->hide();
 	transitions_button->hide();
+	create_python_button->hide();
+	python_buttons->hide();
 	filter_built_in_button->hide();
 	hide_video_button->hide();
 	keyboard_settings_button->hide();
@@ -51005,6 +51452,8 @@ void	MyWin::HideButtons()
 
 void	MyWin::ShowButtons()
 {
+void	cancel_python_filter_cb(Fl_Widget *w, void *v);
+
 	if(mark_interest == 0)
 	{
 		Camera *cam = NULL;
@@ -51121,14 +51570,7 @@ void	MyWin::ShowButtons()
 			test_recognition_button->show();
 			if(review == NULL)
 			{
-				if(recorded_frames > 0)
-				{
-					review_button->show();
-				}
-				else
-				{
-					review_button->hide();
-				}
+				review_button->show();
 			}
 			else
 			{
@@ -51199,6 +51641,15 @@ void	MyWin::ShowButtons()
 				}
 				snapshot_settings_button->show();
 				transitions_button->show();
+				create_python_button->show();
+				if(python_button_cnt > 0)
+				{
+					python_buttons->show();
+				}
+				else
+				{
+					python_buttons->hide();
+				}
 				if((cam->width != cam->display_width) || (cam->height != cam->display_height))
 				{
 					native_resolution_button->show();
@@ -51207,6 +51658,26 @@ void	MyWin::ShowButtons()
 			filter_built_in_button->show();
 			python_filter_button->show();
 			python_output_filter_button->show();
+			if(cam->python_filter_function != NULL)
+			{
+				python_filter_button->copy_label("Stop Python Filter");
+				python_filter_button->callback(cancel_python_filter_cb, this);
+			}
+			else
+			{
+				python_filter_button->copy_label("Python Filter");
+				python_filter_button->callback(camera_python_filter_button_cb, this);
+			}
+			if(python_filter_function != NULL)
+			{
+				python_output_filter_button->copy_label("Stop Python Filter");
+				python_output_filter_button->callback(cancel_python_filter_cb, this);
+			}
+			else
+			{
+				python_output_filter_button->copy_label("Python Filter Output");
+				python_output_filter_button->callback(output_python_filter_button_cb, this);
+			}
 			if(global_potential_filter_cnt > 0)
 			{
 				filter_plugins_button->show();
@@ -51414,6 +51885,10 @@ void	MyWin::ShowButtons()
 				native_resolution_button->hide();
 			if(transitions_button != NULL)
 				transitions_button->hide();
+			if(create_python_button != NULL)
+				create_python_button->hide();
+			if(python_buttons != NULL)
+				python_buttons->hide();
 			if(filter_plugins_button != NULL)
 				filter_plugins_button->hide();
 			if(filter_built_in_button != NULL)
@@ -52468,8 +52943,16 @@ int	loop;
 	search_input->callback(command_menu_search_cb, this);
 	search_input->hide();
 
+	button_group_scroll = new SimpleScroll(0, y_pos, button_panel_sz, h() - y_pos);
+	button_group_scroll->color(DARK_GRAY);
+	button_group_scroll->hscrollbar.hide();
+	button_group_scroll->scrollbar.hide();
+	button_group_scroll->scrollbar_size(1);
+	button_group_scroll->scrollbar.color(DARK_GRAY);
+	button_group_scroll->scrollbar.labelcolor(DARK_GRAY);
+
 	button_group_pack = new Fl_Pack(8, y_pos, button_panel_sz, h() - y_pos);
-	button_group_pack->spacing(0);
+	button_group_pack->spacing(2);
 
 	Fl_Box *spacer = new Fl_Box(8, y_pos, button_sz, button_height / 2);
 	spacer->box(FL_NO_BOX);
@@ -52590,7 +53073,7 @@ int	loop;
 	y_pos += y_inc;
 
 	python_filter_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Python Filter");
-	python_filter_button->copy_tooltip("Apply a Python program to the frame.\n");
+	python_filter_button->copy_tooltip("Apply a Python program to the frames.\n");
 	python_filter_button->callback(camera_python_filter_button_cb, this);
 	y_pos += y_inc;
 
@@ -52669,7 +53152,12 @@ int	loop;
 	monitor_audio_button->callback(monitor_audio_button_cb, this);
 	y_pos += y_inc;
 
-	audio_library_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Audio Library");
+	audio_settings_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Audio Settings");
+	audio_settings_button->copy_tooltip("Set audio settings.");
+	audio_settings_button->callback(audio_settings_button_cb, this);
+	y_pos += y_inc;
+
+	audio_library_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Edit Audio Library");
 	audio_library_button->copy_tooltip("Manage a library of audio files.");
 	audio_library_button->callback(audio_library_button_cb, this);
 	y_pos += y_inc;
@@ -52707,11 +53195,6 @@ int	loop;
 	audio_bind_to_camera_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Bind to Camera");
 	audio_bind_to_camera_button->copy_tooltip("Bind currently selected audio sources to displayed camera.");
 	audio_bind_to_camera_button->callback(audio_bind_to_camera_button_cb, this);
-	y_pos += y_inc;
-
-	audio_settings_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Audio Settings");
-	audio_settings_button->copy_tooltip("Set audio settings.");
-	audio_settings_button->callback(audio_settings_button_cb, this);
 	y_pos += y_inc;
 
 	audio_save_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Save Audio Sources");
@@ -52934,6 +53417,16 @@ int	loop;
 	external_pgm_button->callback(external_pgm_button_cb, this);
 	y_pos += y_inc;
 
+	create_python_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Create Python Button");
+	create_python_button->copy_tooltip("Create a button that invokes a Python program.\n");
+	create_python_button->callback(create_python_button_cb, this);
+	y_pos += y_inc;
+
+	python_buttons = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Toggle Python Buttons");
+	python_buttons->copy_tooltip("Show a menu of buttons that invokes Python programs.\n");
+	python_buttons->callback(python_buttons_cb, this);
+	y_pos += y_inc;
+
 	python_output_filter_button = new MenuButton(this, button_group, font_sz, 8, y_pos, button_sz, button_height, "Python Filter Output");
 	python_output_filter_button->copy_tooltip("Apply a Python program to the frame before it is sent to be muxed.\n");
 	python_output_filter_button->callback(output_python_filter_button_cb, this);
@@ -52948,7 +53441,11 @@ int	loop;
 	quit_button->callback(quit_cb, this);
 	y_pos += y_inc;
 
+	p_spacer = new Fl_Box(8, y_pos, button_sz, button_height / 4);
+	p_spacer->box(FL_NO_BOX);
+
 	button_group_pack->end();
+	button_group_scroll->end();
 	button_group->end();
 	if(button_group_side == SIDE_RIGHT)
 	{
@@ -52970,51 +53467,51 @@ int	loop;
 		hover_win->color(WHITE);
 		hover_win->box(FL_FLAT_BOX);
 			int yp = 0;
-			MyButton *button1 = new MyButton(this, 0, yp, 80, 20, "Text");
-			button1->callback(immediate_quick_cb, this);
+			MyButton *button = new MyButton(this, 0, yp, 80, 20, "Text");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button2 = new MyButton(this, 0, yp, 80, 20, "Line");
-			button2->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Line");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button3 = new MyButton(this, 0, yp, 80, 20, "Rectangle");
-			button3->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Loop");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button4 = new MyButton(this, 0, yp, 80, 20, "Ellipse");
-			button4->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Rectangle");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button5 = new MyButton(this, 0, yp, 80, 20, "Image");
-			button5->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Ellipse");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button6 = new MyButton(this, 0, yp, 80, 20, "Polygon");
-			button6->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Image");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button7 = new MyButton(this, 0, yp, 80, 20, "Loop");
-			button6->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Polygon");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button8 = new MyButton(this, 0, yp, 80, 20, "Freehand");
-			button7->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Freehand");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button9 = new MyButton(this, 0, yp, 80, 20, "Pixelate/Blur");
-			button8->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Pixelate/Blur");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button10 = new MyButton(this, 0, yp, 80, 20, "Delete");
-			button9->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Delete");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button11 = new MyButton(this, 0, yp, 80, 20, "Delete All");
-			button10->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Delete All");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button12 = new MyButton(this, 0, yp, 80, 20, "Hide");
-			button11->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Hide");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button13 = new MyButton(this, 0, yp, 80, 20, "Hide All");
-			button12->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Hide All");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button14 = new MyButton(this, 0, yp, 80, 20, "Show All");
-			button13->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Show All");
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
-			MyButton *button15 = new MyButton(this, 0, yp, 80, 20, "Done");
-			button14->box(FL_FRAME_BOX);
-			button14->callback(immediate_quick_cb, this);
+			button = new MyButton(this, 0, yp, 80, 20, "Done");
+			button->box(FL_FRAME_BOX);
+			button->callback(immediate_quick_cb, this);
 			yp += 20;
 		hover_win->end();
 		hover_win->resize(hover_win->x(), hover_win->y(), hover_win->w(), yp);
@@ -53745,10 +54242,9 @@ void	hide_window_cb(Fl_Widget *w, void *v);
 	box3->box(FL_FLAT_BOX);
 	y_pos += 22;
 
-	scroll = new Fl_Scroll(2, y_pos, ww - 4, hh - 160);
+	scroll = new SimpleScroll(2, y_pos, ww - 4, hh - 160);
 	scroll->box(FL_FLAT_BOX);
 	scroll->color(BLACK);
-	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->hscrollbar.hide();
 	scroll->end();
 	pack = new Fl_Pack(0, y_pos, ww, hh);
@@ -54130,10 +54626,9 @@ char	*sorted_list[1024];
 	}
 	object_page = 0;
 	qsort(sorted_list, my_window->recognize_class_cnt, sizeof(char *), cmpstringp);
-	for(loop = 0;loop < my_window->recognize_class_cnt;loop++)
+	for(loop = 0;loop < 80;loop++)
 	{
 		object_name_button[loop] = new MyButton(my_window, nxx, nyy, 200, 16);
-		object_name_button[loop]->copy_label(sorted_list[loop]);
 		object_name_button[loop]->box(FL_NO_BOX);
 		object_name_button[loop]->color(BLACK);
 		object_name_button[loop]->labelcolor(YELLOW);
@@ -54152,7 +54647,7 @@ char	*sorted_list[1024];
 			}
 		}
 	}
-	Fl_Box *box = new Fl_Box(w() - 190, 15 + new_yp, 180, 130);
+	Fl_Box *box = new Fl_Box(w() - 190, 15 + new_yp, 180, 150);
 	box->color(DARK_GRAY);
 	box->box(FL_FRAME_BOX);
 
@@ -54203,7 +54698,7 @@ char	*sorted_list[1024];
 	object_next_button->labelcolor(YELLOW);
 	object_next_button->labelsize(11);
 	object_next_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	object_next_button->callback(next_page_objects_cb, this);
+	object_next_button->callback(next_page_objects_cb, my_window);
 	object_next_button->hide();
 	yp += 22;
 
@@ -54213,7 +54708,7 @@ char	*sorted_list[1024];
 	object_prev_button->labelcolor(YELLOW);
 	object_prev_button->labelsize(11);
 	object_prev_button->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-	object_prev_button->callback(prev_page_objects_cb, this);
+	object_prev_button->callback(prev_page_objects_cb, my_window);
 	object_prev_button->hide();
 	end();
 }
@@ -57425,6 +57920,13 @@ void	Immediate::ConvertToPolygon()
 		orig_w = w();
 		orig_h = h();
 	}
+	if(immediate_type == DRAWING_MODE_LOOP)
+	{
+		if(line != NULL)
+		{
+			line->shape = DRAWING_MODE_POLYGON;
+		}
+	}
 }
 
 void	Immediate::Copy()
@@ -57593,9 +58095,30 @@ void	immediate_popup_cb(Fl_Widget *w, void *v)
 			{
 				im->Edit();
 			}
+			else if(strcmp(str, "Convert to Loop") == 0)
+			{
+				im->immediate_type = DRAWING_MODE_LOOP;
+				if(im->line != NULL)
+				{
+					im->line->shape = DRAWING_MODE_LOOP;
+				}
+			}
+			else if(strcmp(str, "Convert to Line") == 0)
+			{
+				im->immediate_type = DRAWING_MODE_LINE;
+				if(im->line != NULL)
+				{
+					im->line->shape = DRAWING_MODE_LINE;
+				}
+			}
 			else if(strcmp(str, "Convert to Polygon") == 0)
 			{
-				im->ConvertToPolygon();
+				if((im->immediate_type == DRAWING_MODE_RECTANGLE)
+				|| (im->immediate_type == DRAWING_MODE_ELLIPSE)
+				|| (im->immediate_type == DRAWING_MODE_LOOP))
+				{
+					im->ConvertToPolygon();
+				}
 			}
 			else if(strcmp(str, "Raise") == 0)
 			{
@@ -57822,6 +58345,15 @@ void	Immediate::ShowPopup()
 			if(line != NULL)
 			{
 				popup->browser->add("Edit");
+				if(line->my_immediate->immediate_type == DRAWING_MODE_LINE)
+				{
+					popup->browser->add("Convert to Loop");
+				}
+				else if(line->my_immediate->immediate_type == DRAWING_MODE_LOOP)
+				{
+					popup->browser->add("Convert to Line");
+					popup->browser->add("Convert to Polygon");
+				}
 			}
 			else
 			{
@@ -58952,12 +59484,52 @@ void	add_text_cb(Fl_Widget *w, void *v)
 		win->add_text = 1;
 		win->add_text_button->color(WHITE);
 		win->add_text_button->labelcolor(BLACK);
+		win->add_text_button->redraw();
+
+		win->add_image = 0;
+		win->add_image_button->color(BLACK);
+		win->add_image_button->labelcolor(WHITE);
+		win->add_image_button->redraw();
 	}
 	else
 	{
 		win->add_text = 0;
 		win->add_text_button->color(BLACK);
 		win->add_text_button->labelcolor(WHITE);
+		win->add_text_button->redraw();
+	}
+}
+
+void	add_image_cb(Fl_Widget *w, void *v)
+{
+int	loop;
+
+	ReviewWin *win = (ReviewWin *)v;
+	win->add_text = 0;
+	win->add_text_button->color(BLACK);
+	win->add_text_button->labelcolor(WHITE);
+	win->add_text_button->redraw();
+
+	if(win->title_image_cnt < 1023)
+	{
+		TitleImage *title = new TitleImage(win->my_win, win, win->current_frame, win->frame_cnt - 1);
+		win->add(title);
+		int done = 0;
+		for(loop = 0;((loop < win->title_image_cnt) && (done == 0));loop++)
+		{
+			if(win->title_image[loop] == NULL)
+			{
+				win->title_image[loop] = title;
+				done = 1;
+			}
+		}
+		if(done == 0)
+		{
+			win->title_image[win->title_image_cnt] = title;
+			win->title_image_cnt++;
+		}
+		win->add_image_button->color(BLACK);
+		win->add_image_button->labelcolor(WHITE);
 	}
 }
 
@@ -59040,6 +59612,61 @@ void	load_mux_video_cb(Fl_Widget *w, void *v)
 	}
 }
 
+void	load_mux_video_popup_cb(Fl_Widget *w, void *v)
+{
+	MuxPreviewWindow *mpw = (MuxPreviewWindow *)v;
+	Fl_Hold_Browser *browser = (Fl_Hold_Browser *)w;
+	char *str = (char *)browser->text(browser->value());
+	if(str != NULL)
+	{
+		if(strcmp(str, "Cancel") != 0)
+		{
+			mpw->ResetMedia(str);
+		}
+	}
+	Fl_Window *win = browser->window();
+	if(win != NULL)
+	{
+		win->hide();
+	}
+}
+
+void	load_used_mux_video_popup_cb(Fl_Widget *w, void *v)
+{
+int		extract_audio(void *update_win, int *prg, char *in_filename, char *out_filename, int hz, int channels);
+int		extract_video(void *update_win, int *prg, char *in_filename, char *out_filename, int in_sequence);
+
+	ReviewWin *mpw = (ReviewWin *)v;
+	Fl_Hold_Browser *browser = (Fl_Hold_Browser *)w;
+	char *str = (char *)browser->text(browser->value());
+	if(str != NULL)
+	{
+		if(strcmp(str, "Cancel") != 0)
+		{
+			mpw->my_win->use_last_muxed = str;
+			mpw->my_win->extracting = -1;
+			int nn = extract_audio(mpw->my_win, &mpw->my_win->extracting, mpw->my_win->use_last_muxed, "audio.bin", mpw->my_win->audio_sample_rate, 1);
+			if(nn >= 0)
+			{
+				mpw->my_win->FlushMuxerArray();
+				mpw->my_win->extracting = 1;
+				nn = extract_video(mpw->my_win, &mpw->my_win->extracting, mpw->my_win->use_last_muxed, "video.bin", 0);
+				if(nn >= 0)
+				{
+					mpw->Shutdown();
+					mpw->Init("video.bin", 24);
+					mpw->redraw();
+				}
+			}
+		}
+	}
+	Fl_Window *win = browser->window();
+	if(win != NULL)
+	{
+		win->hide();
+	}
+}
+
 MuxPreviewWindow::MuxPreviewWindow(MyWin *in_win, int ww, int hh, char *title) : Fl_Double_Window(ww, hh, title)
 {
 int	loop;
@@ -59062,23 +59689,10 @@ int	loop;
 	progress_scrubber = new ProgressScrubber(in_win, this, 30, hh - 60, ww - 60, 40);
 	progress_scrubber->box(FL_NO_BOX);
 
-   	Fl_Menu_Button *popup_menu = new Fl_Menu_Button(0, 0, ww, hh - 60, "Muxed");
-   	popup_menu->type(Fl_Menu_Button::POPUP3);
-	popup_menu->color(BLACK);
-	popup_menu->textcolor(WHITE);
-	popup_menu->textsize(9);
-	popup_menu->labelsize(10);
-	popup_menu->box(FL_FLAT_BOX);
-	for(loop = 0;loop < 64;loop++)
-	{
-   		if(my_window->last_muxed_list[loop] != NULL)
-		{
-			popup_menu->add(my_window->last_muxed_list[loop], "", load_mux_video_cb, this);
-		}
-	}
-   	popup_menu->add("Cancel", "", NULL, this);
+	popup = NULL;
 
 	end();
+	set_non_modal();
 	callback(delete_mux_preview_window, this);
 }
 
@@ -59130,8 +59744,8 @@ char	buf[256];
 		if((width > 0) && (height > 0) && (ptr != NULL))
 		{
 			Mat mat = vlc_window->mat.clone();
-			cvtColor(mat, mat, COLOR_BGR2RGB);
-			fl_draw_image(mat.ptr(), 0, 0, width, height, depth);
+			cvtColor(mat, mat, COLOR_RGBA2RGB);
+			fl_draw_image(mat.ptr(), 0, 0, width, height, 3);
 			sprintf(buf, "%08d", vlc_window->current_frame);
 			fl_font(FL_HELVETICA, 9);
 			fl_color(YELLOW);
@@ -59148,6 +59762,8 @@ char	buf[256];
 
 int	MuxPreviewWindow::handle(int event)
 {
+int	loop;
+
 	int flag = 0;
 	if(event == FL_KEYBOARD)
 	{
@@ -59169,9 +59785,42 @@ int	MuxPreviewWindow::handle(int event)
 	|| (event == FL_RELEASE)
 	|| (event == FL_MOUSEWHEEL))
 	{
-		if(progress_scrubber != NULL)
+		if(Fl::event_state(FL_BUTTON3) == FL_BUTTON3)
 		{
-			flag = progress_scrubber->Handle(event);
+			if(popup == NULL)
+			{
+				popup = new PopupMenu(my_window, Fl::event_x_root(), Fl::event_y_root(), 260, 300);
+				popup->browser->callback(load_mux_video_popup_cb, this);
+			}
+			else
+			{
+				popup->resize(Fl::event_x_root(), Fl::event_y_root(), popup->w(), popup->h());
+			}
+			if(popup != NULL)
+			{
+				popup->browser->clear();
+				for(loop = 0;loop < 64;loop++)
+				{
+   					if(my_window->last_muxed_list[loop] != NULL)
+					{
+						if(access(my_window->last_muxed_list[loop], F_OK) == 0)
+						{
+							popup->browser->add(my_window->last_muxed_list[loop]);
+						}
+					}
+				}
+				popup->browser->add("Cancel");
+				popup->set_non_modal();
+				popup->Fit();
+				popup->show();
+			}
+		}
+		else
+		{
+			if(progress_scrubber != NULL)
+			{
+				flag = progress_scrubber->Handle(event);
+			}
 		}
 	}
 	if(flag == 0)
@@ -59194,11 +59843,41 @@ void	title_box_remove_cb(Fl_Widget *w, void *v)
 		{
 			tb->review_window->RemoveTitle(tb);
 		}
-		tb->review_window->add_text = 0;
 	}
 }
 
-TitleBox::TitleBox(MyWin *g_win, ReviewWin *in_win, int xx, int yy, int in_start_frame) : Fl_Window(xx, yy, 300, 100)
+void	titlebox_popup_cb(Fl_Widget *w, void *v)
+{
+	TitleBox *tb = (TitleBox *)v;
+	Fl_Hold_Browser *browser = (Fl_Hold_Browser *)w;
+	char *str = (char *)browser->text(browser->value());
+	if(str != NULL)
+	{
+		if(strcmp(str, "Change Font and Color") == 0)
+		{
+			int font_num = FL_HELVETICA;
+			char font_str[1024];
+			strcpy(font_str, "");
+			int red = 255;
+			int green = 255;
+			int blue = 255;
+			int alpha = 255;
+			get_font_and_color(tb->my_window, font_num, font_str, red, green, blue, alpha);
+			tb->my_color = fl_rgb_color(red, green, blue);
+			tb->font_num = font_num;
+			tb->text_in->textcolor(fl_rgb_color(red, green, blue));
+			tb->text_in->textfont(font_num);
+			tb->redraw();
+		}
+	}
+	Fl_Window *win = browser->window();
+	if(win != NULL)
+	{
+		win->hide();
+	}
+}
+
+TitleBox::TitleBox(MyWin *g_win, ReviewWin *in_win, int xx, int yy, int in_start_frame, int in_end_frame) : Fl_Window(xx, yy, 400, 200)
 {
 	my_window = g_win;
 	draw_mode = 0;
@@ -59208,15 +59887,23 @@ TitleBox::TitleBox(MyWin *g_win, ReviewWin *in_win, int xx, int yy, int in_start
 	my_color = WHITE;
 	font_num = FL_HELVETICA;
 	review_window = in_win;
-	font_size = 12;
+	font_size[0] = 12;
+	font_size[1] = 12;
+	popup = NULL;
 	start_frame = in_start_frame;
+	end_frame = in_end_frame;
+	current_frame = start_frame;
 	box(FL_FRAME_BOX);
 	color(BLACK);
 
-	text_in = new Fl_Multiline_Input(0, 0, w() - 10, 100);
+	text_in = new Fl_Multiline_Input(0, 0, w() - 10, h());
 	text_in->textcolor(WHITE);
+	text_in->cursor_color(WHITE);
 	text_in->color(BLACK);
 	text_in->box(FL_FRAME_BOX);
+	text_in->textfont(font_num);
+	text_in->textsize(font_size[0]);
+	text_in->take_focus();
 
 	remove_button = new MyButton(my_window, w() - 10, 0, 10, 10, "X");
 	remove_button->color(BLACK);
@@ -59238,19 +59925,50 @@ int	TitleBox::handle(int event)
 	{
 		case(FL_PUSH):
 		{
-			if(init_x < (w() - 10))
+			held = 1;
+			init_x = Fl::event_x();
+			init_y = Fl::event_y();
+			if(Fl::event_button() == FL_RIGHT_MOUSE)
 			{
-				held = 1;
-				init_x = Fl::event_x();
-				init_y = Fl::event_y();
-				flag = 1;
+				if(popup == NULL)
+				{
+					popup = new PopupMenu(my_window, Fl::event_x_root(), Fl::event_y_root(), 260, 300);
+					popup->browser->callback(titlebox_popup_cb, this);
+				}
+				else
+				{
+					popup->resize(Fl::event_x_root(), Fl::event_y_root(), popup->w(), popup->h());
+				}
+				if(popup != NULL)
+				{
+					popup->browser->clear();
+					popup->browser->add("Change Font and Color");
+					popup->browser->add("Cancel");
+					popup->set_modal();
+					popup->Fit();
+					popup->show();
+				}
 			}
+			else
+			{
+				if(Fl::event_inside(text_in))
+				{
+					flag = text_in->handle(event);
+				}
+				if(flag == 0)
+				{
+					if(Fl::event_inside(remove_button))
+					{
+						flag = remove_button->handle(event);
+					}
+				}
+			}
+			flag = 1;
 		}
 		break;
 		case(FL_RELEASE):
 		{
 			held = 0;
-			flag = 1;
 		}
 		break;
 		case(FL_DRAG):
@@ -59265,11 +59983,14 @@ int	TitleBox::handle(int event)
 		{
 			if(held == 0)
 			{
+				int idx = 0;
+				if(current_frame > start_frame) idx = 1;
+
 				int direction = Fl::event_dy();
-				font_size += direction;
-				if(font_size < 4) font_size = 4;
-				if(font_size > 128) font_size = 128;
-				text_in->textsize(font_size);
+				font_size[idx] += direction;
+				if(font_size[idx] < 4) font_size[idx] = 4;
+				if(font_size[idx] > 128) font_size[idx] = 128;
+				text_in->textsize(font_size[idx]);
 				redraw();
 			}
 			else
@@ -59284,14 +60005,6 @@ int	TitleBox::handle(int event)
 			flag = 1;
 		}
 		break;
-		case(FL_FOCUS):
-		case(FL_UNFOCUS):
-		case(FL_KEYBOARD):
-		{
-			flag = text_in->handle(event);
-			review_window->redraw();
-			redraw();
-		}
 	}
 	if(flag == 0)
 	{
@@ -59304,12 +60017,19 @@ void	TitleBox::draw()
 {
 	int nx = 0;
 	int ny = 0;
-	fl_font(font_num, font_size);
+
+	int fx = font_size[0];
+	int cf = current_frame - start_frame;
+	if(cf > 0)
+	{
+		fx = (int)(font_size[1] - font_size[0]) / cf;
+	}
+	fl_font(font_num, fx);
 	fl_measure(text_in->value(), nx, ny);
 	if(nx < 100) nx = 100;
 	if(ny < 30) ny = 30;
-	resize(x(), y(), nx + 10, ny + 10);
-	text_in->resize(0, 0, nx, ny + 10);
+	resize(x(), y(), nx + 10, ny);
+	text_in->resize(0, 0, nx, ny);
 	remove_button->resize(w() - 10, 0, 10, 10);
 	if(draw_mode == 0)
 	{
@@ -59317,9 +60037,63 @@ void	TitleBox::draw()
 	}
 	else
 	{
-		fl_color(WHITE);
+		fl_color(my_color);
 		fl_draw(text_in->value(), x(), y(), w(), h(), FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
 	}
+}
+
+void	title_image_remove_cb(Fl_Widget *w, void *v)
+{
+	TitleImage *tb = (TitleImage *)v;
+	if(tb != NULL)
+	{
+		tb->end_frame = tb->review_window->current_frame;
+		tb->hide();
+		if(tb->start_frame == tb->end_frame)
+		{
+			tb->review_window->RemoveTitleImage(tb);
+		}
+	}
+}
+
+TitleImage::TitleImage(MyWin *g_win, ReviewWin *in_win, int in_start_frame, int in_end_frame) : Fl_Window(0, 0, in_win->w(), in_win->h())
+{
+	my_window = g_win;
+	review_window = in_win;
+	start_frame = in_start_frame;
+	end_frame = in_end_frame;
+	current_frame = start_frame;
+
+	remove_button = new MyButton(my_window, w() - 10, 0, 10, 10, "X");
+	remove_button->color(BLACK);
+	remove_button->labelcolor(YELLOW);
+	remove_button->box(FL_FRAME_BOX);
+	remove_button->callback(title_image_remove_cb, this);
+
+	end();
+	hide();
+
+	char filename[4096];
+	int nn = my_file_chooser(my_window, "Select an image file", "*.{png,jpg,jpeg,webp,tiff,tif,bmp}", "./", filename);
+	if(nn > 0)
+	{
+		Mat out_mat = imread(filename, IMREAD_UNCHANGED);
+		cv::resize(out_mat, out_mat, cv::Size(review_window->w(), review_window->h()));
+		if(out_mat.channels() == 3)
+		{
+			cvtColor(out_mat, out_mat, COLOR_BGR2RGBA);
+		}
+		else
+		{
+			cvtColor(out_mat, out_mat, COLOR_BGRA2RGBA);
+		}
+		image = out_mat.clone();
+		review_window->redraw();
+	}
+}
+
+TitleImage::~TitleImage()
+{
 }
 
 // SECTION ************************************** REVIEW WINDOW ***************************************************
@@ -59332,54 +60106,7 @@ int	loop;
 	box(FL_FLAT_BOX);
 
 	my_win = in_my_win;
-	fd = -1;
-	sz = 0;
-	playing = 0;
-	playing_trimmed = 0;
-	encoding = 0;
-	scrubbing = 0;
-	frame_cnt = 0;
-	current_frame = 0;
-	single_frame = 0;
-	alt_frame = NULL;
-	crop_activated = 0;
-	crop_x = NULL;
-	crop_y = NULL;
-	speed = 1.0;
-	fps = 0.0;
-	add_text = 0;
-	title_box_cnt = 0;
-	strcpy(filename, in_filename);
-	for(loop = 0;loop < 1024;loop++)
-	{
-		title_box[loop] = NULL;
-	}
-	title_box_cnt = 0;
-	if(fps > 0)
-	{
-		delay = (double)(1.0 / (double)in_fps);
-	}
-	else
-	{
-		delay = 0.03;
-	}
-	frame_advance = 1.0;
-	start_time = 0;
-	frames_shown = 0;
-	sz = w() * h() * 3;
-	frame = (char *)malloc(sz);
-	fd = open(filename, O_RDONLY);
-	if(fd > -1)
-	{
-		long int length = filelength(fd);
-		length -= (sizeof(int) * 4);
-		frame_cnt = length / sz;
-		long int ts = 0;
-		int read_w = 0;
-		int read_h = 0;
-		int read_depth = 0;
-		int read_fps = 0;
-	}
+	Init(in_filename, in_fps);
 	controls = new Fl_Window(0, h() - 30, ww, 26);
 	controls->color(BLACK);
 
@@ -59461,8 +60188,16 @@ int	loop;
 		add_text_button->labelcolor(WHITE);
 		add_text_button->color(BLACK);
 		add_text_button->box(FL_FRAME_BOX);
-		add_text_button->copy_tooltip("Titles");
+		add_text_button->copy_tooltip("Add titles");
 		add_text_button->callback(add_text_cb, this);
+		nxx += 28;
+
+		add_image_button = new MyButton(my_win, nxx, 4, 17, 17, "I");
+		add_image_button->labelcolor(WHITE);
+		add_image_button->color(BLACK);
+		add_image_button->box(FL_FRAME_BOX);
+		add_image_button->copy_tooltip("Add an image");
+		add_image_button->callback(add_image_cb, this);
 		nxx += 28;
 	
 		speed_slider = new Fl_Value_Slider(w() - 180, 3, 160, 12);
@@ -59488,6 +60223,7 @@ int	loop;
 	scrub->box(FL_FRAME_BOX);
 	scrub->Range(frame_cnt);
 	scrub->Callback(scrub_cb, this);
+	end();
 
 	controls->show();
 	callback(close_review_window, this);
@@ -59499,7 +60235,66 @@ int	loop;
 	my_win->buttons_shown = 0;
 }
 
+void	ReviewWin::Init(char *in_filename, int in_fps)
+{
+int	loop;
+
+	fd = -1;
+	sz = 0;
+	playing = 0;
+	playing_trimmed = 0;
+	encoding = 0;
+	scrubbing = 0;
+	frame_cnt = 0;
+	current_frame = 0;
+	single_frame = 0;
+	alt_frame = NULL;
+	crop_activated = 0;
+	crop_x = NULL;
+	crop_y = NULL;
+	speed = 1.0;
+	fps = 0.0;
+	add_text = 0;
+	add_image = 0;
+	title_box_cnt = 0;
+	title_image_cnt = 0;
+	popup = NULL;
+	strcpy(filename, in_filename);
+	for(loop = 0;loop < 1024;loop++)
+	{
+		title_box[loop] = NULL;
+		title_image[loop] = NULL;
+	}
+	title_box_cnt = 0;
+	if(fps > 0)
+	{
+		delay = (double)(1.0 / (double)in_fps);
+	}
+	else
+	{
+		delay = 0.03;
+	}
+	frame_advance = 1.0;
+	start_time = 0;
+	frames_shown = 0;
+	sz = w() * h() * 3;
+	frame = (char *)malloc(sz);
+	fd = open(filename, O_RDONLY);
+	if(fd > -1)
+	{
+		long int length = filelength(fd);
+		length -= (sizeof(int) * 4);
+		frame_cnt = length / sz;
+	}
+}
+
 ReviewWin::~ReviewWin()
+{
+	Shutdown();
+	my_win->review_button->show();
+}
+
+void	ReviewWin::Shutdown()
 {
 int	loop;
 
@@ -59524,11 +60319,9 @@ int	loop;
 	{
 		if(title_box[loop] != NULL)
 		{
-			Fl::delete_widget(title_box[loop]);
-			title_box[loop] = NULL;
+			title_box[loop]->hide();
 		}
 	}
-	my_win->review_button->show();
 }
 
 int	ReviewWin::AdvanceToTrim(int fdx)
@@ -59563,9 +60356,9 @@ void	ReviewWin::RenderTitles()
 int	loop;
 int	inner;
 
-	if(title_box_cnt > 0)
+	if((title_box_cnt > 0) || (title_image_cnt > 0))
 	{
-		int local_fd = open("encode_video.bin", O_RDONLY);
+		int local_fd = open("encode_video.bin", O_RDWR);
 		if(local_fd > -1)
 		{
 			uchar *data_p = (uchar *)malloc(w() * h() * 3);
@@ -59573,6 +60366,33 @@ int	inner;
 			{
 				Fl_Offscreen off = fl_create_offscreen(w(), h());
 				fl_begin_offscreen(off);
+				for(loop = 0;loop < title_image_cnt;loop++)
+				{
+					if(title_image[loop] != NULL)
+					{
+						int start = title_image[loop]->start_frame;
+						int end = title_image[loop]->end_frame;
+						for(inner = start;inner < end;inner++)
+						{
+							long int ts = 0;
+							off_t nn = (off_t)((off_t)inner * (off_t)(sz + sizeof(long int))) + (off_t)(sizeof(int) * 4);
+							lseek(local_fd, nn, SEEK_SET);
+							if(read_frame(local_fd, frame, sz, &ts) == sz)
+							{
+								Mat use_mat = Mat(h(), w(), CV_8UC3, frame);
+								overlay_with_alpha(use_mat, title_image[loop]->image);
+								fl_draw_image((unsigned char *)use_mat.ptr(), 0, 0, w(), h(), 3);
+
+								uchar *p = fl_read_image(data_p, 0, 0, w(), h(), 0);
+								if(p != NULL)
+								{
+									lseek(local_fd, nn, SEEK_SET);
+									write_frame(local_fd, data_p, sz, ts);
+								}
+							}
+						}
+					}
+				}
 				for(loop = 0;loop < title_box_cnt;loop++)
 				{
 					if(title_box[loop] != NULL)
@@ -59595,7 +60415,7 @@ int	inner;
 								int ww = title_box[loop]->w();
 								int hh = title_box[loop]->h();
 								int tb_color = title_box[loop]->my_color;
-								int fs = title_box[loop]->font_size;
+								int fs = title_box[loop]->font_size[0];
 								int fn = title_box[loop]->font_num;
 								fl_color(tb_color);
 								fl_font(fn, fs);
@@ -59692,108 +60512,178 @@ int	loop;
 		break;
 		case(FL_KEYBOARD):
 		{
-			int key = Fl::event_key();
-			if((key == '.') || (key == FL_Up))
+			int no_go = 0;
+			for(loop = 0;((loop < title_box_cnt) && (flag == 0));loop++)
 			{
-				if(current_frame < (frame_cnt - 1))
+				if(title_box[loop] != NULL)
 				{
-					single_frame = 1;
-					playing = 1;
-					current_frame++;
-					redraw();
+					if(Fl::event_inside(title_box[loop]))
+					{
+						no_go = 1;
+					}
 				}
-				flag = 1;
 			}
-			if((key == ',') || (key == FL_Down))
+			if(no_go == 0)
 			{
-				if(current_frame > 0)
+				int key = Fl::event_key();
+				if((key == '.') || (key == FL_Up))
 				{
-					single_frame = 1;
-					playing = 1;
-					current_frame--;
-					redraw();
+					if(current_frame < (frame_cnt - 1))
+					{
+						single_frame = 1;
+						playing = 1;
+						current_frame++;
+						redraw();
+					}
+					flag = 1;
 				}
-				flag = 1;
-			}
-			if(key == ' ')
-			{
-				if(playing == 1)
+				if((key == ',') || (key == FL_Down))
 				{
-					playing = 0;
+					if(current_frame > 0)
+					{
+						single_frame = 1;
+						playing = 1;
+						current_frame--;
+						redraw();
+					}
+					flag = 1;
 				}
-				else
+				if(key == ' ')
 				{
-					playing = 1;
+					if(playing == 1)
+					{
+						playing = 0;
+					}
+					else
+					{
+						playing = 1;
+					}
+					flag = 1;
 				}
-				flag = 1;
 			}
 		}
 		break;
 		case(FL_PUSH):
 		{
-			if(crop_activated == 1)
+			if(Fl::event_state(FL_BUTTON3) == FL_BUTTON3)
 			{
-				if((current_frame > -1) && (current_frame < frame_cnt))
+				if(popup == NULL)
+				{
+					popup = new PopupMenu(my_win, Fl::event_x_root(), Fl::event_y_root(), 260, 300);
+					popup->browser->callback(load_used_mux_video_popup_cb, this);
+				}
+				else
+				{
+					popup->resize(Fl::event_x_root(), Fl::event_y_root(), popup->w(), popup->h());
+				}
+				if(popup != NULL)
+				{
+					popup->browser->clear();
+					for(loop = 0;loop < 64;loop++)
+					{
+   						if(my_win->last_muxed_list[loop] != NULL)
+						{
+							if(access(my_win->last_muxed_list[loop], F_OK) == 0)
+							{
+								popup->browser->add(my_win->last_muxed_list[loop]);
+							}
+						}
+					}
+					popup->browser->add("Cancel");
+					popup->set_modal();
+					popup->Fit();
+					popup->show();
+				}
+			}
+			else
+			{
+				if(crop_activated == 1)
+				{
+					if((current_frame > -1) && (current_frame < frame_cnt))
+					{
+						int xx = Fl::event_x();
+						int yy = Fl::event_y();
+						if(yy < (h() - 52))
+						{
+							xx -= 360;
+							yy -= 240;
+							if(xx < 0) xx = 0;
+							if(yy < 0) yy = 0;
+							if((xx + 360) > w()) xx = w() - 640;
+							if((yy + 240) > h()) yy = h() - 480;
+							for(loop = current_frame;loop < frame_cnt;loop++)
+							{
+								crop_x[loop] = xx;
+								crop_y[loop] = yy;
+							}
+							flag = 1;
+							redraw();
+						}
+					}
+				}
+				else if(add_text != 0)
 				{
 					int xx = Fl::event_x();
 					int yy = Fl::event_y();
 					if(yy < (h() - 52))
 					{
-						xx -= 360;
-						yy -= 240;
-						if(xx < 0) xx = 0;
-						if(yy < 0) yy = 0;
-						if((xx + 360) > w()) xx = w() - 640;
-						if((yy + 240) > h()) yy = h() - 480;
-						for(loop = current_frame;loop < frame_cnt;loop++)
+						int no_go = 0;
+						for(loop = 0;((loop < title_box_cnt) && (flag == 0));loop++)
 						{
-							crop_x[loop] = xx;
-							crop_y[loop] = yy;
-						}
-						flag = 1;
-						redraw();
-					}
-				}
-			}
-			else if(add_text == 1)
-			{
-				int xx = Fl::event_x();
-				int yy = Fl::event_y();
-				if(yy < (h() - 52))
-				{
-					for(loop = 0;loop < title_box_cnt;loop++)
-					{
-						if(title_box[loop] != NULL)
-						{
-							flag = title_box[loop]->handle(event);
-						}
-					}
-					if(flag == 0)
-					{
-						if(title_box_cnt < 1023)
-						{
-							TitleBox *title = new TitleBox(my_win, this, xx, yy, current_frame);
-							add(title);
-							title->show();
-							int done = 0;
-							for(loop = 0;((loop < title_box_cnt) && (done == 0));loop++)
+							if(title_box[loop] != NULL)
 							{
-								if(title_box[loop] == NULL)
+								if(Fl::event_inside(title_box[loop]))
 								{
-									title_box[loop] = title;
-									done = 1;
+									no_go = 1;
 								}
 							}
-							if(done == 0)
-							{
-								title_box[title_box_cnt] = title;
-								title_box_cnt++;
-							}
-							add_text = 2;
-							add_text_button->color(BLACK);
-							add_text_button->labelcolor(WHITE);
 						}
-						flag = 1;
+						if(no_go == 0)
+						{
+							if(title_box_cnt < 1023)
+							{
+								TitleBox *title = new TitleBox(my_win, this, xx, yy, current_frame, frame_cnt - 1);
+								add(title);
+								title->show();
+								int done = 0;
+								for(loop = 0;((loop < title_box_cnt) && (done == 0));loop++)
+								{
+									if(title_box[loop] == NULL)
+									{
+										title_box[loop] = title;
+										done = 1;
+									}
+								}
+								if(done == 0)
+								{
+									title_box[title_box_cnt] = title;
+									title_box_cnt++;
+								}
+								add_text = 2;
+								add_text_button->color(BLACK);
+								add_text_button->labelcolor(WHITE);
+							}
+							flag = 1;
+						}
+					}
+				}
+				int xx = Fl::event_x();
+				int yy = Fl::event_y();
+				if((xx > w() - 20) && (xx < w() - 10) && (yy > 10) && (yy < 20))
+				{
+					int done = 0;
+					for(loop = title_image_cnt - 1;((loop >= 0) && (done == 0));loop--)
+					{
+						if(title_image[loop] != NULL)
+						{
+							if((current_frame >= title_image[loop]->start_frame)
+							&& (current_frame < title_image[loop]->end_frame))
+							{
+								title_image[loop]->end_frame = current_frame;
+								done = 1;
+								redraw();
+							}
+						}
 					}
 				}
 			}
@@ -59847,6 +60737,19 @@ int	loop;
 	if(flag == 0)
 	{
 		flag = Fl_Double_Window::handle(event);
+		if(event == FL_KEYBOARD)
+		{
+			for(loop = 0;((loop < title_box_cnt) && (flag == 0));loop++)
+			{
+				if(title_box[loop] != NULL)
+				{
+					if(Fl::event_inside(title_box[loop]))
+					{
+						flag = title_box[loop]->handle(event);
+					}
+				}
+			}
+		}
 	}
 	return(flag);
 }
@@ -59856,6 +60759,7 @@ void	ReviewWin::draw()
 static char buf[256];
 int	loop;
 
+	Mat use_mat;
 	Camera *cam = main->camera[main->displayed_source];
 	Fl_Double_Window::draw();
 	if((fd != -1) && ((playing > 0) || (scrubbing == 1)))
@@ -59884,6 +60788,8 @@ int	loop;
 			if(go_ahead == 1)
 			{
 				fl_draw_image((unsigned char *)frame, 0, 0, w(), h(), 3);
+				Mat src = Mat(h(), w(), CV_8UC3, frame);
+				use_mat = src.clone();
 			}
 			if(single_frame == 0)
 			{
@@ -59920,6 +60826,8 @@ int	loop;
 		if(alt_frame != NULL)
 		{
 			fl_draw_image((unsigned char *)alt_frame, 0, 0, w(), h(), 3);
+			Mat src = Mat(h(), w(), CV_8UC3, alt_frame);
+			use_mat = src.clone();
 		}
 		else
 		{
@@ -59929,6 +60837,8 @@ int	loop;
 			if(read_frame(fd, frame, sz, &ts) == sz)
 			{
 				fl_draw_image((unsigned char *)frame, 0, 0, w(), h(), 3);
+				Mat src = Mat(h(), w(), CV_8UC3, frame);
+				use_mat = src.clone();
 			}
 		}
 		frames_shown = 0;
@@ -59951,6 +60861,21 @@ int	loop;
 			else if(d_fps > cam->fps)
 			{
 				delay += 0.00001;
+			}
+		}
+	}
+	for(loop = 0;loop < title_image_cnt;loop++)
+	{
+		if(title_image[loop] != NULL)
+		{
+			if((current_frame >= title_image[loop]->start_frame)
+			&& (current_frame < title_image[loop]->end_frame))
+			{
+				overlay_with_alpha(use_mat, title_image[loop]->image);
+				fl_draw_image((unsigned char *)use_mat.ptr(), 0, 0, use_mat.cols, use_mat.rows);
+				fl_color(YELLOW);
+				fl_rect(w() - 20, 10, 10, 10);
+				fl_draw("X", w() - 20, 10, 10, 10, FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
 			}
 		}
 	}
@@ -60000,6 +60925,22 @@ int	loop;
 		{
 			Fl::delete_widget(title_box[loop]);
 			title_box[loop] = NULL;
+			done = 1;
+		}
+	}
+}
+
+void	ReviewWin::RemoveTitleImage(TitleImage *tb)
+{
+int	loop;
+
+	int done = 0;
+	for(loop = 0;((loop < title_image_cnt) && (done == 0));loop++)
+	{
+		if(title_image[loop] == tb)
+		{
+			Fl::delete_widget(title_image[loop]);
+			title_image[loop] = NULL;
 			done = 1;
 		}
 	}
@@ -61859,7 +62800,7 @@ int	loop;
 		{
 			int nx = Descale(Fl::event_x());
 			int ny = Fl::event_y();
-			if(ny < 10)
+			if(ny < h())
 			{
 				Value(nx);
 				mode = 0;
@@ -66427,7 +67368,6 @@ int	loop;
 	dark_gray_color_button->callback(gui_setting_dark_gray_color_cb, this);
 	yp += 22;
 	red_color_box = new Fl_Box(10, yp, 160, 20, "Red Color");
-	red_color_box = new Fl_Box(10, yp, 160, 20, "Red Color");
 	red_color_box->box(FL_FRAME_BOX);
 	red_color_box->color(BLACK);
 	red_color_box->labelcolor(YELLOW);
@@ -66536,6 +67476,146 @@ int	loop;
 }
 
 GUI_SettingsWindow::~GUI_SettingsWindow()
+{
+}
+
+// SECTION ************************************** FONT AND COLOR WINDOW *******************************************************
+
+void	font_and_color_color_panel_cb(Fl_Widget *w, void *v)
+{
+	FontAndColorDialog *facd = (FontAndColorDialog *)v;
+
+	int nn = facd->font_browser->value();
+	char *font_str = (char *)facd->font_browser->text(nn);
+	if(font_str != NULL)
+	{
+		facd->sample->textfont(nn - 1);
+		strcpy(facd->font_str, font_str);
+		facd->font_number = nn - 1;
+	}
+	int r = facd->local_red;
+	int g = facd->local_green;
+	int b = facd->local_blue;
+	int avg = (r + g + b) / 3;
+	if(avg < 80)
+	{
+		facd->sample->color(WHITE);
+	}
+	else
+	{
+		facd->sample->color(BLACK);
+	}
+	facd->sample->textcolor(fl_rgb_color(r, g, b));
+	facd->sample->redraw();
+	facd->redraw();
+}
+
+void	font_and_color_accept_cb(Fl_Widget *w, void *v)
+{
+	FontAndColorDialog *facd = (FontAndColorDialog *)v;
+	facd->fac->font_number = facd->font_number;
+	strcpy(facd->fac->font_str, facd->font_str);
+	facd->fac->red = facd->local_red;
+	facd->fac->green = facd->local_green;
+	facd->fac->blue = facd->local_blue;
+	facd->fac->alpha = facd->local_alpha;
+	facd->hide();
+	Fl::delete_widget(facd);
+}
+
+FontAndColor::FontAndColor()
+{
+	font_number = -1;
+	strcpy(font_str, "");
+
+	red = -1;
+	green = -1;
+	blue = -1;
+	alpha = -1;
+}
+
+FontAndColor::~FontAndColor()
+{
+}
+
+FontAndColorDialog::FontAndColorDialog(MyWin *in_win, FontAndColor *in_fac) : Dialog(in_win, 425, 500, "Fonts and Colors")
+{
+int	loop;
+
+	my_window = in_win;
+	fac = in_fac;
+	font_number = -1;
+	strcpy(font_str, "");
+	int new_yp = 20;
+	clear_visible_focus();
+	set_modal();
+	int yp = 40;
+
+	font_number = in_fac->font_number;
+	strcpy(font_str, in_fac->font_str);
+	local_red = in_fac->red;
+	local_green = in_fac->green;
+	local_blue = in_fac->blue;
+	local_alpha = in_fac->alpha;
+
+	sample = new MyInput(60, yp, 245, 20, "Sample");
+	sample->textsize(11);
+	sample->labelsize(9);
+	sample->box(FL_FRAME_BOX);
+	sample->textcolor(fl_rgb_color(local_red, local_green, local_blue));
+	sample->color(BLACK);
+	sample->value("This is sample text");
+	yp += 42;
+
+	color_panel = new ColorPanel(in_win, &local_red, &local_green, &local_blue, &local_alpha, 20, yp, 350, 142);
+	color_panel->red->copy_tooltip("The red value for the text");
+	color_panel->green->copy_tooltip("The green value for the text");
+	color_panel->blue->copy_tooltip("The blue value for the text");
+	color_panel->alpha->copy_tooltip("The alpha value for the text");
+	color_panel->Callback(font_and_color_color_panel_cb, this);
+	yp += 175;
+
+	font_browser = new FontBrowser(60, yp, 300, 180, "Font");
+	font_browser->color(BLACK);
+	font_browser->box(FL_FRAME_BOX);
+	font_browser->textcolor(WHITE);
+	font_browser->labelcolor(WHITE);
+	font_browser->labelsize(11);
+	font_browser->textsize(9);
+	font_browser->selection_color(YELLOW);
+	font_browser->scrollbar.color(BLACK);
+	font_browser->align(FL_ALIGN_TOP);
+	font_browser->callback(font_and_color_color_panel_cb, this);
+
+	int nn = my_window->number_of_fonts;
+	for(loop = 0;loop < nn;loop++)
+	{
+		char *str = (char *)Fl::get_font_name(loop);
+		font_browser->add(str);
+	}
+	font_browser->select(1);
+	yp += 210;
+
+	MyButton *accept = new MyButton(my_window, (w() / 3) - 30, yp, 60, 20, "Accept");
+	accept->box(FL_FRAME_BOX);
+	accept->color(BLACK);
+	accept->labelcolor(YELLOW);
+	accept->labelsize(9);
+	accept->align(FL_ALIGN_CENTER);
+	accept->callback(font_and_color_accept_cb, this);
+
+	MyButton *cancel = new MyButton(my_window, ((w() / 3) * 2) - 30, yp, 60, 20, "Cancel");
+	cancel->box(FL_FRAME_BOX);
+	cancel->color(BLACK);
+	cancel->labelcolor(YELLOW);
+	cancel->labelsize(9);
+	cancel->align(FL_ALIGN_CENTER);
+	cancel->callback(generic_cancel_cb, this);
+	yp += 22;
+	end();
+}
+
+FontAndColorDialog::~FontAndColorDialog()
 {
 }
 
@@ -66845,6 +67925,28 @@ char	buf[256];
 	fpw->hide();
 }
 
+void	cancel_python_filter_cb(Fl_Widget *w, void *v)
+{
+void	python_xderefrence(void *ptr);
+
+	MyWin *win = (MyWin *)v;
+	if(w == win->python_filter_button)
+	{
+		Camera *cam = win->DisplayedCamera();
+		win->python_filter_button->copy_label("Python Filter");
+		win->python_filter_button->callback(camera_python_filter_button_cb, win);
+		python_xderefrence(cam->python_filter_function);
+		cam->python_filter_function = NULL;
+	}
+	else if(w == win->python_output_filter_button)
+	{
+		win->python_output_filter_button->copy_label("Python Filter Output");
+		win->python_output_filter_button->callback(output_python_filter_button_cb, win);
+		python_xderefrence(win->python_filter_function);
+		win->python_filter_function = NULL;
+	}
+}
+
 void	python_filter_accept_cb(Fl_Widget *w, void *v)
 {
 void *python_prepare_code(char *module_name, char *function_name, char *code);
@@ -66872,10 +67974,14 @@ void *python_prepare_code(char *module_name, char *function_name, char *code);
 			if(pfw->use_camera == 1)
 			{
 				cam->python_filter_function = rr;
+				win->python_filter_button->copy_label("Stop Python Filter");
+				win->python_filter_button->callback(cancel_python_filter_cb, win);
 			}
 			else
 			{
 				win->python_filter_function = rr;
+				win->python_output_filter_button->copy_label("Stop Python Filter");
+				win->python_output_filter_button->callback(cancel_python_filter_cb, win);
 			}
 		}
 		else
@@ -66914,6 +68020,8 @@ void *python_prepare_code(char *module_name, char *function_name, char *code);
 
 void	python_filter_clear_cb(Fl_Widget *w, void *v)
 {
+void	python_xderefrence(void *ptr);
+
 	PythonFilterWindow *pfw = (PythonFilterWindow *)v;
 	MyWin *win = pfw->my_window;
 	Camera *cam = win->DisplayedCamera();
@@ -66925,6 +68033,9 @@ void	python_filter_clear_cb(Fl_Widget *w, void *v)
 			free(cam->python_filter_code);
 			cam->python_filter_code = NULL;
 		}
+		win->python_filter_button->copy_label("Python Filter");
+		win->python_filter_button->callback(camera_python_filter_button_cb, win);
+		python_xderefrence(cam->python_filter_function);
 		cam->python_filter_function = NULL;
 	}
 	else
@@ -66934,6 +68045,9 @@ void	python_filter_clear_cb(Fl_Widget *w, void *v)
 			free(win->python_filter_code);
 			win->python_filter_code = NULL;
 		}
+		win->python_output_filter_button->copy_label("Python Filter Output");
+		win->python_output_filter_button->callback(output_python_filter_button_cb, win);
+		python_xderefrence(win->python_filter_function);
 		win->python_filter_function = NULL;
 	}
 	pfw->code->value("");
@@ -66945,7 +68059,7 @@ void	python_filter_load_cb(Fl_Widget *w, void *v)
 	PythonFilterWindow *pfw = (PythonFilterWindow *)v;
 	MyWin *win = pfw->my_window;
 	char filename[4096];
-	int r = my_file_chooser(win, "Select an Python file", "*.{py}", "./", filename);
+	int r = my_file_chooser(win, "Select a Python file", "*.{py}", "./", filename);
 	if(r > 0)
 	{
 		if(strlen(filename) > 0)
@@ -66955,6 +68069,30 @@ void	python_filter_load_cb(Fl_Widget *w, void *v)
 			{
 				pfw->code->value(code);
 				free(code);
+			}
+		}
+	}
+}
+
+void	python_filter_save_cb(Fl_Widget *w, void *v)
+{
+	PythonFilterWindow *pfw = (PythonFilterWindow *)v;
+	MyWin *win = pfw->my_window;
+	char filename[4096];
+	int r = my_file_chooser(win, "Save to a Python file", "*.{py}", "./", filename, 0, 1);
+	if(r > 0)
+	{
+		if(strlen(filename) > 0)
+		{
+			char *str = (char *)pfw->code->value();
+			if(str != NULL)
+			{
+				FILE *fp = fopen(filename, "w");
+				if(fp != NULL)
+				{
+					fprintf(fp, "%s", str);
+					fclose(fp);
+				}
 			}
 		}
 	}
@@ -66972,7 +68110,7 @@ PythonFilterWindow::PythonFilterWindow(MyWin *in_win) : Dialog(in_win, 800, 600,
 	code->color(BLACK);
 	code->box(FL_FRAME_BOX);
 
-	int xx = ((w() - 20) / 5) * 1;
+	int xx = ((w() - 20) / 6) * 1;
 	accept = new MyButton(my_window, xx, h() - 25, 60, 20, "Accept");
 	accept->box(FL_FLAT_BOX);
 	accept->color(BLACK);
@@ -66982,7 +68120,7 @@ PythonFilterWindow::PythonFilterWindow(MyWin *in_win) : Dialog(in_win, 800, 600,
 	accept->copy_tooltip("Accept the Python program as frame filter");
 	accept->callback(python_filter_accept_cb, this);
 
-	xx = ((w() - 20) / 5) * 2;
+	xx = ((w() - 20) / 6) * 2;
 	clear = new MyButton(my_window, xx, h() - 25, 60, 20, "Clear");
 	clear->box(FL_FLAT_BOX);
 	clear->color(BLACK);
@@ -66992,7 +68130,7 @@ PythonFilterWindow::PythonFilterWindow(MyWin *in_win) : Dialog(in_win, 800, 600,
 	clear->copy_tooltip("Erase the program");
 	clear->callback(python_filter_clear_cb, this);
 
-	xx = ((w() - 20) / 5) * 3;
+	xx = ((w() - 20) / 6) * 3;
 	load = new MyButton(my_window, xx, h() - 25, 60, 20, "Load");
 	load->box(FL_FLAT_BOX);
 	load->color(BLACK);
@@ -67002,7 +68140,17 @@ PythonFilterWindow::PythonFilterWindow(MyWin *in_win) : Dialog(in_win, 800, 600,
 	load->copy_tooltip("Load a Python program from a file");
 	load->callback(python_filter_load_cb, this);
 
-	xx = ((w() - 20) / 5) * 4;
+	xx = ((w() - 20) / 6) * 4;
+	save = new MyButton(my_window, xx, h() - 25, 60, 20, "Save");
+	save->box(FL_FLAT_BOX);
+	save->color(BLACK);
+	save->labelcolor(YELLOW);
+	save->labelsize(12);
+	save->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	save->copy_tooltip("Save the Python program to a file");
+	save->callback(python_filter_save_cb, this);
+
+	xx = ((w() - 20) / 6) * 5;
 	cancel = new MyButton(my_window, xx, h() - 25, 60, 20, "Cancel");
 	cancel->box(FL_FLAT_BOX);
 	cancel->color(BLACK);
@@ -67011,7 +68159,6 @@ PythonFilterWindow::PythonFilterWindow(MyWin *in_win) : Dialog(in_win, 800, 600,
 	cancel->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
 	cancel->copy_tooltip("Cancel and close the dialog");
 	cancel->callback(hide_window_cb, this);
-
 
 	end();
 }
@@ -67613,7 +68760,7 @@ int	loop, inner;
 
 	int cnt = my_window->PopulateCameraCaps();
 
-	Fl_Scroll *scroll = new Fl_Scroll(2, new_yp + 20, w() - 5, 180 - (new_yp + 20));
+	SimpleScroll *scroll = new SimpleScroll(2, new_yp + 20, w() - 5, 180 - (new_yp + 20));
 	int y_cnt = new_yp + 25;
 	for(loop = 0;loop < cnt;loop++)
 	{
@@ -67717,7 +68864,6 @@ int	loop, inner;
 	scroll->end();
 	scroll->box(FL_FLAT_BOX);
 	scroll->color(BLACK);
-	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->hscrollbar.hide();
 	end();
 	int y_sz = y_cnt;
@@ -68027,6 +69173,359 @@ void	TransitionWindow::Update()
 		selection->hide();
 	}
 	redraw();
+}
+
+// SECTION ****************************************** CREATE PYTHON BUTTON WINDOW ***************************************************
+
+PythonRunner::PythonRunner(void *in_function, int in_frame_cnt)
+{
+	function = in_function;
+	frame_cnt = in_frame_cnt;
+}
+
+PythonRunner::~PythonRunner()
+{
+}
+
+void	python_button_popup_cb(Fl_Widget *w, void *v)
+{
+	PythonButton *pb = (PythonButton *)v;
+	if(pb != NULL)
+	{
+		pb->popup->hide();
+		Fl_Hold_Browser *browser = (Fl_Hold_Browser *)w;
+		char *str = (char *)browser->text(browser->value());
+		if(str != NULL)
+		{
+			if(strcmp(str, "Delete") == 0)
+			{
+				Fl_Pack *pack = (Fl_Pack *)pb->parent();
+				pack->remove(pb);
+				if(pack->children() < 1)
+				{
+					Fl_Window *win = pack->window();
+					if(win != NULL)
+					{
+						win->hide();
+					}
+				}
+				Fl::delete_widget(pb);
+				pb->my_window->python_button_cnt = pack->children();
+			}
+			else if(strcmp(str, "Edit") == 0)
+			{
+				char *lbl = (char *)pb->label();
+				char *path = pb->path;
+				char *entry_function = pb->entry_function;
+				int frame_cnt = pb->frame_cnt;
+				pb->my_window->create_python_button_window->button_label->value(lbl);
+				pb->my_window->create_python_button_window->filename->value(path);
+				pb->my_window->create_python_button_window->function_name->value(entry_function);
+				pb->my_window->create_python_button_window->frame_cnt->value(frame_cnt);
+				pb->my_window->create_python_button_window->mode = CREATE_PYTHON_BUTTON_MODE_EDIT;
+				pb->my_window->create_python_button_window->edit_button = pb;
+				pb->my_window->create_python_button_window->show();
+				pb->my_window->create_python_button_window->set_non_modal();
+			}
+		}
+	}
+}
+
+void	MyWin::ReadyPythonCode(char *path, char *entry_function, int frame_cnt)
+{
+void	*python_prepare_code(char *module_name, char *function_name, char *code);
+int		loop;
+char	buf[256];
+
+	char *code = read_whole_text_file(path);
+	if(code != NULL)
+	{
+		sprintf(buf, "python_button_env_%ld", precise_time());
+		void *python_function = python_prepare_code(buf, entry_function, code);
+		if(python_function != NULL)
+		{
+			if(python_runner_cnt < 128)
+			{
+				python_runner[python_runner_cnt] = new PythonRunner(python_function, frame_cnt);
+				python_runner_cnt++;
+			}
+		}
+		free(code);
+	}
+}
+
+void	python_button_cb(Fl_Widget *w, void *v)
+{
+	PythonButton *pb = (PythonButton *)v;
+	if(pb != NULL)
+	{
+		if(pb->path != NULL)
+		{
+			if(pb->entry_function != NULL)
+			{
+				pb->my_window->ReadyPythonCode(pb->path, pb->entry_function, pb->frame_cnt);
+			}
+		}
+	}
+}
+
+PythonButton::PythonButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *lbl) : MyButton(in_win, xx, yy, ww, hh, lbl)
+{
+	my_window = in_win;
+	popup = NULL;
+	path = NULL;
+	entry_function = NULL;
+	frame_cnt = 30;
+	callback(python_button_cb, this);
+}
+
+PythonButton::~PythonButton()
+{
+	if(path != NULL)
+	{
+		free(path);
+	}
+	if(entry_function != NULL)
+	{
+		free(entry_function);
+	}
+}
+
+int	PythonButton::handle(int event)
+{
+	int flag = 0;
+	if(event == FL_PUSH)
+	{
+		if(Fl::event_state(FL_BUTTON3) == FL_BUTTON3)
+		{
+			if(popup == NULL)
+			{
+				popup = new PopupMenu(my_window, Fl::event_x_root(), Fl::event_y_root(), 160, 300);
+				popup->browser->callback(python_button_popup_cb, this);
+			}
+			else
+			{
+				popup->resize(Fl::event_x_root(), Fl::event_y_root(), popup->w(), popup->h());
+			}
+			if(popup != NULL)
+			{
+				popup->browser->clear();
+				popup->browser->add("Edit");
+				popup->browser->add("Delete");
+				popup->browser->add("Cancel");
+				popup->set_non_modal();
+				popup->Fit();
+				popup->show();
+			}
+			flag = 1;
+		}
+	}
+	if(flag == 0)
+	{
+		flag = MyButton::handle(event);
+	}
+	return(flag);
+}
+
+PythonButtonWindow::PythonButtonWindow(MyWin *in_win) : Dialog(in_win, 220, 400, "Python Buttons")
+{
+	my_window = in_win;
+	scroll = new SimpleScroll(2, 20, w() - 5, h() - 20);
+	pack = new Fl_Pack(scroll->x(), scroll->y(), scroll->w(), 0);
+	pack->box(FL_NO_BOX);
+	pack->color(WHITE);
+	pack->end();
+	scroll->end();
+}
+
+PythonButtonWindow::~PythonButtonWindow()
+{
+}
+
+void	PythonButtonWindow::show()
+{
+	if(pack->h() < scroll->h())
+	{
+		scroll->resize(scroll->x(), scroll->y(), scroll->w(), pack->h());
+	}
+	else if(pack->h() > scroll->h())
+	{
+		if(pack->h() < 400)
+		{
+			scroll->resize(scroll->x(), scroll->y(), scroll->w(), pack->h());
+		}
+	}
+	resize(x(), y(), w(), scroll->h() + 24);
+	Dialog::show();
+}
+
+void	python_button_file_cb(Fl_Widget *w, void *v)
+{
+char	filename[4096];
+
+	CreatePythonButtonWindow *cpbw = (CreatePythonButtonWindow *)v;
+	strcpy(filename, "");
+	int nn = my_file_chooser(cpbw->my_window, "Select a Python file", "*.{py}", "./", filename);
+	if(nn > 0)
+	{
+		cpbw->filename->value(filename);
+	}
+}
+
+void	create_python_button_accept_cb(Fl_Widget *w, void *v)
+{
+	CreatePythonButtonWindow *cpbw = (CreatePythonButtonWindow *)v;
+	char *lbl = (char *)cpbw->button_label->value();
+	char *path = (char *)cpbw->filename->value();
+	char *entry = (char *)cpbw->function_name->value();
+	char *frames_str = (char *)cpbw->frame_cnt->value();
+	if((lbl != NULL) && (path != NULL) && (entry != NULL) && (frames_str != NULL))
+	{
+		if((strlen(lbl) > 0) && (strlen(path) > 0))
+		{
+			int nn = atoi(frames_str);
+			if(nn > 0)
+			{
+				if(access(path, F_OK) == 0)
+				{
+					if(cpbw->mode == CREATE_PYTHON_BUTTON_MODE_CREATE)
+					{
+						PythonButton *button = new PythonButton(cpbw->my_window, 0, 0, 220, 20, lbl);
+						button->copy_label(lbl);
+						button->path = strdup(path);
+						button->entry_function = strdup(entry);
+						button->frame_cnt = nn;
+		
+						Fl_Pack *pack = cpbw->my_window->python_button_window->pack;
+						pack->add(button);
+						pack->resize(pack->x(), pack->y(), pack->w(), pack->children() * 20);
+						pack->redraw();
+						cpbw->my_window->python_button_cnt++;
+					}
+					else if(cpbw->mode == CREATE_PYTHON_BUTTON_MODE_EDIT)
+					{
+						if(cpbw->edit_button != NULL)
+						{
+							cpbw->edit_button->copy_label(lbl);
+							cpbw->edit_button->path = strdup(path);
+							cpbw->edit_button->entry_function = strdup(entry);
+							cpbw->edit_button->frame_cnt = nn;
+							cpbw->edit_button = NULL;
+						}
+						cpbw->mode = CREATE_PYTHON_BUTTON_MODE_CREATE;
+					}
+					cpbw->my_window->python_button_window->set_non_modal();
+					cpbw->my_window->python_button_window->show();
+	
+					cpbw->error_box->label("");
+					cpbw->hide();
+				}
+				else
+				{
+					cpbw->error_box->label("Error: File must exist");
+				}
+			}
+			else
+			{
+				cpbw->error_box->label("Error: Frames must be greater than zero");
+			}
+		}
+		else
+		{
+			cpbw->error_box->label("Error: Label and File are required fields");
+		}
+	}
+	else
+	{
+		cpbw->error_box->label("Error: Label and File are required fields");
+	}
+}
+
+CreatePythonButtonWindow::CreatePythonButtonWindow(MyWin *in_win) : Dialog(in_win, 350, 160, "Create Python Button")
+{
+	my_window = in_win;
+	mode = CREATE_PYTHON_BUTTON_MODE_CREATE;
+	edit_button = NULL;
+
+	int yp = 30;
+	button_label = new MyInput(60, yp, 260, 20, "Label");
+	button_label->textsize(11);
+	button_label->labelsize(9);
+	button_label->box(FL_FRAME_BOX);
+	button_label->color(BLACK);
+	button_label->textcolor(WHITE);
+	button_label->value("");
+	button_label->copy_tooltip("Set the label for the new button");
+	yp += 22;
+
+	filename = new MyInput(60, yp, 260, 20, "File");
+	filename->textsize(11);
+	filename->labelsize(9);
+	filename->box(FL_FRAME_BOX);
+	filename->color(BLACK);
+	filename->textcolor(WHITE);
+	filename->value("");
+	filename->copy_tooltip("Set the Python file to be executed");
+
+	file_button = new MyButton(my_window, 325, yp, 16, 16, "@fileopen");
+	file_button->labelsize(9);
+	file_button->labelcolor(WHITE);
+	file_button->color(DARK_GRAY);
+	file_button->box(FL_FLAT_BOX);
+	file_button->clear_visible_focus();
+	file_button->callback(python_button_file_cb, this);
+	yp += 22;
+
+	function_name = new MyInput(60, yp, 260, 20, "Entry");
+	function_name->textsize(11);
+	function_name->labelsize(9);
+	function_name->box(FL_FRAME_BOX);
+	function_name->color(BLACK);
+	function_name->textcolor(WHITE);
+	function_name->value("");
+	function_name->copy_tooltip("Name of the entry function");
+	yp += 22;
+
+	frame_cnt = new MyInput(60, yp, 60, 20, "Frames");
+	frame_cnt->textsize(11);
+	frame_cnt->labelsize(9);
+	frame_cnt->box(FL_FRAME_BOX);
+	frame_cnt->color(BLACK);
+	frame_cnt->textcolor(WHITE);
+	frame_cnt->value("30");
+	frame_cnt->copy_tooltip("Name of the entry function");
+	yp += 28;
+
+	error_box = new Fl_Box(2, yp, w() - 4, 24);
+	error_box->labelsize(11);
+	error_box->box(FL_FLAT_BOX);
+	error_box->color(color());
+	error_box->labelcolor(fl_lighter(RED));
+	error_box->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	error_box->label("");
+	yp += 28;
+
+	accept = new MyButton(my_window, (w() / 3) - 40, yp, 80, 20, "Accept");
+	accept->box(FL_NO_BOX);
+	accept->color(WHITE);
+	accept->labelcolor(YELLOW);
+	accept->labelsize(12);
+	accept->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+	accept->copy_tooltip("Accept the list of activated plug-ins. Selected plug-ins begin execution.");
+	accept->callback(create_python_button_accept_cb, this);
+
+	cancel = new MyButton(my_window, ((w() / 3) * 2) - 40, yp, 80, 20, "Cancel");
+	cancel->box(FL_NO_BOX);
+	cancel->color(WHITE);
+	cancel->labelcolor(YELLOW);
+	cancel->labelsize(12);
+	cancel->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
+	cancel->copy_tooltip("Close the dialog.");
+	cancel->callback(hide_window_cb, this);
+}
+
+CreatePythonButtonWindow::~CreatePythonButtonWindow()
+{
 }
 
 // SECTION **************************************************** TRIGGER WINDOW *******************************************************
@@ -70361,10 +71860,9 @@ int	loop;
 	vertical_offset = new_yp;
 	box(FL_FLAT_BOX);
 
-	scroll = new Fl_Scroll(5, new_yp, w() - 10, h() - 40);
+	scroll = new SimpleScroll(5, new_yp, w() - 10, h() - 40);
 	scroll->box(FL_FLAT_BOX);
 	scroll->color(BLACK);
-	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->end();
 
 	close_button = new MyButton(my_window, 0, h() - 20, w(), 20, "Close");
@@ -70418,7 +71916,7 @@ int	loop;
 	Dialog::show();
 }
 
-AudioLibrary::AudioLibrary(MyWin *in_win) : Dialog(in_win, 560, 500, "Audio Library")
+AudioLibrary::AudioLibrary(MyWin *in_win) : Dialog(in_win, 560, 500, "Edit Audio Library")
 {
 int	loop;
 
@@ -70432,10 +71930,9 @@ int	loop;
 		name_input[loop] = NULL;
 		path_button[loop] = NULL;
 	}
-	scroll = new Fl_Scroll(10, 10 + new_yp, w() - 20, 450);
+	scroll = new SimpleScroll(10, 10 + new_yp, w() - 20, 450);
 	scroll->box(FL_FRAME_BOX);
 	scroll->color(DARK_GRAY);
-	scroll->type(Fl_Scroll::VERTICAL);
 	scroll->end();
 
 	add_button = new MyButton(my_window, 10, 470 + new_yp, 70, 20, "Add");
@@ -72025,6 +73522,15 @@ int			load_state = 1;
 	TransitionWindow *transition = new TransitionWindow(win);
 	transition->hide();
 	win->transitions_window = transition;
+
+	CreatePythonButtonWindow *cpbw = new CreatePythonButtonWindow(win);
+	cpbw->hide();
+	win->create_python_button_window = cpbw;
+
+	PythonButtonWindow *pbw = new PythonButtonWindow(win);
+	pbw->hide();
+	win->python_button_window = pbw;
+	win->add(pbw);
 
 	PseudoCameraWindow *pseudo_camera = new PseudoCameraWindow(win);
 	pseudo_camera->hide();

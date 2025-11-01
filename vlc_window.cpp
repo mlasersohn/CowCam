@@ -196,40 +196,34 @@ unsigned int local_w, local_h;
 	int start = video_play_cnt;
 	if(audio_tracks > 0)
 	{
-		if(video_pts[start] < last_audio_pts)
+		while((video_pts[start] < last_audio_pts) && (video_frame[start] != NULL))
 		{
-			if(video_pts[start] <= last_video_pts)
+			if((video_pts[start] < last_audio_pts) && (video_frame[start] != NULL))
 			{
-				while((video_pts[start] < last_audio_pts) && (video_frame[start] != NULL))
-				{
-					if((video_pts[start] < last_audio_pts) && (video_frame[start] != NULL))
-					{
-						free(video_frame[start]);
-						video_frame[start] = NULL;
-					}
-					start++;
-					if(start >= BUFFER_LIMIT)
-					{
-						start = 0;
-					}
-					current_frame++;
-				}
-				video_play_cnt = start;
-				if(video_frame[video_play_cnt] != NULL)
-				{
-					Mat src = Mat(local_h, local_w, CV_8UC3, video_frame[video_play_cnt]);
-					cv::cvtColor(src, mat, COLOR_RGB2RGBA);
-					cv::resize(mat, mat, Size(use_w, use_h));
-					free(video_frame[video_play_cnt]);
-					video_frame[video_play_cnt] = NULL;
-					video_play_cnt++;
-					if(video_play_cnt >= BUFFER_LIMIT)
-					{
-						video_play_cnt = 0;
-					}
-					current_frame++;
-				}
+				free(video_frame[start]);
+				video_frame[start] = NULL;
 			}
+			start++;
+			if(start >= BUFFER_LIMIT)
+			{
+				start = 0;
+			}
+			current_frame++;
+		}
+		video_play_cnt = start;
+		if(video_frame[video_play_cnt] != NULL)
+		{
+			Mat src = Mat(local_h, local_w, CV_8UC3, video_frame[video_play_cnt]);
+			cv::cvtColor(src, mat, COLOR_RGB2RGBA);
+			cv::resize(mat, mat, Size(use_w, use_h));
+			free(video_frame[video_play_cnt]);
+			video_frame[video_play_cnt] = NULL;
+			video_play_cnt++;
+			if(video_play_cnt >= BUFFER_LIMIT)
+			{
+				video_play_cnt = 0;
+			}
+			current_frame++;
 		}
 	}
 	else

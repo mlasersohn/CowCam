@@ -90,6 +90,22 @@ PyObject	*python_prepare_mat(cv::Mat img)
 	return(args);
 }
 
+void	python_xderefrence(void *ptr)
+{
+	if(ptr != NULL)
+	{
+		Py_XDECREF(ptr);
+	}
+}
+
+void	python_derefrence(void *ptr)
+{
+	if(ptr != NULL)
+	{
+		Py_DECREF(ptr);
+	}
+}
+
 void	*python_prepare_code(char *module_name, char *function_name, char *code)
 {
 static int init = 0;
@@ -108,7 +124,7 @@ static int init = 0;
 	return((void *)function);
 }
 
-void	*python_run_frame_filter(void *in_function, cv::Mat mat)
+void	python_run_frame_filter(void *in_function, cv::Mat mat)
 {
 	void *rr = NULL;
 	PyObject *function = (PyObject *)in_function;
@@ -116,9 +132,12 @@ void	*python_run_frame_filter(void *in_function, cv::Mat mat)
 	if(frame != NULL)
 	{
 		PyObject *r = python_call_function(function, frame);
-		rr = (void *)r;
+		if(r != NULL)
+		{
+			Py_DECREF(r);
+		}
+		Py_DECREF(frame);
 	}
-	return(rr);
 }
 
 void	*python_run(void *in_function)
@@ -149,7 +168,14 @@ static int init = 0;
 			if(frame != NULL)
 			{
 				PyObject *r = python_call_function(function, frame);
+				if(r != NULL)
+				{
+					Py_DECREF(r);
+				}
+				Py_DECREF(frame);
 			}
+			Py_XDECREF(function);
 		}
+		Py_DECREF(module);
 	}
 }

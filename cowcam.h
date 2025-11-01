@@ -445,6 +445,9 @@
 #define	ACTIVELY_DRAWING_MOVE_COORDS	2
 #define	ACTIVELY_DRAWING_DELETE_COORDS	3
 
+#define	CREATE_PYTHON_BUTTON_MODE_CREATE	0
+#define	CREATE_PYTHON_BUTTON_MODE_EDIT		1
+
 struct	NamedKeys
 {
 	char	*name;
@@ -677,7 +680,18 @@ public:
 		int			is_dir;
 };
 
-class	MyScroll : public Fl_Scroll
+class	SimpleScroll : public Fl_Scroll
+{
+public:
+			SimpleScroll(int xx, int yy, int ww, int hh, char *lbl = NULL);
+			~SimpleScroll();
+
+	int		handle(int event);
+	void	end();
+	void	draw();
+};
+
+class	MyScroll : public SimpleScroll
 {
 public:
 				MyScroll(int in_item_width, int in_row_height, int xx, int yy, int ww, int hh);
@@ -895,7 +909,7 @@ public:
 
 	MyWin			*my_window;
 
-	Fl_Scroll		*scroll;
+	SimpleScroll	*scroll;
 	MyButton		*close_button;
 
 	int				vertical_offset;
@@ -922,7 +936,7 @@ public:
 	int				number_of_entries;
 
 	MyWin			*my_window;
-	Fl_Scroll		*scroll;
+	SimpleScroll	*scroll;
 	MyButton		*add_button;
 	MyButton		*save_button;
 	MyButton		*cancel_button;
@@ -965,6 +979,7 @@ public:
 	void		Do();
 	void		Select(MenuButton *in);
 	void		ClearSelection();
+	void		ClearEntered();
 	void		ShowPopup();
 
 	MyWin		*my_window;
@@ -1218,25 +1233,25 @@ public:
 class	ArrangeGroup : public MyGroup
 {
 public:
-				ArrangeGroup(Fl_Scroll *in_scroll, int in_item_h, int xx, int yy, int ww, int hh, char *lbl = NULL);
-	void		add(Fl_Widget *wid);
-	Fl_Scroll	*scroll;
-	int			item_h;
-	int			limit;
+					ArrangeGroup(SimpleScroll *in_scroll, int in_item_h, int xx, int yy, int ww, int hh, char *lbl = NULL);
+	void			add(Fl_Widget *wid);
+	SimpleScroll	*scroll;
+	int				item_h;
+	int				limit;
 };
 
 class	PTZ_LockWindow : public Dialog
 {
 public:
-				PTZ_LockWindow(MyWin *in_win);
-				~PTZ_LockWindow();
-	void		draw();
-	int			handle(int event);
-	void		Populate();
+					PTZ_LockWindow(MyWin *in_win);
+					~PTZ_LockWindow();
+	void			draw();
+	int				handle(int event);
+	void			Populate();
 
-	MyWin		*my_window;
+	MyWin			*my_window;
 
-	Fl_Scroll		*scroll;
+	SimpleScroll	*scroll;
 	MyGroup			*ptz_list;
 	ArrangeGroup	*assigned_camera_list;
 	ArrangeGroup	*unassigned_camera_list;
@@ -1432,6 +1447,7 @@ public:
 	void		AttachHoverMenu(HoverMenu *in_hover_menu);
 
 	int			hover;
+	int			entered;
 	int			font_sz;
 	MainMenu	*my_menu;
 	HoverMenu	*hover_menu;
@@ -1456,18 +1472,18 @@ public:
 class	ListMenu : public Fl_Window
 {
 public:
-				ListMenu(void *in_win, int xx, int yy, int ww, int hh, char *lbl);
-				~ListMenu();
-	void		Add(Fl_Widget *wid);
-	void		Clear();
-	int			handle(int event);
-	void		ScrollToItem(Fl_Widget *wid);
+					ListMenu(void *in_win, int xx, int yy, int ww, int hh, char *lbl);
+					~ListMenu();
+	void			Add(Fl_Widget *wid);
+	void			Clear();
+	int				handle(int event);
+	void			ScrollToItem(Fl_Widget *wid);
 
-	void		*my_window;
-	Fl_Scroll	*scroll;
-	int			item_cnt;
-	int			current_item;
-	Fl_Widget	*item[4096];
+	void			*my_window;
+	SimpleScroll	*scroll;
+	int				item_cnt;
+	int				current_item;
+	Fl_Widget		*item[4096];
 };
 
 class	CodecSelectionWindow : public Dialog
@@ -2259,7 +2275,7 @@ public:
 	void	NDI_Exclusive(Fl_Widget *which);
 
 	MyWin				*my_window;
-	Fl_Scroll			*scroll;
+	SimpleScroll		*scroll;
 	Fl_Pack				*pack;
 	MyLightButton		*button[128];
 	Fl_Input			*name[128];
@@ -2365,17 +2381,18 @@ public:
 class	MuxPreviewWindow : public Fl_Double_Window
 {
 public:
-		MuxPreviewWindow(MyWin *in_win, int ww, int hh, char *title);
-		~MuxPreviewWindow();
+						MuxPreviewWindow(MyWin *in_win, int ww, int hh, char *title);
+						~MuxPreviewWindow();
 
-	int	handle(int event);
-	void	draw();
+	int					handle(int event);
+	void				draw();
 
-	void	ResetMedia(char *path);
+	void				ResetMedia(char *path);
 
-	MyWin		*my_window;
-	VLC_Window	*vlc_window;
+	MyWin				*my_window;
+	VLC_Window			*vlc_window;
 	ProgressScrubber	*progress_scrubber;
+	PopupMenu			*popup;
 };
 
 class	ProgressScrubber : public MyGroup
@@ -2628,6 +2645,59 @@ public:
 	MyLightButton	*transition_plugin_button[128];
 };
 
+class	PythonRunner
+{
+public:
+				PythonRunner(void *in_function, int in_frame_cnt);
+				~PythonRunner();
+
+	void		*function;
+	int			frame_cnt;
+};
+
+class	PythonButton : public MyButton
+{
+public:
+				PythonButton(MyWin *in_win, int xx, int yy, int ww, int hh, char *in_lbl);
+				~PythonButton();
+	int			handle(int event);
+
+	char		*path;
+	char		*entry_function;
+	int			frame_cnt;
+	PopupMenu	*popup;
+};
+
+class	PythonButtonWindow : public Dialog
+{
+public:
+					PythonButtonWindow(MyWin *);
+					~PythonButtonWindow();
+	void			show();
+
+	SimpleScroll	*scroll;
+	Fl_Pack			*pack;
+};
+
+class	CreatePythonButtonWindow : public Dialog
+{
+public:
+					CreatePythonButtonWindow(MyWin *);
+					~CreatePythonButtonWindow();
+
+	MyInput			*button_label;
+	MyInput			*filename;
+	MyInput			*function_name;
+	MyInput			*frame_cnt;
+	Fl_Box			*error_box;
+	MyButton		*file_button;
+	MyButton		*accept;
+	MyButton		*cancel;
+
+	int				mode;
+	PythonButton	*edit_button;
+};
+
 class	SelectAudioWindow : public Dialog
 {
 public:
@@ -2695,6 +2765,7 @@ public:
 	MyButton			*cancel;
 	MyButton			*clear;
 	MyButton			*load;
+	MyButton			*save;
 };
 
 class	FilterButton : public Fl_Box
@@ -2871,8 +2942,8 @@ public:
 	void	Update();
 	void	Set(char *str);
 	
-	Fl_Scroll	*scroll;
-	Fl_Pack		*pack;
+	SimpleScroll	*scroll;
+	Fl_Pack			*pack;
 	Fl_Int_Input	*cols;
 	Fl_Int_Input	*rows;
 
@@ -4366,6 +4437,9 @@ public:
 	void				IncreaseVolume();
 	void				DecreaseVolume();
 	void				FilterCommandButtons();
+	void				LoadLastMuxedList();
+	void				SaveLastMuxedList();
+	void				ReadyPythonCode(char *path, char *entry_function, int frame_cnt);
 
 	MyGroup		*resize_grp;
 	int			current_source;
@@ -4538,6 +4612,7 @@ public:
 	int			image_window_button;
 	int			buttonized_visible;
 	char		*last_muxed_list[64];
+	char		*use_last_muxed;
 	int			command_key[128];
 	int			last_resize_drag_x;
 	int			last_resize_drag_y;
@@ -4627,6 +4702,7 @@ public:
 
 	MainMenu 			*button_group;
 	Fl_Pack				*button_group_pack;
+	SimpleScroll		*button_group_scroll;
 	EncodeSpeedWindow	*encode_speed_window;
 
 	int					test_recognition;
@@ -4685,6 +4761,8 @@ public:
 	MenuButton	*keyboard_settings_button;
 	MenuButton	*gui_settings_button;
 	MenuButton	*transitions_button;
+	MenuButton	*create_python_button;
+	MenuButton	*python_buttons;
 	MenuButton	*filter_built_in_button;
 	MenuButton	*filter_plugins_button;
 	MenuButton	*audio_filter_plugins_button;
@@ -4728,6 +4806,8 @@ public:
 	GUI_SettingsWindow			*gui_settings_window;
 	EmbedAppSettings			*embed_app_settings;
 	TransitionWindow			*transitions_window;
+	CreatePythonButtonWindow	*create_python_button_window;
+	PythonButtonWindow			*python_button_window;
 	PseudoCameraWindow			*pseudo_camera_window;
 	FilterPluginsWindow			*filter_built_in_window;
 	FilterPluginsWindow			*filter_plugins_window;
@@ -4889,8 +4969,11 @@ public:
 	int			render_mouse;
 	int			tutorial_mode;
 
-	void		*python_filter_function;
-	char		*python_filter_code;
+	void			*python_filter_function;
+	char			*python_filter_code;
+	PythonRunner	*python_runner[128];
+	int				python_runner_cnt;
+	int				python_button_cnt;
 
 	int				power_all;
 	CodecCombo		*bad_codec_combo[10000];
@@ -4902,25 +4985,78 @@ public:
 class	TitleBox : public Fl_Window
 {
 public:
-		TitleBox(MyWin *in_win, ReviewWin *local_win, int xx, int yy, int frame);
-		~TitleBox();
+						TitleBox(MyWin *in_win, ReviewWin *local_win, int xx, int yy, int frame, int end_frame);
+						~TitleBox();
 
-	int	handle(int);
-	void	draw();
+	int					handle(int);
+	void				draw();
 
 	MyWin				*my_window;
 	Fl_Multiline_Input	*text_in;
 	MyButton			*remove_button;
 	int					draw_mode;
-	int					font_size;
+	int					font_size[2];
 	int					font_num;
 	int					held;
 	int					init_x;
 	int					init_y;
 	int					start_frame;
 	int					end_frame;
+	int					current_frame;
 	ReviewWin			*review_window;
 	int					my_color;
+	PopupMenu			*popup;
+};
+
+class	FontAndColor
+{
+public:
+				FontAndColor();
+				~FontAndColor();
+
+	int			font_number;
+	char		font_str[1024];
+
+	int			red;
+	int			blue;
+	int			green;
+	int			alpha;
+};
+
+class	FontAndColorDialog : public Dialog
+{
+public:
+					FontAndColorDialog(MyWin *in_win, FontAndColor *in_fac);
+					~FontAndColorDialog();
+
+	FontAndColor	*fac;
+	MyInput			*sample;
+	ColorPanel		*color_panel;
+	FontBrowser		*font_browser;
+	MyButton		*accept;
+	MyButton		*cancel;
+
+	int				local_red;
+	int				local_blue;
+	int				local_green;
+	int				local_alpha;
+	int				font_number;
+	char			font_str[1024];
+};
+
+class	TitleImage : public Fl_Window
+{
+public:
+						TitleImage(MyWin *in_win, ReviewWin *local_win, int frame, int end_frame);
+						~TitleImage();
+
+	MyWin				*my_window;
+	MyButton			*remove_button;
+	int					start_frame;
+	int					end_frame;
+	int					current_frame;
+	ReviewWin			*review_window;
+	Mat					image;
 };
 
 class	ReviewWin : public Fl_Double_Window
@@ -4937,7 +5073,10 @@ public:
 	long int	EditToTrim(int *);
 	void		InitCrop();
 	void		RemoveTitle(TitleBox *tb);
+	void		RemoveTitleImage(TitleImage *tb);
 	void		RenderTitles();
+	void		Shutdown();
+	void		Init(char *in_filename, int in_fps);
 
 	char		filename[4096];
 	char		*frame;
@@ -4954,6 +5093,9 @@ public:
 	int			current_frame;
 	TitleBox	*title_box[1024];
 	int			title_box_cnt;
+	TitleImage	*title_image[1024];
+	int			title_image_cnt;
+	PopupMenu	*popup;
 
 	MyButton			*play;
 	MyButton			*play_trim;
@@ -4966,9 +5108,11 @@ public:
 	MyButton			*snap_one_button;
 	MyButton			*moving_crop_button;
 	MyButton			*add_text_button;
+	MyButton			*add_image_button;
 	Fl_Box				*frame_box;
 	MyScrubber			*scrub;
 	Fl_Value_Slider		*speed_slider;
+
 	double				delay;
 	double				frame_advance;
 	double				speed;
@@ -4981,6 +5125,8 @@ public:
 	int					*crop_y;
 	int					crop_activated;
 	int					add_text;
+	int					add_image;
+	Mat					image_mat;
 };
 
 class	ImageWindow : public MyGroup
