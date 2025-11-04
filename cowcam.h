@@ -3187,6 +3187,8 @@ public:
 	int					capture_effects;
 	VideoCapture		*cap;
 	XImage				*shared_image;
+	int					shared_image_width;
+	int					shared_image_height;
 	XShmSegmentInfo		shminfo;
 	char				font_name[256];
 	double				capture_scaling;
@@ -4632,6 +4634,8 @@ public:
 	int			auto_scale;
 	XImage				*shared_image;
 	XShmSegmentInfo		shminfo;
+	int					shared_image_width;
+	int					shared_image_height;
 	int						ptz_home_on_launch;
 	int						ptz_window_index;
 	int						visca_command;

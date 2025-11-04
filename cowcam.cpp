@@ -3933,6 +3933,7 @@ static int old_h = -1;
 	}
 	if(image == NULL)
 	{
+printf("CREATE 2\n");
 		image = x11_create_shared_image(&shminfo, start_w, start_h);
 		old_w = start_w;
 		old_h = start_h;
@@ -4014,13 +4015,22 @@ XColor colors;
 	XShmSegmentInfo	shminfo;
 	if(cam == NULL)
 	{
+printf("CREATE 3\n");
 		image = x11_create_shared_image(&shminfo, width, height);
 	}
 	if(cam != NULL)
 	{
+		if((cam->shared_image != NULL) && ((cam->shared_image_width != width) || (cam->shared_image_height != height)))
+		{
+			x11_destroy_shared_image(cam->shared_image, &shminfo);
+			cam->shared_image = NULL;
+		}
 		if(cam->shared_image == NULL)
 		{
+printf("CREATE 4\n");
 			cam->shared_image = x11_create_shared_image(&cam->shminfo, width, height);
+			cam->shared_image_width = width;
+			cam->shared_image_height = height;
 		}
 		image = cam->shared_image;
 	}
@@ -13205,6 +13215,8 @@ int		loop;
 	last_cx = cx;
 	last_cy = cy;
 	shared_image = NULL;
+	shared_image_width = -1;
+	shared_image_height = -1;
 	accel = 100;
 	pip_idx = -1;
 	keep_pip = 0;
@@ -14768,6 +14780,8 @@ int	loop;
 	source_camera = NULL;
 	cap = NULL;
 	shared_image = NULL;
+	shared_image_width = -1;
+	shared_image_height = -1;
 	save_fifo = NULL;
 	extra_url = NULL;
 	extra_css = NULL;
@@ -21014,6 +21028,8 @@ void	Camera::GrabWindowImage(Window win, Mat& use_mat)
 {
 XWindowAttributes attributes;
 XColor colors;
+static int old_w = 0;
+static int old_h = 0;
 
 	attributes.width = 0;
 	attributes.height = 0;
@@ -21025,9 +21041,17 @@ XColor colors;
 	if((width > 0) && (height > 0) && (status != 0))
 	{
 		XImage *image = NULL;
+		if((shared_image != NULL) && ((shared_image_width != width) || (shared_image_height != height)))
+		{
+			x11_destroy_shared_image(shared_image, &shminfo);
+			shared_image = NULL;
+		}
 		if(shared_image == NULL)
 		{
+printf("CREATE 5\n");
 			shared_image = x11_create_shared_image(&shminfo, width, height);
+			shared_image_width = width;
+			shared_image_height = height;
 		}
 		image = shared_image;
 		if(image != NULL)
@@ -36014,6 +36038,8 @@ int	outer;
 	Fl_Tooltip::enable();
 	recording_camera = NULL;
 	shared_image = NULL;
+	shared_image_width = -1;
+	shared_image_height = -1;
 	visible_popup_menu = NULL;
 	python_filter_function = NULL;
 	python_filter_code = strdup("#This is an example that draws a rectangle on the recorded frame\n#Note: the defined function must be named \"python_filter_output\" and must accept the cv::Mat as an argument.\n#\nimport cv2\nimport numpy as np\n\ndef python_filter_output(img=None):\n\tif img is not None:\n\t\tcv2.rectangle(img, (20, 30), (100, 80), (80, 50, 20), -1)\n");
@@ -38091,6 +38117,8 @@ void	MyWin::GrabWindowImage(Window win, Mat& use_mat)
 {
 XWindowAttributes attributes;
 XColor colors;
+static int old_w = 0;
+static int old_h = 0;
 
 	attributes.width = 0;
 	attributes.height = 0;
@@ -38102,9 +38130,17 @@ XColor colors;
 	if((width > 0) && (height > 0) && (status != 0))
 	{
 		XImage *image = NULL;
+		if((shared_image != NULL) && ((shared_image_width != width) || (shared_image_height != height)))
+		{
+			x11_destroy_shared_image(shared_image, &shminfo);
+			shared_image = NULL;
+		}
 		if(shared_image == NULL)
 		{
+printf("CREATE 1\n");
 			shared_image = x11_create_shared_image(&shminfo, width, height);
+			shared_image_width = width;
+			shared_image_height = height;
 		}
 		image = shared_image;
 		if(image != NULL)
