@@ -112,6 +112,7 @@
 #define	CAMERA_TYPE_VECTOR				23
 #define	CAMERA_TYPE_SPLIT				24
 #define	CAMERA_TYPE_FULLSCREEN			25
+#define	CAMERA_TYPE_BLEND				26
 
 #define	MODE_MOVING		1
 #define	MODE_RESIZING	2
@@ -448,6 +449,13 @@
 #define	CREATE_PYTHON_BUTTON_MODE_CREATE	0
 #define	CREATE_PYTHON_BUTTON_MODE_EDIT		1
 
+#define	SHOW_CAMERA_COMMANDS	1
+#define	SHOW_AUDIO_COMMANDS		2
+#define	SHOW_SYSTEM_COMMANDS	4
+
+#define	SOURCE_SELECT_MODE_SPLIT	0
+#define	SOURCE_SELECT_MODE_BLEND	1
+
 struct	NamedKeys
 {
 	char	*name;
@@ -750,6 +758,7 @@ public:
 	int				previewing;
 	int				view_style;
 	int				use_result;
+	int				hide_directories;
 
 	MyInput			*path;
 	MyButton		*desktop;
@@ -763,6 +772,7 @@ public:
 	MyButton		*initial;
 	MyButton		*up;
 	MyButton		*refresh;
+	MyButton		*toggle_dirs;
 	MyButton		*view_type;
 	MyButton		*preview;
 	MyButton		*sort_name;
@@ -972,6 +982,7 @@ public:
 	void		draw();
 	void		show();
 	void		hide();
+	void		resize(int xx, int yy, int ww, int hh);
 
 	void		AddButton(MenuButton *in);
 	void		Advance();
@@ -1451,6 +1462,7 @@ public:
 	int			font_sz;
 	MainMenu	*my_menu;
 	HoverMenu	*hover_menu;
+	int			priority;
 };
 
 class	ObjectMenu : public Dialog
@@ -2361,6 +2373,7 @@ public:
 	PopupMenu	*popup;
 	int			index;
 	int			displayed;
+	int			hidden;
 
 	Fl_Group		*V4L_Window;
 	V4L_Button		*up_left;
@@ -2934,13 +2947,15 @@ public:
 class	SourceSelectWindow : public Dialog
 {
 public:
-			SourceSelectWindow(MyWin *win, int ww, int hh, char *lbl);
+			SourceSelectWindow(MyWin *win, int col_lock, int row_lock, int ww, int hh, char *lbl);
 			~SourceSelectWindow();
 	void	draw();
 	int		handle(int event);
 
 	void	Update();
 	void	Set(char *str);
+	void	LockMatrix(int lock_cols, int lock_rows);
+	void	UnlockMatrix();
 	
 	SimpleScroll	*scroll;
 	Fl_Pack			*pack;
@@ -2954,6 +2969,7 @@ public:
 	int		cur_col;
 	char	*list[128];
 	int		vertical_offset;
+	int		mode;
 };
 
 class	SaveFIFO
@@ -3127,6 +3143,14 @@ public:
 	void			Info();
 	char			*TypeString();
 	void			RotateFrame90(int direction, int time);
+	void			ImprintAlias();
+	int				TemplateMatch(Mat template_image, int& location_x, int& location_y);
+	void			PTZ_MoveToTemplate();
+	void			PTZ_CancelMovement();
+
+	Mat					template_image;
+	int					match_template;
+	time_t				match_template_start;
 
 	int					hot;
 	Mat					hot_mat;
@@ -3254,6 +3278,7 @@ public:
 	double					ndi_frame_rate;
 	char					ndi_format_type[64];
 	int						ndi_stride;
+	double					ndi_exposure;
 
 	int						prefer_ndi;
 	int						prefer_v4l;
@@ -3338,6 +3363,8 @@ public:
 
 	long int			running_time;
 	long int			starting_time;
+
+	int					show_alias;
 
 	int					last;
 	int					cx;
@@ -3432,6 +3459,10 @@ public:
 
 	void				*python_filter_function;
 	char				*python_filter_code;
+
+	char				*blend_alias_one;
+	char				*blend_alias_two;
+	double				blend_amount;
 };
 
 class	NewPTZWindow : public Dialog
@@ -3481,6 +3512,16 @@ class	PTZ_Button : public MyButton
 public:
 				PTZ_Button(MyWin *, PTZ_Window *, int, int, int, int, char *);
 				~PTZ_Button();
+	int			handle(int);
+
+	PTZ_Window	*my_window;
+};
+
+class	PT_Button : public MyButton
+{
+public:
+				PT_Button(MyWin *, PTZ_Window *, int, int, int, int, char *);
+				~PT_Button();
 	int			handle(int);
 
 	PTZ_Window	*my_window;
@@ -3816,6 +3857,7 @@ public:
 	MyButton		*irc_source_select;
 	MyButton		*ndi_source_select;
 	MyButton		*sourced_select;
+	MyButton		*blend_select;
 	MyButton		*edge_detect_select;
 	MyButton		*chromakey_green_select;
 	MyButton		*chromakey_blue_select;
@@ -3945,27 +3987,38 @@ public:
 	int		AutoExposureStatus();
 	int		AutoFocusStatus();
 
-	MyWin	*my_window;
-	Camera	*bound_camera;
+	MyWin		*my_window;
+	Camera		*bound_camera;
 	PopupMenu	*popup;
-	int		instance;
-	int		showing;
-	int		pinned;
-	char	alias[4096];
-	int		contracted;
-	int		hovering;
-	int		key_table[4];
-	int		zooming;
-	int		focusing;
-	int		dir;
-	int		pan_tilt_style;
-	int		prefer_ndi;
-	int		prefer_v4l;
-	time_t	last_here;
-	int		auto_focus_status;
-	int		auto_exposure_status;
-	int		digital_zoom_status;
-	int		backlight_status;
+
+	int			instance;
+	int			showing;
+	int			pinned;
+	char		alias[4096];
+	int			contracted;
+	int			hovering;
+	int			key_table[4];
+	int			zooming;
+	int			focusing;
+	int			dir;
+	int			pan_tilt_style;
+	int			prefer_ndi;
+	int			prefer_v4l;
+	int			auto_focus;
+	int			auto_exposure;
+	int			accelerate;
+	int			click_pt;
+	time_t		last_here;
+	int			auto_focus_status;
+	int			auto_exposure_status;
+	int			digital_zoom_status;
+	int			backlight_status;
+	int			follow;
+	int			soft_memory;
+	int			reverse_horizontal;
+	int			reverse_vertical;
+	double		ndi_focus;
+	double		ndi_focus_accel;
 
 	VISCAInterface_t		*ptz_current_interface;
 	int						ptz_interface_index;
@@ -3975,8 +4028,11 @@ public:
 	int						ptz_soft_memory[NUMBER_OF_INTERFACES][NUMBER_OF_CAMERAS];
 	int						ptz_tour_index;
 	char					*ptz_current_device_path;
+
 	double					ptz_pan_speed;
 	double					ptz_tilt_speed;
+	double					ptz_target_pan_speed;
+	double					ptz_target_tilt_speed;
 	int						ptz_focus_speed;
 	int						ptz_zoom_speed;
 	int						ptz_zoomer_speed;
@@ -4018,7 +4074,7 @@ public:
 	MyButton				*ptz_camera_preset_page_forward_button;
 	int						ptz_preset_page;
 
-	MySlider			*ptz_speed_slider;
+	MySlider				*ptz_speed_slider;
 	MyLightButton			*ptz_lock_to_camera_button;
 	MyLightButton			*ptz_bind_camera_button;
 	MyLightButton			*ptz_auto_focus;
@@ -4032,6 +4088,8 @@ public:
 	MyToggleButton			*ptz_zoom_speed_adjust_button;
 	MyLightButton			*ptz_joystick_button;
 	MyLightButton			*ptz_soft_memory_button;
+	MyLightButton			*ptz_accelerate;
+	MyLightButton			*ptz_click_pt;
 	MyButton				*ptz_spawn_another_button;
 	MyButton				*ptz_hide_button;
 	MyLightButton			*ptz_pin_button;
@@ -4138,6 +4196,16 @@ public:
 			, char *in_ptz_bind_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_prefer_ndi[NUMBER_OF_INTERFACES]
 			, int in_ptz_prefer_v4l[NUMBER_OF_INTERFACES]
+			, int in_ptz_auto_focus[NUMBER_OF_INTERFACES]
+			, int in_ptz_auto_exposure[NUMBER_OF_INTERFACES]
+			, int in_ptz_accelerate[NUMBER_OF_INTERFACES]
+			, int in_ptz_click_pt[NUMBER_OF_INTERFACES]
+			, int in_ptz_digital_zoom[NUMBER_OF_INTERFACES]
+			, int in_ptz_soft_memory[NUMBER_OF_INTERFACES]
+			, int in_ptz_backlight[NUMBER_OF_INTERFACES]
+			, int in_ptz_follow[NUMBER_OF_INTERFACES]
+			, int in_ptz_reverse_h[NUMBER_OF_INTERFACES]
+			, int in_ptz_reverse_v[NUMBER_OF_INTERFACES]
 			, char *in_ptz_alias[NUMBER_OF_INTERFACES]
 			, int in_ptz_home_on_launch
 			, int in_use_yolo_model
@@ -4181,7 +4249,8 @@ public:
 	void	PartialShutdown();
 
 	void    draw();
-	int	handle(int);
+	int		handle(int);
+	void	resize(int x, int y, int w, int h);
 
 	int			MatchArea(int, int, int);
 	Camera		*RecordingCamera();
@@ -4442,7 +4511,15 @@ public:
 	void				LoadLastMuxedList();
 	void				SaveLastMuxedList();
 	void				ReadyPythonCode(char *path, char *entry_function, int frame_cnt);
+	void				ReorderThumbs();
+	int					CountVisibleThumbs();
+	int					CountHiddenThumbs();
+	void				ShowAllThumbs();
+	void				NoteKey(int key, int state);
+	int					CheckKey(int key);
 
+	int			button_priority;
+	int			 command_set;
 	MyGroup		*resize_grp;
 	int			current_source;
 	int			displayed_source;
@@ -4453,6 +4530,7 @@ public:
 	int			audio_source_cnt;
 	Camera		*camera[128];
 	Camera		*recording_camera;
+	int			key[100000];
 	int			save_state;
 	int			original_w;
 	int			original_h;
@@ -4792,7 +4870,7 @@ public:
 	MenuButton	*stop_playing_audio_button;
 	MenuButton	*pause_playing_audio_button;
 	MenuButton	*toggle_objects_button;
-	MyButton	*quit_button;
+	MenuButton	*quit_button;
 
 	PTZ_Window					*ptz_window[PTZ_WINDOW_LIMIT];
 	CodecSelectionWindow		*codec_selection_window;
@@ -4914,6 +4992,16 @@ public:
 	char				*ptz_bind_alias[NUMBER_OF_INTERFACES];
 	int					ptz_prefer_ndi[NUMBER_OF_INTERFACES];
 	int					ptz_prefer_v4l[NUMBER_OF_INTERFACES];
+	int					ptz_auto_focus[NUMBER_OF_INTERFACES];
+	int					ptz_auto_exposure[NUMBER_OF_INTERFACES];
+	int					ptz_accelerate[NUMBER_OF_INTERFACES];
+	int					ptz_click_pt[NUMBER_OF_INTERFACES];
+	int					ptz_digital_zoom[NUMBER_OF_INTERFACES];
+	int					ptz_soft_memory[NUMBER_OF_INTERFACES];
+	int					ptz_backlight[NUMBER_OF_INTERFACES];
+	int					ptz_follow_array[NUMBER_OF_INTERFACES];
+	int					ptz_reverse_h[NUMBER_OF_INTERFACES];
+	int					ptz_reverse_v[NUMBER_OF_INTERFACES];
 	int					ptz_interface_type[NUMBER_OF_INTERFACES];
 	int					ptz_device_cnt;
 	int					ptz_zoom;
