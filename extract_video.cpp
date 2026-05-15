@@ -4,12 +4,12 @@
 #include "fcntl.h"
 #include <sys/stat.h>
 
-
 extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
+#include <libavutil/imgutils.h>
 }
 
 #include <opencv2/opencv.hpp>
@@ -153,7 +153,6 @@ int cow6 = 0;
 
 							// Assign appropriate parts of buffer to image planes in pFrameRGB.  Note that pFrameRGB is an AVFrame, but AVFrame is a superset of AVPicture
 							avpicture_fill((AVPicture *)pFrameRGB, buffer, AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
-
 							if(in_sequence == 0)
 							{
 								int fd = open(out_filename, O_CREAT | O_TRUNC | O_WRONLY, 0777);

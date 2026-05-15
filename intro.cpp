@@ -12,6 +12,7 @@
 #include <FL/platform.H>
 #include <FL/fl_draw.H>
 
+#include "common.h"
 #include "intro.h"
 
 #define	INTERVAL	0.015
@@ -114,7 +115,7 @@ int	loop;
 		fl_draw("CowCam", 0, 0, w(), h() - 250, FL_ALIGN_CENTER);
 		fl_font(FL_HELVETICA, 24);
 		char buf[256];
-		sprintf(buf, "Copyright %c%c 2025, Mark Lasersohn", 0xC2, 0xA9);
+		sprintf(buf, "Copyright %c%c %d, Mark Lasersohn", 0xC2, 0xA9, CURRENT_YEAR);
 		fl_draw(buf, 0, 0, w(), h() - 150, FL_ALIGN_CENTER);
 		if(ndi_notice == 1)
 		{

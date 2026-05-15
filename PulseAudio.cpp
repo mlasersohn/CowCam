@@ -27,6 +27,14 @@ extern "C" {
 int cow_simple_read(pa_simple *p, void *data, size_t length, int *rerror);
 }
 
+// Structure to hold the state for one or more channels
+struct LPFState 
+{
+	float last_out_l = 0.0f;
+	float last_out_r = 0.0f; // Added for stereo support
+	float alpha = 0.1f;
+} lpf_state;
+
 SAMPLE	*extract_audio_file_samples(char *filename, int& number_of_samples, int &channels, int& sample_rate)
 {
 void	*p_mp3 = NULL;
@@ -133,11 +141,11 @@ int		loop;
 			}
 			if(p_mp3 != NULL)
 			{
-    			drmp3_uninit((drmp3 *)p_mp3);
+				drmp3_uninit((drmp3 *)p_mp3);
 			}
 			else if(p_wav != NULL)
 			{
-    			drwav_uninit((drwav *)p_wav);
+				drwav_uninit((drwav *)p_wav);
 			}
 		}
 	}
@@ -235,6 +243,48 @@ int				loop;
 	}
 }
 
+
+// Calculates and updates the alpha value based on cutoff and sample rate.
+void update_lpf_alpha(LPFState &state, float cutoff_hz, float sample_rate) 
+{
+	float dt = 1.0f / sample_rate;
+	float rc = 1.0f / (2.0f * M_PI * cutoff_hz);
+	state.alpha = dt / (rc + dt);
+}
+
+// Processes a buffer of 16-bit PCM samples.
+// buffer: Pointer to the audio data
+// num_samples: Number of individual samples in the buffer
+// channels: 1 for mono, 2 for stereo
+// state: Persistent filter state
+void apply_low_pass_filter(int16_t *buffer, size_t num_samples, int channels, LPFState &state) 
+{
+	for(size_t i = 0; i < num_samples; i += channels) 
+	{
+		// Process Left Channel (or Mono)
+		float in_l = (float)buffer[i];
+		state.last_out_l = state.last_out_l + state.alpha * (in_l - state.last_out_l);
+		buffer[i] = (int16_t)state.last_out_l;
+
+		// Process Right Channel if stereo
+		if(channels == 2) 
+		{
+			float in_r = (float)buffer[i + 1];
+			state.last_out_r = state.last_out_r + state.alpha * (in_r - state.last_out_r);
+			buffer[i + 1] = (int16_t)state.last_out_r;
+		}
+	}
+}
+
+void	PulseAudio::Filter(int band, float frequency)
+{
+	float use = (frequency * 800.0);
+printf("FILTERING: %f\n", use);
+	update_lpf_alpha(lpf_state, use, 44100);
+	apply_low_pass_filter(buffer, number_of_samples, ch, lpf_state);
+}
+
+/* COW COW
 void	PulseAudio::Filter(int band, float frequency)
 {
 float Kf = frequency;
@@ -261,6 +311,7 @@ int	loop;
 		}
 	}
 }
+*/
 
 int	pulse_record(int *flag)
 {
@@ -542,10 +593,10 @@ long int precise_time(void);
    	static const pa_buffer_attr ba = 
 	{
 		.maxlength = 8192,
-        	.tlength = 1,
-        	.prebuf = 1,
-        	.minreq = 1,
-        	.fragsize = 2048
+			.tlength = 1,
+			.prebuf = 1,
+			.minreq = 1,
+			.fragsize = 2048
 	};
 	pulse_ss.rate = (uint32_t)in_hz;
 	pulse_ss.channels = (uint8_t)in_number_of_channels;

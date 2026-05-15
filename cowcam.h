@@ -163,68 +163,68 @@
 
 #define	POINT_TYPE_CURVE		1
 
-#define	KEY_TOGGLE_RECORD					0
-#define	KEY_DELETE_IMMEDIATE				1
-#define	KEY_TOGGLE_PTZ_JOYSTICK				2
-#define	KEY_INCREASE_PTZ_LITTLE_SPEED		3
-#define	KEY_DECREASE_PTZ_LITTLE_SPEED		4
-#define	KEY_CYCLE_PTZ_LITTLE_MODE			5
-#define	KEY_PTZ_HOME						6
-#define	KEY_CYCLE_DOWN_THUMBGROUP			7
-#define	KEY_CYCLE_UP_THUMBGROUP				8
-#define	KEY_DISPLAY_THUMBGROUP_0			9
-#define	KEY_DISPLAY_THUMBGROUP_1			10
-#define	KEY_DISPLAY_THUMBGROUP_2			11
-#define	KEY_DISPLAY_THUMBGROUP_3			12
-#define	KEY_DISPLAY_THUMBGROUP_4			13
-#define	KEY_DISPLAY_THUMBGROUP_5			14
-#define	KEY_DISPLAY_THUMBGROUP_6			15
-#define	KEY_DISPLAY_THUMBGROUP_7			16
-#define	KEY_DISPLAY_THUMBGROUP_8			17
-#define	KEY_DISPLAY_THUMBGROUP_9			18
-#define	KEY_LITTLE_MOTION_1					19
-#define	KEY_LITTLE_MOTION_2					20
-#define	KEY_LITTLE_MOTION_3					21
-#define	KEY_LITTLE_MOTION_4					22
-#define	KEY_LITTLE_MOTION_5					23
-#define	KEY_LITTLE_MOTION_6					24
-#define	KEY_LITTLE_MOTION_7					25
-#define	KEY_LITTLE_MOTION_8					26
-#define	KEY_LITTLE_MOTION_OTHER_1			27
-#define	KEY_LITTLE_MOTION_OTHER_2			28
-#define	KEY_LITTLE_MOTION_OTHER_3			29
-#define	KEY_LITTLE_MOTION_OTHER_4			30
-#define	KEY_LITTLE_MOTION_OTHER_5			31
-#define	KEY_LITTLE_MOTION_OTHER_6			32
-#define	KEY_LITTLE_MOTION_OTHER_7			33
-#define	KEY_LITTLE_MOTION_OTHER_8			34
-#define	KEY_REVIEW							35
-#define	KEY_LOCAL_ZOOM_IN					36
-#define	KEY_LOCAL_ZOOM_OUT					37
-#define	KEY_TOGGLE_FROZEN					38
-#define	KEY_SNAPSHOT						39
-#define	KEY_SNAPSHOT_OTHER					40
-#define	KEY_DISPLAY_SPLIT_SELECTION_0		41
-#define	KEY_DISPLAY_SPLIT_SELECTION_1		42
-#define	KEY_DISPLAY_SPLIT_SELECTION_2		43
-#define	KEY_DISPLAY_SPLIT_SELECTION_3		44
-#define	KEY_DISPLAY_SPLIT_SELECTION_4		45
-#define	KEY_DISPLAY_SPLIT_SELECTION_5		46
-#define	KEY_DISPLAY_SPLIT_SELECTION_6		47
-#define	KEY_DISPLAY_SPLIT_SELECTION_7		48
-#define	KEY_DISPLAY_SPLIT_SELECTION_8		49
-#define	KEY_DISPLAY_SPLIT_SELECTION_9		50
-#define	KEY_SCALE_VIDEO_UP					51
-#define	KEY_SCALE_VIDEO_DOWN				52
-#define	KEY_SCALE_VIDEO_RESET				53
-#define	KEY_DISPLAY_ELEMENTS				54
-#define	KEY_EXIT							55
-#define	KEY_OPEN_MENU						56
-#define	KEY_OPEN_CAMERAS					57
-#define	KEY_OPEN_AUDIO						58
-#define	KEY_OPEN_PTZ						59
-#define	KEY_VOLUME_UP						60
-#define	KEY_VOLUME_DOWN						61
+#define	MY_KEY_TOGGLE_RECORD					0
+#define	MY_KEY_DELETE_IMMEDIATE				1
+#define	MY_KEY_TOGGLE_PTZ_JOYSTICK				2
+#define	MY_KEY_INCREASE_PTZ_LITTLE_SPEED		3
+#define	MY_KEY_DECREASE_PTZ_LITTLE_SPEED		4
+#define	MY_KEY_CYCLE_PTZ_LITTLE_MODE			5
+#define	MY_KEY_PTZ_HOME						6
+#define	MY_KEY_CYCLE_DOWN_THUMBGROUP			7
+#define	MY_KEY_CYCLE_UP_THUMBGROUP				8
+#define	MY_KEY_DISPLAY_THUMBGROUP_0			9
+#define	MY_KEY_DISPLAY_THUMBGROUP_1			10
+#define	MY_KEY_DISPLAY_THUMBGROUP_2			11
+#define	MY_KEY_DISPLAY_THUMBGROUP_3			12
+#define	MY_KEY_DISPLAY_THUMBGROUP_4			13
+#define	MY_KEY_DISPLAY_THUMBGROUP_5			14
+#define	MY_KEY_DISPLAY_THUMBGROUP_6			15
+#define	MY_KEY_DISPLAY_THUMBGROUP_7			16
+#define	MY_KEY_DISPLAY_THUMBGROUP_8			17
+#define	MY_KEY_DISPLAY_THUMBGROUP_9			18
+#define	MY_KEY_LITTLE_MOTION_1					19
+#define	MY_KEY_LITTLE_MOTION_2					20
+#define	MY_KEY_LITTLE_MOTION_3					21
+#define	MY_KEY_LITTLE_MOTION_4					22
+#define	MY_KEY_LITTLE_MOTION_5					23
+#define	MY_KEY_LITTLE_MOTION_6					24
+#define	MY_KEY_LITTLE_MOTION_7					25
+#define	MY_KEY_LITTLE_MOTION_8					26
+#define	MY_KEY_LITTLE_MOTION_OTHER_1			27
+#define	MY_KEY_LITTLE_MOTION_OTHER_2			28
+#define	MY_KEY_LITTLE_MOTION_OTHER_3			29
+#define	MY_KEY_LITTLE_MOTION_OTHER_4			30
+#define	MY_KEY_LITTLE_MOTION_OTHER_5			31
+#define	MY_KEY_LITTLE_MOTION_OTHER_6			32
+#define	MY_KEY_LITTLE_MOTION_OTHER_7			33
+#define	MY_KEY_LITTLE_MOTION_OTHER_8			34
+#define	MY_KEY_REVIEW							35
+#define	MY_KEY_LOCAL_ZOOM_IN					36
+#define	MY_KEY_LOCAL_ZOOM_OUT					37
+#define	MY_KEY_TOGGLE_FROZEN					38
+#define	MY_KEY_SNAPSHOT						39
+#define	MY_KEY_SNAPSHOT_OTHER					40
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_0		41
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_1		42
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_2		43
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_3		44
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_4		45
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_5		46
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_6		47
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_7		48
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_8		49
+#define	MY_KEY_DISPLAY_SPLIT_SELECTION_9		50
+#define	MY_KEY_SCALE_VIDEO_UP					51
+#define	MY_KEY_SCALE_VIDEO_DOWN				52
+#define	MY_KEY_SCALE_VIDEO_RESET				53
+#define	MY_KEY_DISPLAY_ELEMENTS				54
+#define	MY_KEY_EXIT							55
+#define	MY_KEY_OPEN_MENU						56
+#define	MY_KEY_OPEN_CAMERAS					57
+#define	MY_KEY_OPEN_AUDIO						58
+#define	MY_KEY_OPEN_PTZ						59
+#define	MY_KEY_VOLUME_UP						60
+#define	MY_KEY_VOLUME_DOWN						61
 
 #define	FILTER_TYPE_VIDEO			0
 #define	FILTER_TYPE_AUDIO			1
@@ -365,10 +365,10 @@
 #define	OPENING				0
 #define	CLOSING				1
 
-#define	KEY_DOWN			0
-#define	KEY_UP				1
-#define	KEY_RIGHT			2
-#define	KEY_LEFT			3
+#define	MY_KEY_DOWN			0
+#define	MY_KEY_UP				1
+#define	MY_KEY_RIGHT			2
+#define	MY_KEY_LEFT			3
 
 #define	AUDIO_DISPLAY_NONE		0
 #define	AUDIO_DISPLAY_FREQUENCY	1
@@ -430,9 +430,10 @@
 
 #define	FRAME_OPERATION_PROPORTIONAL_RESIZE	0
 #define	FRAME_OPERATION_FREE_RESIZE			1
-#define	FRAME_OPERATION_ROTATE				2
-#define	FRAME_OPERATION_CROP				3
-#define	FRAME_OPERATION_DELETE				4
+#define	FRAME_OPERATION_RESIZE_FRAME		2
+#define	FRAME_OPERATION_ROTATE				3
+#define	FRAME_OPERATION_CROP				4
+#define	FRAME_OPERATION_DELETE				5
 
 #define	FRAME_OBJECT_TYPE_IMAGE_WINDOW	0
 #define	FRAME_OBJECT_TYPE_IMMEDIATE		1
@@ -455,6 +456,21 @@
 
 #define	SOURCE_SELECT_MODE_SPLIT	0
 #define	SOURCE_SELECT_MODE_BLEND	1
+
+#define	DYNAMIC_TEXT_MODE_INTERVAL	0
+#define	DYNAMIC_TEXT_MODE_R2L		1
+#define	DYNAMIC_TEXT_MODE_L2R		2
+#define	DYNAMIC_TEXT_MODE_T2B		3
+#define	DYNAMIC_TEXT_MODE_B2T		4
+#define	DYNAMIC_TEXT_MODE_FADE		5
+#define	DYNAMIC_TEXT_MODE_SQUASH_X	6
+#define	DYNAMIC_TEXT_MODE_SQUASH_Y	7
+#define	DYNAMIC_TEXT_MODE_SQUASH	8
+
+#define	IM_TEXT_NO_SCROLL			0
+#define	IM_TEXT_SCROLL_LEFT			1
+#define	IM_TEXT_SCROLL_DOWN			2
+#define	IM_TEXT_SCROLL_UP			3
 
 struct	NamedKeys
 {
@@ -496,6 +512,14 @@ class	ImmediateNameWindow;
 class	ColorPanel;
 class	HoverMenu;
 class	NewPTZWindow;
+
+class	Joystick
+{
+public:
+	int		x;
+	int		y;
+	int		button;
+};
 
 class	ShortcutWindow : public Fl_Window
 {
@@ -602,6 +626,11 @@ class	MyGroup : public Fl_Group
 public:
 			MyGroup(int xx, int yy, int ww, int hh);
 			MyGroup(int xx, int yy, int ww, int hh, char *lbl);
+
+	double	scale_w;
+	double	scale_h;
+	double	initial_w;
+	double	initial_h;
 };
 
 class	ResizeGroup : public MyGroup
@@ -635,6 +664,7 @@ public:
 			~Dialog();
 	int		handle(int event);
 	void	resize(int xx, int yy, int ww, int hh);
+	void	label(char *lbl);
 	void	draw();
 
 	MyWin		*my_window;
@@ -643,6 +673,7 @@ public:
 	int			expanded;
 	int			old_w;
 	int			old_h;
+	int			hide_close;
 };
 
 class	MyBox : public Fl_Box
@@ -798,6 +829,7 @@ public:
 			DragGroup(int xx, int yy, int ww, int hh, char *lbl);
 			~DragGroup();
 	int		handle(int event);
+	void	resize(int xx, int yy, int ww, int hh);
 
 	int		last_x;
 	int		last_y;
@@ -813,12 +845,13 @@ public:
 	int		handle(int event);
 	void	show();
 	void	resize(double xx, double yy, double ww, double hh);
-	void	Use(int in_type, Fl_Widget *in_use);
+	void	Use(int in_type, MyGroup *in_use);
 	int		AdjustForImmediateLine();
 	int		AdjustImmediateLinePosition(int dx, int dy);
+	void	Scale(double old_w, double old_h, double new_w, double new_h);
 
 	MyWin		*my_window;
-	Fl_Widget	*use;
+	MyGroup		*use;
 	int			object_type;
 	int		mode;
 	int		potential_mode;
@@ -834,6 +867,11 @@ public:
 	int		operation;
 	int		inactive;
 	int		ignore_release;
+	int		resize_frame_only;
+	double	scale_w;
+	double	scale_h;
+	double	initial_w;
+	double	initial_h;
 };
 
 class	SlidingElement : public DragGroup
@@ -1224,6 +1262,7 @@ public:
 	Fl_Hold_Browser	*browser;
 
 	MyWin			*my_window;
+	time_t			start_time;
 };
 
 class	DragBox : public Fl_Box
@@ -1521,6 +1560,8 @@ public:
 	Fl_Window	*outcome;
 	MyButton	*cancel;
 	MyButton	*accept;
+	MyButton	*save_as_json;
+	MyButton	*load_json;
 };
 
 
@@ -1785,6 +1826,7 @@ public:
 		Fl_Output		*rectangle_alpha_output;
 		MyButton		*rectangle_palette_button;
 		MySlider		*rectangle_size_slider;
+		MySlider		*rectangle_rounding_radius_slider;
 		Fl_Output		*rectangle_size_output;
 		MyToggleButton	*rectangle_style_solid_button;
 		MyToggleButton	*rectangle_style_dash_button;
@@ -1794,6 +1836,7 @@ public:
 		MyToggleButton	*rectangle_style_join_bevel_button;
 		MyToggleButton	*rectangle_filled_button;
 		MyToggleButton	*rectangle_square_button;
+		MyToggleButton	*rectangle_rounded_button;
 		MyToggleButton	*rectangle_erase_button;
 
 	MyGroup	*freehand_group;
@@ -1870,6 +1913,8 @@ public:
 	int		rectangle_style;
 	int		rectangle_filled;
 	int		rectangle_square;
+	int		rectangle_rounded;
+	double	rectangle_rounding_radius;
 	int		rectangle_erase;
 
 	char	freehand_key;
@@ -1878,6 +1923,7 @@ public:
 
 	int		pixelate_size;
 	int		from_paste;
+	int		can_paste;
 
 	int		quick_mode;
 };
@@ -1941,9 +1987,11 @@ public:
 	int			use_size;
 	int			filled;
 	int			square;
+	int			rounded;
 	int			selecting;
 	int			erase;
 	int			box_type;
+	double		rounding_radius;
 
 	int			*xx;
 	int			*yy;
@@ -1996,6 +2044,8 @@ public:
 	int		handle(int event);
 	void	draw();
 
+	void	ScrollPosition(int& px, int& py);
+
 	int		focused;
 	int		last_extent_w;
 	int		last_extent_h;
@@ -2007,6 +2057,7 @@ public:
 			ImRectangle(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
 			~ImRectangle();
 	void	draw();
+	void	resize(int xx, int yy, int ww, int hh);
 };
 
 class	ImPixelate : public ImDefault, public MyGroup
@@ -2024,6 +2075,7 @@ public:
 			ImRectanglePassThru(MyWin *in_win, Immediate *in_im, int xx, int yy, int ww, int hh);
 			~ImRectanglePassThru();
 	void	draw();
+	void	resize(int xx, int yy, int ww, int hh);
 };
 
 class	ImEllipsePassThru : public ImDefault, public MyGroup
@@ -2136,25 +2188,37 @@ class	Immediate : public MyGroup
 {
 public:
 			Immediate(MyWin *in_win, Camera *in_cam, ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh);
-			Immediate(Immediate *old, Camera *in_cam);
+			Immediate(Immediate *old, Camera *in_cam, int in_x = -1, int in_y = -1);
 			Immediate(MyWin *in_win, Camera *in_cam, int xx, int yy, int ww, int hh);
 			~Immediate();
 	int		handle(int event);
 	void	Draw();
 	void	resize(int xx, int yy, int ww, int hh);
+	void	collected_resize(int xx, int yy, int ww, int hh);
 
 	void	Name();
 	void	Hide();
+	void	HideCollected();
 	void	Show();
+	void	ShowCollected();
 	void	CompleteRectangle(int xx, int yy);
 	void	Move();
 	void	Delete();
+	void	DeleteCollected();
+	void	DeleteAll();
 	void	ZipLeft();
+	void	GrowLeft();
 	void	ZipRight();
+	void	GrowRight();
 	void	ZipUp();
+	void	GrowUp();
 	void	ZipDown();
+	void	GrowDown();
 	void	ShowPopup();
 	void	Copy();
+	void	CopyCumulative();
+	void	Paste();
+	void	ClearCopyBuffer();
 	void	Edit();
 	void	ConvertToPolygon();
 	void	GetColor(int& red, int& green, int& blue, int& alpha);
@@ -2174,6 +2238,8 @@ public:
 	void	SaveAsJSON(FILE *fp);
 	void	Raise();
 	void	Lower();
+	void	Restore();
+	void	RestoreCollected();
 
 	ImmediateDrawingWindow	*idw;
 	ImmediateNameWindow		*inw;
@@ -2207,11 +2273,11 @@ public:
 	double	overall_alpha;
 	int		use_as_mask;
 	int		mw_mode;
-	double	scale_w;
-	double	scale_h;
 	int		extent_w;
 	int		extent_h;
 	int		extent_taken;
+	int		orig_x;
+	int		orig_y;
 	int		orig_w;
 	int		orig_h;
 	int		relative_x;
@@ -2255,6 +2321,12 @@ public:
 	int		save_green;
 	int		save_blue;
 	int		save_alpha;
+
+	int		collected;
+	int		scrolling;
+	double	scroll_position;
+	int		scroll_paused;
+	int		resize_frame_only;
 };
 
 class	SelectOutputWindow : public Dialog
@@ -3067,6 +3139,7 @@ public:
 	void			OffsetPositionImageWindows(int off_x, int off_y);
 	void			OffsetScaleImageWindows(double factor_w, double factor_h);
 	void			RenderTextToMat(char *text, Mat *mat);
+	void			TextExtents(char *lit, Mat *mat, int& ext_w, int& ext_h);
 	void			CairoClock(Mat& mat, int show_digits, int xx, int yy, int ww, int hh, int in_hour, int in_min, int in_sec);
 	void			ScrollTextList(char *);
 	void			GrabSlideshow();
@@ -3147,6 +3220,22 @@ public:
 	int				TemplateMatch(Mat template_image, int& location_x, int& location_y);
 	void			PTZ_MoveToTemplate();
 	void			PTZ_CancelMovement();
+	void			RenderScrollingText(char *cp, int local_mode, int local_speed, int local_pause, int start_x, int start_y, int stop_x, int stop_y, int cycle, int restrict);
+	int				CountCollected();
+	void			ClearCollected();
+	void			ResizeAllCollectedRelative(void *use, int dx, int dy, int dw, int dh);
+	void			ZipLeftCollected();
+	void			GrowLeftCollected();
+	void			ZipRightCollected();
+	void			GrowRightCollected();
+	void			ZipUpCollected();
+	void			GrowUpCollected();
+	void			ZipDownCollected();
+	void			GrowDownCollected();
+	void			RestoreCollected();
+	void			DeleteCollected();
+	void			HideCollected();
+	void			ShowCollected();
 
 	Mat					template_image;
 	int					match_template;
@@ -3267,6 +3356,21 @@ public:
 	int					split_rows;
 	char				*split_source[128];
 	int					split_source_cnt;
+	time_t				dynamic_text_start_time;
+	time_t				dynamic_text_interval;
+	int					dynamic_text_scroll_x;
+	int					dynamic_text_scroll_y;
+	int					dynamic_text_line_cnt;
+	int					dynamic_text_initialized;
+	int					dynamic_text_loop_limit;
+	int					dynamic_text_loop_cnt;
+	int					dynamic_text_cycle;
+	int					dynamic_text_fade_direction;
+	double				dynamic_text_fade;
+	int					dynamic_text_fade_peak;
+	int					dynamic_text_squash_direction;
+	double				dynamic_text_scale_x;
+	double				dynamic_text_scale_y;
 
 	NDIlib_recv_instance_t	ndi_recv;
 	int						ndi_capture;
@@ -3756,6 +3860,19 @@ public:
 	MyWin		*my_window;
 };
 
+class	DynamicStringWindow : public Dialog
+{
+public:		
+				DynamicStringWindow(MyWin *in_win);
+				~DynamicStringWindow();
+	int			handle(int event);
+
+	Fl_Multiline_Input	*dynamic_string;
+	MyWin		*my_window;
+	char		*use;
+	int			stay_closed;
+};
+
 class	ImmediateNameWindow : public Dialog
 {
 public:		
@@ -4131,6 +4248,18 @@ public:
 	FILE	*intro_pipe_fp;
 };
 
+class	StatusWindow : public Fl_Double_Window
+{
+public:
+			StatusWindow(MyWin *in_win, int ww, int hh, char *lbl);
+			~StatusWindow();
+	int		handle(int event);
+
+	MyWin	*my_window;
+	Fl_Box	*entry[24];
+	Fl_Box	*tally[24];
+};
+
 class	CodecCombo
 {
 public:
@@ -4243,18 +4372,22 @@ public:
 			, int use_animate_panels
 			, int use_exclude_directories
 			, int use_save_state
+			, char *use_joystick_path
+			, int use_borderless
+			, double use_cycle_cameras
 			, char *lbl);
 		~MyWin();
 	void	Shutdown();
 	void	PartialShutdown();
 
 	void    draw();
+	void    Draw();
 	int		handle(int);
 	void	resize(int x, int y, int w, int h);
 
 	int			MatchArea(int, int, int);
 	Camera		*RecordingCamera();
-	Camera		*DisplayedCamera();
+	Camera		*DisplayedCamera(int forced = 0);
 	void		ShowButtons();
 	void		HideButtons();
 	void		SaveInterest();
@@ -4263,6 +4396,7 @@ public:
 	void		copy_interest(unsigned char *dest, unsigned char *src, int sz, int sx, int sy, int ex, int ey);
 	void		MakeNewSourceWindow();
 	void		MakeAliasWindow();
+	void		MakeDynamicStringWindow();
 	int			SetupCamera(char *source, char *alias, int req_w, int req_h, int font_sz, char *font_name = NULL, int rr = 0, int gg = 0, int bb = 0, int aa = 0, int t_rr = 255, int t_gg = 255, int t_bb = 255, int t_aa = 255, int chroma_color = CHROMA_ON_GREEN);
 	void		ResizeCapture(int source_n, int ww, int hh);
 	void		RemoveSource(int src);
@@ -4413,7 +4547,7 @@ public:
 	void			UpdateThumbButtons();
 	void			AltDisplay(int cam_index);
 	void			AddImmediate(Immediate *in);
-	void			PasteImmediate();
+	void			PasteImmediate(int in_x = -1, int in_y = -1);
 	void			ClearImmediate();
 	int				AddMiscCopy(Camera *in_source, int in_type, Mat local, int immediate_display, char *str, int xx, int yy, int ww, int hh, int rr = -1, int gg = -1, int bb = -1, int aa = -1, double contrast = 0.5, double brightness = 0.5, double saturation = 1.0, double hue = 1.0, double intensity = 1.0);
 	int				InMiscPasted(int xx, int yy, int& r_outer, int& r_inner);
@@ -4452,7 +4586,7 @@ public:
 	void			ScrollDownThumbGroup();
 	void			ScrollUpThumbGroup();
 	void			SaveCodecs();
-	void			LoadCodecs();
+	void			LoadCodecs(char *filename = "codec.json");
 	void			SaveTransition();
 	void			LoadTransition();
 	void			RecordOn(Camera *cam);
@@ -4517,6 +4651,11 @@ public:
 	void				ShowAllThumbs();
 	void				NoteKey(int key, int state);
 	int					CheckKey(int key);
+	void				OpenJoystick();
+	void				FrameImmediate();
+	void				ClearCollected();
+	void				RubberbandMode(int in_mode);
+	void				MoveSelectImmediate(Camera *cam, int xx, int yy);
 
 	int			button_priority;
 	int			 command_set;
@@ -4534,6 +4673,10 @@ public:
 	int			save_state;
 	int			original_w;
 	int			original_h;
+	int			borderless;
+	double		cycle_cameras;
+	double		old_cycle_cameras;
+	int			cycle_camera_pause;
 	int			disregard_settings;
 	time_t		exit_timer;
 	int			actively_exiting;
@@ -4562,6 +4705,9 @@ public:
 	int			audio_sample_rate;
 	int			audio_channels;
 	int			guideline_cnt;
+	char		*joystick_path;
+	int			joystick_fd;
+	Joystick	joystick;
 	int			mux_test_sudden_stop;
 	int			requested_w;
 	int			requested_h;
@@ -4721,44 +4867,45 @@ public:
 	int						visca_arg_cnt;
 	MyVISCACamera			visca_camera[NUMBER_OF_CAMERAS];
 
-	int			disable_slow_codecs;
-	int			codec_test_timeout;
+	int						disable_slow_codecs;
+	int						codec_test_timeout;
 
-	char		*output_name[128];
-	char		*output_path[128];
-	int			output_active[128];
-	int			output_path_cnt;
+	char					*output_name[128];
+	char					*output_path[128];
+	int						output_active[128];
+	int						output_path_cnt;
 
-	ThumbButton	*dragging_thumb;
-	int			dragging_thumb_x;
-	int			dragging_thumb_y;
-	Immediate	**immediate_list;
-	int			immediate_cnt;
-	int			rubberband_x;
-	int			rubberband_y;
-	int			rubberband_w;
-	int			rubberband_h;
-	int			rubberband_mode;
-	int			guideline_mode;
-	ResizeFrame			*resize_frame;
-	PopupMenu	*popup;
-	MiscCopy	**misc_copy;
-	int			misc_copy_cnt;
-	int			editing_misc_outer;
-	int			editing_misc_inner;
-	int			editing_misc_mode;
-	int			initial_button_group_x;
-	int			initial_button_group_y;
-	int			initial_thumbnail_group_x;
-	int			initial_thumbnail_group_y;
-	int			initial_audio_thumbnail_group_x;
-	int			initial_audio_thumbnail_group_y;
-	int			initial_ptz_x[PTZ_WINDOW_LIMIT];
-	int			initial_ptz_y[PTZ_WINDOW_LIMIT];
-	int			initial_current_fps_x;
-	int			initial_current_fps_y;
-	int			initial_video_out_x;
-	int			initial_video_out_y;
+	ThumbButton				*dragging_thumb;
+	int						dragging_thumb_x;
+	int						dragging_thumb_y;
+	Immediate				**immediate_list;
+	int						immediate_cnt;
+	int						frame_immediate;
+	int						rubberband_x;
+	int						rubberband_y;
+	int						rubberband_w;
+	int						rubberband_h;
+	int						rubberband_mode;
+	int						guideline_mode;
+	ResizeFrame				*resize_frame;
+	PopupMenu				*popup;
+	MiscCopy				**misc_copy;
+	int						misc_copy_cnt;
+	int						editing_misc_outer;
+	int						editing_misc_inner;
+	int						editing_misc_mode;
+	int						initial_button_group_x;
+	int						initial_button_group_y;
+	int						initial_thumbnail_group_x;
+	int						initial_thumbnail_group_y;
+	int						initial_audio_thumbnail_group_x;
+	int						initial_audio_thumbnail_group_y;
+	int						initial_ptz_x[PTZ_WINDOW_LIMIT];
+	int						initial_ptz_y[PTZ_WINDOW_LIMIT];
+	int						initial_current_fps_x;
+	int						initial_current_fps_y;
+	int						initial_video_out_x;
+	int						initial_video_out_y;
 
 	PulseMicrophone	*pulse_microphone[128];
 	int				pulse_microphone_cnt;
@@ -4800,6 +4947,7 @@ public:
 	MenuButton	*load_setup_button;
 	MenuButton	*save_setup_button;
 	MenuButton	*power_all_button;
+	MenuButton	*cycle_cameras_button;
 	MenuButton	*override_button;
 	MenuButton	*trigger_button;
 	MenuButton	*timestamp_button;
@@ -4899,8 +5047,10 @@ public:
 	EditOutputWindow			*edit_output_window;
 	SelectOutputWindow			*select_output_window;
 	TriggerWindow				*trigger_window;
+	StatusWindow				*status_window;
 	NewSourceWindow				*new_source_window;
 	AliasWindow					*alias_window;
+	DynamicStringWindow			*dynamic_string_window;
 	FltkPluginWindow			*fltk_plugin_window;
 	CommandKeySettingsWindow	*command_key_settings;
 	time_t						start_time;
@@ -5229,6 +5379,7 @@ public:
 
 	int		handle(int);
 	void	resize(int xx, int yy, int ww, int hh);
+	void	collected_resize(int xx, int yy, int ww, int hh);
 	void	Draw(Camera *dest_camera);
 	void	Rescale(Camera *cam, int xx, int yy, int proportional);
 	int		AsButton(int xx, int yy);
@@ -5242,8 +5393,13 @@ public:
 	void	GrowDown();
 	void	FillFrame();
 	void	Restore();
+	void	RestoreCollected();
 	void	Delete();
+	void	DeleteCollected();
 	void	Buttonize();
+	void	ButtonizeCollected();
+	void	Show();
+	void	ShowCollected();
 	void	Resize(int xx, int yy, int ww, int hh);
 
 	int			index;
@@ -5258,6 +5414,8 @@ public:
 	int			start_drag_y;
 	double		width;
 	double		height;
+	int			orig_x;
+	int			orig_y;
 	double		orig_w;
 	double		orig_h;
 	double		dx;
@@ -5292,6 +5450,7 @@ public:
 	int			flip_horizontal;
 	int			flip_vertical;
 	int			use_as_mask;
+	int			collected;
 };
 
 class	EmbedAppSettings : public Dialog

@@ -439,7 +439,7 @@ void Muxer::add_stream(int use_nvidia, OutputStream *ost, AVFormatContext *oc, c
 		exit(1);
 	}
 	// COW COW
-	print_codec_info(*codec);
+	// COW COW print_codec_info(*codec);
 	// COW COW
 	ost->st = avformat_new_stream(oc, NULL);
 	if(!ost->st) 
