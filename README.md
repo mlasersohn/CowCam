@@ -1,4 +1,4 @@
-![starting_up](https://github.com/user-attachments/assets/6f24ea9d-3833-417f-8117-6b7f76adccd0)
+<img width="3840" height="2160" alt="one" src="https://github.com/user-attachments/assets/be83f3ea-41ac-4194-8266-d06788f50f8c" />
 
 
 CowCam is an elaborate video and audio management systems for Linux. It accepts video inputs through all sources accepted by OpenCV
