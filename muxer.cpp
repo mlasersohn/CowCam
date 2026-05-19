@@ -105,6 +105,9 @@ extern "C"
 #include	<FL/Fl_Multiline_Input.H>
 #include	<FL/Fl_Image_Surface.H>
 #include	<FL/Fl_Color_Chooser.H>
+#include	<FL/Fl_Tabs.H>
+#include	<FL/Fl_Roller.H>
+#include	<FL/Fl_Wizard.H>
 
 #include	<X11/Xlib.h>
 #include	<sys/shm.h>
@@ -133,7 +136,7 @@ using namespace std;
 #include "html_window.h"
 #include "embed_app.h"
 #include "osg.h"
-#include "cowcam.h"
+#include "dvptz.h"
 #include "muxer.h"
 
 extern long int	precise_time();
@@ -1739,7 +1742,7 @@ static const pa_sample_spec pulse_ss = {
 				if(desktop_monitor != NULL)
 				{
 					int error = 0;
-					simple_pulse_stream = pa_simple_new(NULL, "cowcam", PA_STREAM_RECORD, desktop_monitor, "record", &pulse_ss, NULL, NULL, &error);
+					simple_pulse_stream = pa_simple_new(NULL, "dvptz", PA_STREAM_RECORD, desktop_monitor, "record", &pulse_ss, NULL, NULL, &error);
 					if(simple_pulse_stream != NULL)
 					{
 						using_simple_stream = 1;

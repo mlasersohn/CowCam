@@ -112,7 +112,7 @@ int	loop;
 		}
 		fl_color(FL_WHITE);
 		fl_font(FL_HELVETICA, 64);
-		fl_draw("CowCam", 0, 0, w(), h() - 250, FL_ALIGN_CENTER);
+		fl_draw("DVPTZ", 0, 0, w(), h() - 250, FL_ALIGN_CENTER);
 		fl_font(FL_HELVETICA, 24);
 		char buf[256];
 		sprintf(buf, "Copyright %c%c %d, Mark Lasersohn", 0xC2, 0xA9, CURRENT_YEAR);

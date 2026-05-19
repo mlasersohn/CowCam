@@ -10,14 +10,14 @@ MARCH=-m64
 # DBUG=-O3 $(MARCH) -D_FILE_OFFSET_BITS=64
 DBUG=-ggdb $(MARCH) -D_FILE_OFFSET_BITS=64 -DDEBUG=1
 
-EXAMPLES = cowcam intro
+EXAMPLES = dvptz intro
 
 # MCXX=g++
 # MCC=gcc
 MCXX=clang++
 MCC=clang
 
-INCS = folder.h argv_split.h dr_mp3.h embed_app.h html_window.h muxer.h PulseAudio.h cowcam.h dr_flac.h dr_wav.h image_memory.h osg.h render_html.h vlc_window.h
+INCS = folder.h argv_split.h dr_mp3.h embed_app.h html_window.h muxer.h PulseAudio.h dvptz.h dr_flac.h dr_wav.h image_memory.h osg.h render_html.h vlc_window.h
 
 CFLAGS = $(DBUG) -fno-diagnostics-color -Wno-deprecated-declarations -Wno-unused-result -Wno-write-strings -c -DFLTK_HAVE_CAIRO -D_GNU_SOURCE -D_REENTRANT -DFLTK_1_1 -I. -I/usr/include/python3.10 -I/usr/local/include/opencv4 -I/usr/local/include -I/usr/X11R6/include -I/usr/include/cairo -I/usr/local/include/ndi -I/usr/local/include/lunasvg -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -I/usr/include/harfbuzz -I/usr/include/pango-1.0
 
@@ -114,20 +114,20 @@ embed_app.o : embed_app.cpp $(INCS)
 	@echo "Compile Embedded App Module"
 	$(MCXX) $(CFLAGS) embed_app.cpp
 
-cowcam.o: cowcam.cpp $(INCS) 
+dvptz.o: dvptz.cpp $(INCS) 
 	@echo
 	@echo "Compile CowCam"
-	$(MCXX) -D__STDC_CONSTANT_MACROS $(CFLAGS) -I$(CEF_PATH) -I$(CEF_PATH)/include cowcam.cpp 
+	$(MCXX) -D__STDC_CONSTANT_MACROS $(CFLAGS) -I$(CEF_PATH) -I$(CEF_PATH)/include dvptz.cpp 
 
 networking.o: networking.cpp $(INCS)
 	@echo
 	@echo "Compile Networking Module"
 	$(MCC) $(CFLAGS) networking.cpp 
 
-cowcam: cowcam.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o run_python.o curl.o cow_simple_pulse.o irc.o read_wave.o libhtml_window.so libosg_camera.so
+dvptz: dvptz.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o run_python.o curl.o cow_simple_pulse.o irc.o read_wave.o libhtml_window.so libosg_camera.so
 	@echo
-	@echo "Link cowcam"
-	$(LD) -o cowcam $(LDFLAGS) cowcam.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o run_python.o curl.o cow_simple_pulse.o irc.o read_wave.o $(STDDYN)
+	@echo "Link dvptz"
+	$(LD) -o dvptz $(LDFLAGS) dvptz.o test_serial_ports.o embed_app.o networking.o pulse_devices.o PulseAudio.o muxer.o vlc_window.o extract_video.o extract_audio.o run_python.o curl.o cow_simple_pulse.o irc.o read_wave.o $(STDDYN)
 
 intro: intro.cpp intro.h
 	@echo
