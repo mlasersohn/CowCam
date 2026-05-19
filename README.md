@@ -17,7 +17,7 @@ First, let me apologize for still using a simple Makefile in this day and age. I
 works for me and because, until recently, I was the only person even considering compiling this program, I didn't see any reason
 to dedicate time towards changing that out. Fortunately, though it uses many libraries, the program is not composed of many pieces nor
 requires terribly obscure libraries or especially unique versions of the libraries it does use. The most daunting of these is optional
-use of CEF. Building CEF is a bit of trial and few system's provide it already built. The most obscure is probably libvisca-ip, the 
+use of CEF. Building CEF is a bit of trial and few systems provide it already built. The most obscure is probably libvisca-ip, the 
 IP enabled version of libvisca. 
 
 It was quite a while ago since I gathered all the libraries needed to compile this program, so forgive me while I rummage through fading
