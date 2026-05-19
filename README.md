@@ -438,3 +438,5 @@ in among the source code, I will do that as well.
 # Bye
 Farewell and have fun.
 Mark Lasersohn
+<img width="1280" height="720" alt="photo_1777579966201" src="https://github.com/user-attachments/assets/042971a2-eca0-4410-96ff-193751c25b6f" />
+
