@@ -38,7 +38,6 @@
 #include <osgGA/DriveManipulator>
 #include <osgDB/ReadFile>
 
-
 extern "C"
 {
 #include <libavutil/avassert.h>
@@ -123,6 +122,10 @@ extern "C"
 #include	<FL/Fl_Pack.H>
 #include	<FL/Fl_Copy_Surface.H>
 #include	<FL/Fl_SVG_Image.H>
+#include	<FL/Fl_Tabs.H>
+#include	<FL/Fl_Roller.H>
+#include	<FL/Fl_Wizard.H>
+#include	<FL/names.h>
 
 #include	<X11/Xlib.h>
 #include	<X11/X.h>
@@ -437,6 +440,56 @@ struct	NamedKeys named_key[] = {
 #endif
 
 // SECTION *********************************** UTILITY FUNCTIONS *******************************************
+
+int		get_rgba_color(const uint8_t *raw_data, int x, int y, int width, int height, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a)
+{
+	int success = 0;
+	if((x >= 0) && (x < width) && (y >= 0) && (y < height) && (raw_data != NULL))
+	{
+		int index = (y * (width * 4)) + (x * 4);
+		if(r) 
+		{
+			*r = raw_data[index];
+		}
+		if(g) 
+		{
+			*g = raw_data[index + 1];
+		}
+		if(b) 
+		{
+			*b = raw_data[index + 2];
+		}
+		if(a) 
+		{
+			*a = raw_data[index + 3];
+		}
+		success = 1;
+	}
+	return(success);
+}
+
+int		get_rgb_color(const uint8_t *raw_data, int x, int y, int width, int height, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+	int success = 0;
+	if((x >= 0) && (x < width) && (y >= 0) && (y < height) && (raw_data != NULL))
+	{
+		int index = (y * (width * 3)) + (x * 3);
+		if(r) 
+		{
+			*r = raw_data[index];
+		}
+		if(g) 
+		{
+			*g = raw_data[index + 1];
+		}
+		if(b) 
+		{
+			*b = raw_data[index + 2];
+		}
+		success = 1;
+	}
+	return(success);
+}
 
 static int cmpstringp(const void *p1, const void *p2)
 {
@@ -5823,6 +5876,7 @@ double	yCenter;
 	cairo_restore(cam->cairo_context);
 }
 
+
 unsigned char *grab_raw_desktop_image()
 {
 unsigned char	*fl_read_image(unsigned char *, int, int, int, int, int = 0);
@@ -5960,6 +6014,193 @@ void	chromakey(Mat& src, Mat& result, int use_color, double a1, double a2)
 	res.convertTo(res, CV_8UC4, 255);
 
 	result = res.clone();
+}
+
+// SECTION *********************************** VU METER *******************************************
+
+CowMeter::CowMeter(int xx, int yy, int ww, int hh, char *lbl) : Fl_Group(xx, yy, ww, hh, lbl)
+{
+	image_box = new CowImageFrame(xx, yy, ww, hh);
+	image_box->align(FL_ALIGN_INSIDE | FL_ALIGN_CENTER);
+	image_box->color(FL_BLACK);
+	image_box->box(FL_NO_BOX);
+	end();
+
+	box(FL_NO_BOX);
+	align(FL_ALIGN_CENTER | FL_ALIGN_TOP);
+	color(FL_BLACK);
+	labelcolor(FL_WHITE);
+
+	update_interval = 0.01;
+	needle_length = 1.0;
+	needle_width = 0.01;
+	needle_color = WHITE;
+	
+	on_draw = NULL;
+	source = NULL;
+}
+
+void	CowMeter::SynchWithSource()
+{
+	if(source != NULL)
+	{
+		val = source->val;
+	}
+}
+
+void	CowMeter::OnDraw(void (*in_on_draw)(CowMeter *ptr))
+{
+	on_draw = in_on_draw;
+}
+
+Fl_Color	CowMeter::color()
+{
+	return(Fl_Group::color());
+}
+
+void	CowMeter::color(Fl_Color col)
+{
+	Fl_Group::color(col);
+	image_box->color(col);
+}
+
+void	CowMeter::box(Fl_Boxtype box_type)
+{
+	Fl_Group::box(box_type);
+	image_box->box(box_type);
+}
+
+void	CowMeter::Value(double in_val)
+{
+	val = in_val;
+}
+
+double	CowMeter::Value()
+{
+	return(val);
+}
+
+void	CowMeter::LinkMeter(CowMeter *in_source)
+{
+	source = in_source;
+}
+
+void	CowMeter::Image(char *filename, double px, double py)
+{
+	Fl_PNG_Image *meter_image = new Fl_PNG_Image(filename);
+	meter_image->scale(w(), h());
+	image_box->image(meter_image);
+	image_box->set_image_pos(w() * px, h() * py);
+}
+
+void	CowMeter::Needle(Fl_Color in_needle_color, double in_needle_length, double in_needle_width)
+{
+	needle_color = in_needle_color;
+	needle_length = in_needle_length;
+	needle_width = in_needle_width;
+}
+
+void	CowMeter::UpdateInterval(double in_update_interval)
+{
+	update_interval = in_update_interval;
+}
+
+void	CowMeter::Angles(double in_start_angle, double in_stop_angle)
+{
+	start_angle = in_start_angle;
+	stop_angle = in_stop_angle;
+}
+
+CowVUMeter::CowVUMeter(int xx, int yy, int ww, int hh, char *lbl) : CowMeter(xx, yy, ww, hh, lbl)
+{
+	align(FL_ALIGN_CENTER | FL_ALIGN_TOP);
+	box(FL_NO_BOX);
+	color(FL_BLACK);
+	labelcolor(FL_WHITE);
+
+	start_angle = 44.0;
+	stop_angle = 80.0;
+	val = 0.0;
+	peak_color = FL_RED;
+	peak_warning = 0.65;
+	peak_x = w() / 2;
+	peak_y = (h() / 2) + (h() / 4);
+	peak_radius = 10;
+	peak_ring = 3;
+	x_offset = 0.0;
+	y_offset = 0.4;
+	x_axis = 0.0;
+	y_axis = 0.6;
+	needle_length = 1.0;
+	needle_width = 0.01;
+	needle_color = WHITE;
+}
+
+void	CowVUMeter::draw()
+{
+	SynchWithSource();
+	image_box->redraw();
+	CowMeter::draw();
+	if(peak_warning > 0.0)
+	{
+		if(val > peak_warning)
+		{
+			fl_color(peak_color);
+			fl_begin_polygon();
+			fl_circle(x() + peak_x, y() + peak_y, peak_radius);
+			fl_end_polygon();
+		}
+		if(peak_ring > 0)
+		{
+			fl_line_style(FL_SOLID, peak_ring);
+			fl_color(needle_color);
+			fl_begin_line();
+			fl_circle(x() + peak_x, y() + peak_y, peak_radius);
+			fl_end_line();
+		}
+	}
+	if(on_draw != NULL)
+	{
+		on_draw(this);
+	}
+	fl_push_matrix();
+	fl_translate(x() + (w() / 2), y() + (h() / 2));
+	fl_line_style(FL_SOLID, w() * needle_width);
+	fl_color(needle_color);
+	fl_push_matrix();
+	fl_translate(w() * x_axis, h() * y_axis);
+	fl_push_matrix();
+	fl_rotate(start_angle - (stop_angle * val));
+	fl_begin_line();
+	fl_vertex((w() * x_offset), -(h() * y_offset));
+	fl_vertex((w() * x_offset), -(h() * needle_length));
+	fl_end_line();
+	fl_pop_matrix();
+	fl_pop_matrix();
+	fl_pop_matrix();
+	fl_line_style(FL_SOLID, 1);
+}
+
+void	CowVUMeter::Axis(double in_x_axis, double in_y_axis)
+{
+	x_axis = in_x_axis;
+	y_axis = in_y_axis;
+}
+
+void	CowVUMeter::Offsets(double in_x_offset, double in_y_offset)
+{
+	x_offset = in_x_offset;
+	y_offset = in_y_offset;
+}
+
+void	CowVUMeter::Peak(Fl_Color in_peak_color, double in_clip_warning, int in_peak_x, int in_peak_y, int in_peak_radius, int in_peak_ring)
+{
+	peak_color = in_peak_color;
+	peak_warning = in_clip_warning;
+	peak_x = in_peak_x;
+	peak_y = in_peak_y;
+	peak_radius = in_peak_radius;
+	peak_ring = in_peak_ring;
 }
 
 // SECTION *********************************** SIMPLE SCROLL *******************************************
@@ -10798,7 +11039,85 @@ void	drawing_pixelate_mode_cb(Fl_Widget *w, void *v)
 	}
 }
 
-LineSample::LineSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : Fl_Box(xx, yy, ww, hh)
+SampleBox::SampleBox(int xx, int yy, int ww, int hh, char *lbl) : Fl_Box(xx, yy, ww, hh, lbl)
+{
+}
+
+SampleBox::~SampleBox()
+{
+}
+
+int		SampleBox::handle(int event)
+{
+	int flag = 0;
+	if(event == FL_PUSH)
+	{
+		if(Fl::event_inside(this))
+		{
+			SampleColor();
+			flag = 1;
+		}
+	}
+	if(flag == 0)
+	{
+		flag = Fl_Box::handle(event);
+	}
+	return(flag);
+}
+
+void	SampleBox::SampleColor()
+{
+	char *raw = (char *)grab_raw_desktop_image();
+	if(raw != NULL)
+	{
+		FakeWindow *fake = new FakeWindow(NULL, raw);
+		fake->show();
+		while((fake->visible()) && (fake->start_x == -1) && (fake->start_y == -1))
+		{
+			Fl::wait(1);
+		}
+		if((fake->start_x != -1) && (fake->start_y != -1))
+		{
+			int xx = fake->start_x;
+			int yy = fake->start_y;
+			int ww = fake->w();
+			int hh = fake->h();
+			uint8_t r = 0;
+			uint8_t g = 0;
+			uint8_t b = 0;
+			int rr = get_rgb_color((const uint8_t *)fake->raw_data, xx, yy, ww, hh, &r, &g, &b);
+			if(rr == 1)
+			{
+				if((red_slider != NULL)
+				&& (green_slider != NULL)
+				&& (blue_slider != NULL))
+				{
+					red_slider->value(r);
+					red_slider->redraw();
+					red_slider->do_callback();
+					green_slider->value(g);
+					green_slider->redraw();
+					green_slider->do_callback();
+					blue_slider->value(b);
+					blue_slider->redraw();
+					blue_slider->do_callback();
+				}
+			}
+		}
+		fake->hide();
+		Fl::delete_widget(fake);
+	}
+}
+
+void	SampleBox::Use(MySlider *red, MySlider *green, MySlider *blue)
+{
+	red_slider = red;
+	green_slider = green;
+	blue_slider = blue;
+	tooltip("Sample Image. Click here, then click anywhere to sample a color.");
+}
+
+LineSample::LineSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : SampleBox(xx, yy, ww, hh)
 {
 	idw = in_idw;
 	line_style = 0;
@@ -10829,7 +11148,7 @@ void	LineSample::draw()
 	fl_line_style(FL_SOLID, 1, NULL);
 }
 
-FreehandSample::FreehandSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : Fl_Box(xx, yy, ww, hh)
+FreehandSample::FreehandSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : SampleBox(xx, yy, ww, hh)
 {
 	idw = in_idw;
 	line_style = FREEHAND_SHAPE_SQUARE;
@@ -10880,7 +11199,7 @@ char	buf[2];
 	fl_pop_clip();
 }
 
-RectangleSample::RectangleSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : Fl_Box(xx, yy, ww, hh)
+RectangleSample::RectangleSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh) : SampleBox(xx, yy, ww, hh)
 {
 	idw = in_idw;
 	line_style = 0;
@@ -10953,7 +11272,7 @@ void	RectangleSample::draw()
 	fl_line_style(FL_SOLID, 1, NULL);
 }
 
-FontSample::FontSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh, char *lbl) : Fl_Box(xx, yy, ww, hh, lbl)
+FontSample::FontSample(ImmediateDrawingWindow *in_idw, int xx, int yy, int ww, int hh, char *lbl) : SampleBox(xx, yy, ww, hh, lbl)
 {
 	idw = in_idw;
 }
@@ -12123,6 +12442,8 @@ int		ii;
 		font_alpha_output->value("255");
 		yp += 12;
 
+		font_sample->Use(font_red_slider, font_green_slider, font_blue_slider);
+
 		font_palette_button = new MyButton(my_window, 260, yp, 70, 18, "Palette");
 		font_palette_button->labelsize(7);
 		font_palette_button->labelcolor(YELLOW);
@@ -12330,6 +12651,8 @@ int		ii;
 		line_alpha_output->textsize(9);
 		line_alpha_output->value("255");
 		yp += 12;
+
+		line_sample->Use(line_red_slider, line_green_slider, line_blue_slider);
 
 		line_palette_button = new MyButton(my_window, 260, yp, 70, 18, "Palette");
 		line_palette_button->labelsize(7);
@@ -12597,6 +12920,8 @@ int		ii;
 		rectangle_alpha_output->value("255");
 		yp += 12;
 
+		rectangle_sample->Use(rectangle_red_slider, rectangle_green_slider, rectangle_blue_slider);
+
 		rectangle_palette_button = new MyButton(my_window, 260, yp, 70, 18, "Palette");
 		rectangle_palette_button->labelsize(7);
 		rectangle_palette_button->labelcolor(YELLOW);
@@ -12801,6 +13126,8 @@ int		ii;
 		freehand_blue_output->textsize(9);
 		freehand_blue_output->value("255");
 		yp += 12;
+
+		freehand_sample->Use(freehand_red_slider, freehand_green_slider, freehand_blue_slider);
 
 		freehand_palette_button = new MyButton(my_window, 260, yp, 70, 18, "Palette");
 		freehand_palette_button->labelsize(7);
@@ -13574,22 +13901,25 @@ int	FakeWindow::handle(int event)
 				char buf2[4096];
 				sprintf(buf, "desktop://%d,%d,%d,%d", final_sx, final_sy, final_ww, final_hh);
 				sprintf(buf2, "Desktop (%d,%d,%d,%d)", final_sx, final_sy, final_ww, final_hh);
-				if(my_window->new_source_window != NULL)
+				if(my_window != NULL)
 				{
-					my_window->new_source_window->source->value(buf);
-					Fl_Input *alias_in = (Fl_Input *)my_window->new_source_window->alias;
-					char *alias = (char *)alias_in->value();
-					if(alias != NULL)
+					if(my_window->new_source_window != NULL)
 					{
-						if(strlen(alias) > 0)
+						my_window->new_source_window->source->value(buf);
+						Fl_Input *alias_in = (Fl_Input *)my_window->new_source_window->alias;
+						char *alias = (char *)alias_in->value();
+						if(alias != NULL)
 						{
-							strcpy(buf2, alias);
+							if(strlen(alias) > 0)
+							{
+								strcpy(buf2, alias);
+							}
 						}
 					}
+					my_window->show();
+					my_window->new_source_window->show();
+					my_window->set_non_modal();
 				}
-				my_window->show();
-				my_window->new_source_window->show();
-				my_window->set_non_modal();
 				hide();
 			}
 			dragging = 0;
@@ -30418,6 +30748,13 @@ PulseMicrophone::~PulseMicrophone()
 {
 int	loop;
 
+	for(loop = 0;loop < my_window->pulse_microphone_cnt;loop++)
+	{
+		if(my_window->pulse_microphone[loop] == this)
+		{
+			my_window->pulse_microphone[loop] = NULL;
+		}
+	}
 	if(ndi_recv != NULL)
 	{
 		if(NDILib != NULL)
@@ -30951,6 +31288,8 @@ PulseAudioButton::PulseAudioButton(MyWin *in_win, char *in_dev_name, int hz, int
 		alias = strdup("");
 	}
 	box(FL_NO_BOX);
+	Fl_Box *sizing_box = new Fl_Box(xx, yy, ww, hh);
+	sizing_box->color(fl_rgb_color(122, 0, 0));
 
 	int start_y = yy;
 	alias_button = new MyButton(my_window, xx, yy, ww, 60, alias);
@@ -30993,39 +31332,38 @@ PulseAudioButton::PulseAudioButton(MyWin *in_win, char *in_dev_name, int hz, int
 	filter_button->callback(pulse_audio_filter_cb, this);
 	start_y += 18;
 
-	meter_box = new Fl_Box(xx, start_y, ww - 16, 4);
+	meter_box = new Fl_Box(xx, start_y, ww - 16, 6);
 	meter_box->box(FL_FLAT_BOX);
 	meter_box->color(BLACK);
-	start_y += 5;
+	start_y += 11;
 	
-	volume1 = new MySlider(my_window, xx + 30, start_y, ww - 30, 10, "", NULL, 1);
+	volume1 = new MySlider(my_window, xx + 30, start_y, ww - 30, 16, "", NULL, 1);
 	volume1->box(FL_FRAME_BOX);
 	volume1->color(BLACK);
 	volume1->bounds(0.0, 1.0);
-	volume1->slider_size(4);
 	volume1->value(0.5);
 	volume1->callback(pulse_volume_cb, this);
 
-	volume2 = new MySlider(my_window, xx + 30, start_y + 11, ww - 30, 10, "", NULL, 1);
-	volume2->box(FL_FRAME_BOX);
-	volume2->color(BLACK);
-	volume2->bounds(0.0, 1.0);
-	volume2->slider_size(4);
-	volume2->value(0.5);
-	volume2->callback(pulse_volume_cb, this);
-	if(my_window->audio_channels == 1)
-	{
-		volume2->hide();
-	}
-	delete_button = new MyButton(my_window, xx, start_y, 11, 11, "x");
+	delete_button = new MyButton(my_window, xx, start_y, 16, 16, "x");
 	delete_button->color(BLACK);
 	delete_button->labelcolor(GRAY);
 	delete_button->labelsize(9);
 	delete_button->align(FL_ALIGN_CENTER | FL_ALIGN_WRAP | FL_ALIGN_INSIDE);
 	delete_button->box(FL_FRAME_BOX);
 	delete_button->callback(pulse_audio_button_delete_cb, this);
+	start_y += 17;
 
-	repeat_button = new MyToggleButton(my_window, xx + 13, start_y, 11, 11, "r");
+	volume2 = new MySlider(my_window, xx + 30, start_y, ww - 30, 16, "", NULL, 1);
+	volume2->box(FL_FRAME_BOX);
+	volume2->color(BLACK);
+	volume2->bounds(0.0, 1.0);
+	volume2->value(0.5);
+	volume2->callback(pulse_volume_cb, this);
+	if(my_window->audio_channels == 1)
+	{
+		volume2->hide();
+	}
+	repeat_button = new MyToggleButton(my_window, xx + 13, start_y, 16, 16, "r");
 	repeat_button->color(BLACK);
 	repeat_button->labelcolor(GRAY);
 	repeat_button->labelsize(9);
@@ -31034,7 +31372,7 @@ PulseAudioButton::PulseAudioButton(MyWin *in_win, char *in_dev_name, int hz, int
 	repeat_button->callback(pulse_audio_button_repeat_cb, this);
 	repeat_button->value(0);
 	repeat_button->hide();
-	start_y += 11;
+	start_y += 26;
 
 	alias_in = new Fl_Multiline_Input(xx, yy, ww, 30);
 	alias_in->color(BLACK);
@@ -36601,6 +36939,13 @@ void	audio_settings_window_accept_cb(Fl_Widget *w, void *v)
 			{
 				win->audio_display = AUDIO_DISPLAY_AMPLITUDE | AUDIO_DISPLAY_FREQUENCY;
 			}
+			else if(strcmp(str, "VU") == 0)
+			{
+				if(win->use_vu_meters == 1)
+				{
+					win->audio_display = AUDIO_DISPLAY_VU;
+				}
+			}
 		}
 	}
 	win->audio_direct_mix = asw->direct_mix->value();
@@ -36741,6 +37086,13 @@ int	loop;
 	&& ((my_window->audio_display & AUDIO_DISPLAY_FREQUENCY) == AUDIO_DISPLAY_FREQUENCY))
 	{
 		display->value(3);
+	}
+	if(my_window->audio_display == AUDIO_DISPLAY_VU)
+	{
+		if(my_window->use_vu_meters == 1)
+		{
+			display->value(4);
+		}
 	}
 	if(my_window->recorded_frames > 0)
 	{
@@ -39131,6 +39483,7 @@ MyWin::MyWin(
 	, char *use_joystick_path
 	, int use_borderless
 	, double use_cycle_cameras
+	, char *vu_meter_filename
 	, char *lbl)
 	: Fl_Double_Window(in_w, in_h, lbl)
 {
@@ -39324,6 +39677,10 @@ int	outer;
 		initial_ptz_x[loop] = -1;
 		initial_ptz_y[loop] = -1;
 	}
+	use_vu_meters = 0;
+	meterL = NULL;
+	meterR = NULL;
+
 	lock_ptz_mouse_move = 0;
 	highlight_image_windows = 0;
 	html_background = 0;
@@ -39764,7 +40121,7 @@ int	outer;
 	audio_thumbnail_group->box(FL_NO_BOX);
 	for(loop = 0;loop < 3;loop++)
 	{
-		audio_thumbnail_pack[loop] = new Fl_Pack(0, (60 * loop), w() - 600, 60);
+		audio_thumbnail_pack[loop] = new Fl_Pack(0, (60 * loop), w() - 600, 130);
 		audio_thumbnail_pack[loop]->box(FL_NO_BOX);
 		audio_thumbnail_pack[loop]->type(Fl_Pack::HORIZONTAL);
 		audio_thumbnail_pack[loop]->spacing(10);
@@ -39902,6 +40259,7 @@ int	outer;
 	source_select_window->hide();
 	new_ptz_window = new NewPTZWindow(this, 370, 300);
 	new_ptz_window->hide();
+	MakeVUMeters(vu_meter_filename);
 	DisplayCamera(0);
 }
 
@@ -40189,6 +40547,35 @@ int	loop;
 	}
 	video_thumbnail_group->redraw();
 	redraw();
+}
+
+void	MyWin::MakeVUMeters(char *vu_meter_filename)
+{
+	meterL = NULL;
+	meterR = NULL;
+	use_vu_meters = 0;
+	if(access(vu_meter_filename, F_OK) == F_OK)
+	{
+		meterL = new CowVUMeter(0, 0, 300, 200, "Meter");
+		meterL->Image(vu_meter_filename, 0.0, 0.06);
+		meterL->color(FL_BLACK);
+		meterL->labelcolor(FL_WHITE);
+		meterL->labelsize(24);
+		meterL->Needle(WHITE, 0.82, 0.005);
+		meterL->Offsets(0.0, 0.3);
+		meterL->Peak(FL_RED, 0.66, 256, 132, 5, 0);
+
+		meterR = new CowVUMeter(300, 0, 300, 200, "Meter");
+		meterR->Image(vu_meter_filename, 0.0, 0.06);
+		meterR->color(FL_BLACK);
+		meterR->labelcolor(FL_WHITE);
+		meterR->labelsize(24);
+		meterR->Needle(WHITE, 0.82, 0.005);
+		meterR->Offsets(0.0, 0.3);
+		meterR->Peak(FL_RED, 0.66, 256, 132, 5, 0);
+
+		use_vu_meters = 1;
+	}
 }
 
 void	MyWin::ShowAllThumbs()
@@ -49481,83 +49868,86 @@ static time_t	last_time = 0;
 		if((xx > cx1) && (xx < cx2)
 		&& (yy > cy1) && (yy < cy2))
 		{
-			time_t diff = time(0) - last_time;
-			if(diff > 1)
+			int limit = 3;
+			if(use_vu_meters == 1)
 			{
-				int direction = Fl::event_dy();
-				if(direction > 0)
-				{
-					audio_display++;
-					audio_display_timer = 200;
-					if(audio_display > 3)
-					{
-						audio_display = 0;
-					}
-				}
-				else
-				{
-					audio_display--;
-					audio_display_timer = 200;
-					if(audio_display < 0)
-					{
-						audio_display = 3;
-					}
-				}
-				SaveAudioSettings("audio_settings.json");
-				last_time = time(0);
-			}
-			no_go = 1;
-		}
-	}
-	if(no_go == 0)
-	{
-		if(ptz_mode != 0)
-		{
-			for(loop = 0;loop < PTZ_WINDOW_LIMIT;loop++)
-			{
-				if(ptz_window[loop] != NULL)
-				{
-					if(ptz_window[loop]->hovering == 1)
-					{
-						no_go = 1;
-					}
-				}
-			}
-		}
-	}
-	if(no_go == 0)
-	{
-		if(cam != NULL)
-		{
-			double inc = 0.01;
-			if(Fl::event_state(FL_ALT) == FL_ALT)
-			{
-				inc = 0.1;
-			}
-			else if(Fl::event_state(FL_CTRL) == FL_CTRL)
-			{
-				inc = 1.0;
+				limit = 4;
 			}
 			int direction = Fl::event_dy();
 			if(direction > 0)
 			{
-				cam->zoom += inc;
-				if(cam->zoom > 4.0)
+				audio_display++;
+				audio_display_timer = 200;
+				if(audio_display > limit)
 				{
-					cam->zoom = 4.0;
+					audio_display = 0;
 				}
-				flag = 1;
 			}
-			else if(direction < 0)
+			else
 			{
-				cam->zoom -= inc;
-				if(cam->zoom <= 1.0)
+				audio_display--;
+				audio_display_timer = 200;
+				if(audio_display < 0)
 				{
-					cam->zoom = 1.0;
-					offset_x = 0;
-					offset_y = 0;
+					audio_display = limit;
 				}
-				flag = 1;
+			}
+			SaveAudioSettings("audio_settings.json");
+			no_go = 1;
+		}
+	}
+	if(!Fl::event_inside(audio_thumbnail_group))
+	{
+		if(no_go == 0)
+		{
+			if(ptz_mode != 0)
+			{
+				for(loop = 0;loop < PTZ_WINDOW_LIMIT;loop++)
+				{
+					if(ptz_window[loop] != NULL)
+					{
+						if(ptz_window[loop]->hovering == 1)
+						{
+							no_go = 1;
+						}
+					}
+				}
+			}
+		}
+		if(no_go == 0)
+		{
+			if(cam != NULL)
+			{
+				double inc = 0.01;
+				if(Fl::event_state(FL_ALT) == FL_ALT)
+				{
+					inc = 0.1;
+				}
+				else if(Fl::event_state(FL_CTRL) == FL_CTRL)
+				{
+					inc = 1.0;
+				}
+				int direction = Fl::event_dy();
+				if(direction > 0)
+				{
+					cam->zoom += inc;
+					if(cam->zoom > 4.0)
+					{
+						cam->zoom = 4.0;
+					}
+					flag = 1;
+				}
+				else if(direction < 0)
+				{
+					cam->zoom -= inc;
+					if(cam->zoom <= 1.0)
+					{
+						cam->zoom = 1.0;
+						offset_x = 0;
+						offset_y = 0;
+					}
+					flag = 1;
+				}
 			}
 		}
 	}
@@ -54090,6 +54480,11 @@ int	loop;
 
 	if((audio_display & AUDIO_DISPLAY_FREQUENCY) == AUDIO_DISPLAY_FREQUENCY)
 	{
+		if((meterL != NULL) && (meterR != NULL))
+		{
+			meterL->hide();
+			meterR->hide();
+		}
 		if(pulse_mixer != NULL)
 		{
 			pulse_mixer->fft_calc = 1;
@@ -54128,6 +54523,11 @@ int	loop;
 	}
 	if((audio_display & AUDIO_DISPLAY_AMPLITUDE) == AUDIO_DISPLAY_AMPLITUDE)
 	{
+		if((meterL != NULL) && (meterR != NULL))
+		{
+			meterL->hide();
+			meterR->hide();
+		}
 		if(pulse_mixer != NULL)
 		{
 			if(pulse_mixer->buffer != NULL)
@@ -54196,6 +54596,76 @@ int	loop;
 			}
 		}
 	}
+	if((audio_display & AUDIO_DISPLAY_VU) == AUDIO_DISPLAY_VU)
+	{
+		if((meterL != NULL) && (meterR != NULL))
+		{
+			if(pulse_mixer != NULL)
+			{
+				if(pulse_mixer->buffer != NULL)
+				{
+					if(audio_channels == 2)
+					{
+						meterL->resize((w() / 2) - 300, h() - 160, 300, 200);
+						meterR->resize((w() / 2), h() - 160, 300, 200);
+						meterL->show();
+						meterR->show();
+						if(pulse_mixer->mute == 1)
+						{
+							meterL->val = 0.0;
+							meterR->val = 0.0;
+						}
+						else
+						{
+							short int nn1 = pulse_mixer->buffer[0];
+							if(pulse_mixer->recording == 1)
+							{
+								nn1 = pulse_mixer->preserve[0];
+							}
+							double ff1 = (1.0 / 32768.0) * (double)abs(nn1);
+							meterL->val = ff1;
+
+							short int nn2 = pulse_mixer->buffer[1];
+							if(pulse_mixer->recording == 1)
+							{
+								nn2 = pulse_mixer->preserve[1];
+							}
+							double ff2 = (1.0 / 32768.0) * (double)abs(nn2);
+							meterR->val = ff2;
+						}
+						fl_push_clip(meterL->x() + 10, meterL->y() + 18, 280, 160);
+						meterL->draw();
+						fl_pop_clip();
+						fl_push_clip(meterR->x() + 10, meterR->y() + 18, 280, 160);
+						meterR->draw();
+						fl_pop_clip();
+					}
+					else
+					{
+						meterL->resize((w() / 2) - 150, h() - 200, 300, 200);
+						meterL->show();
+						if(pulse_mixer->mute == 1)
+						{
+							meterL->val = 0.0;
+						}
+						else
+						{
+							short int nn1 = pulse_mixer->buffer[0];
+							if(pulse_mixer->recording == 1)
+							{
+								nn1 = pulse_mixer->preserve[0];
+							}
+							double ff1 = (1.0 / 32768.0) * (double)abs(nn1);
+							meterL->val = ff1;
+						}
+						fl_push_clip(meterL->x() + 10, meterL->y() + 18, 280, 160);
+						meterL->draw();
+						fl_pop_clip();
+					}
+				}
+			}
+		}
+	}
 	if(audio_display_timer > 0)
 	{
 		int start_x = (w() / 2);
@@ -54230,6 +54700,15 @@ int	loop;
 			start_x -= (ww / 2);
 			start_y -= (hh / 2);
 			fl_draw("Amplitude", start_x, start_y);
+		}
+		else if((audio_display & AUDIO_DISPLAY_VU) == AUDIO_DISPLAY_VU)
+		{
+			int ww = 0;
+			int hh = 0;
+			fl_measure("VU", ww, hh);
+			start_x -= (ww / 2);
+			start_y -= (hh / 2);
+			fl_draw("VU", start_x, start_y);
 		}
 		else
 		{
@@ -56218,7 +56697,7 @@ int	loop;
 					char buf[4096];
 					sprintf(buf, "Initialize audio:\n%s", use_str);
 					start_win->Update(buf);
-					at = new PulseAudioButton(this, str, audio_sample_rate, audio_channels, nxx, nyy, 150, 110, use_str);
+					at = new PulseAudioButton(this, str, audio_sample_rate, audio_channels, nxx, nyy, 150, 130, use_str);
 					if(at != NULL)
 					{
 						if(at->microphone != NULL)
@@ -56231,7 +56710,7 @@ int	loop;
 							{
 								audio_thumbnail_pack[which]->add(at);
 								int use_w = audio_thumbnail_pack[0]->children() * 160;
-								audio_thumbnail_group->resize(audio_thumbnail_group->x(), audio_thumbnail_group->y(), use_w, (which + 1) * 111);
+								audio_thumbnail_group->resize(audio_thumbnail_group->x(), audio_thumbnail_group->y(), use_w, (which + 1) * 131);
 							}
 							if(def == 1)
 							{
@@ -69049,6 +69528,14 @@ int	MySlider::handle(int event)
 		in_slider = 0;
 		redraw();
 	}
+	else if(event == FL_FOCUS)
+	{
+		flag = 1;
+	}
+	else if(event == FL_UNFOCUS)
+	{
+		flag = 1;
+	}
 	else if(event == FL_MOUSEWHEEL)
 	{
 		if(in_slider == 1)
@@ -77941,6 +78428,8 @@ void	show_help()
 	printf("cowcam --no_load_state\n\n");
 	printf("# Force the loading of a encoding summary file.\n");
 	printf("cowcam --encode_summary_file=./EncodeSummaries/resolve.json\n\n");
+	printf("# Use the specified PNG file as the background for VU meters. Transparent backgrounds are recommended.\n");
+	printf("cowcam --vu_meter=vu6.png\n\n");
 }
 
 void	parse_ptz_source_string(char *in_path, char *path, char *alias, char *lock_alias, char *bind_alias, int& lock_number, int& prefer_ndi_ptz, int& prefer_v4l, int& auto_focus, int& auto_exposure, int& accelerate, int& click_pt, int& digital_zoom, int& soft_memory, int& backlight, int& follow, int& reverse_h, int& reverse_v)
@@ -78180,6 +78669,7 @@ char		local_buf[32768];
 	int use_stream_only = 0;
 	int use_streaming_audio_quality = 44100;
 	char *forced_setup = NULL;
+	char *use_vu_meter_filename = "vu6.png";
 	for(loop = 0;loop < NUMBER_OF_INTERFACES;loop++)
 	{
 		for(inner = 0;inner < NUMBER_OF_CAMERAS;inner++)
@@ -78660,6 +79150,11 @@ char		local_buf[32768];
 					char *cp = argv[loop] + strlen("--desktop_monitor=");
 					use_desktop_monitor = strdup(cp);
 				}
+				else if(strncmp(argv[loop], "--vu_meter=", strlen("--vu_meter=")) == 0)
+				{
+					char *cp = argv[loop] + strlen("--vu_meter=");
+					use_vu_meter_filename = cp;
+				}
 				else if(strncmp(argv[loop], "--multipip=", strlen("--multipip=")) == 0)
 				{
 					use_multipip = MULTIPIP_SIDE_RIGHT;
@@ -79102,6 +79597,7 @@ char		local_buf[32768];
 		, use_joystick_path
 		, use_borderless
 		, use_cycle_cameras
+		, use_vu_meter_filename
 		, "Cowcam");
 	win->color(WHITE);
 	win->end();
@@ -79567,7 +80063,28 @@ struct tm	*tm;
 			{
 				void (*init_cef)(int, int, char **);
 				init_cef = (void (*)(int, int, char **))void_initialize_cef;
-				init_cef(global_html, argc, argv);
+				if((access("icudtl.dat", F_OK) == F_OK)
+				&& (access("v8_context_snapshot.bin", F_OK) == F_OK)
+				&& (access("cef.pak", F_OK) == F_OK)
+				&& (access("cef_100_percent.pak", F_OK) == F_OK)
+				&& (access("cef_200_percent.pak", F_OK) == F_OK))
+				{
+					init_cef(global_html, argc, argv);
+				}
+				else
+				{
+					dlclose(global_cef_handle);
+					global_cef_handle = NULL;
+					void_initialize_cef = NULL; 
+					void_shutdown_cef = NULL;
+					void_MakeHTMLWindow_cef = NULL;
+					void_delete_html_cef = NULL;
+					void_get_image_cef = NULL;
+					fprintf(stderr, "\nError: CEF is present but its supporting files are not.\n");
+					fprintf(stderr, "Please place icudtl.dat, v8_context_snapshot.bin, cef.pak,\n");
+					fprintf(stderr, "cef_100_percent.pak, and cef_200_percent.pak\n");
+					fprintf(stderr, "in the same directory as libcef.so.\n\n");
+				}
 			}
 		}
 	}
