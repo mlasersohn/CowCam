@@ -124,10 +124,12 @@ If you do not want to build in OSG support, edit or delete the following line in
 OSG := 1
 
 To build the optional library "libhtml_window.so" which supports rendering HTML as a video source, you
-must set the value of $(CEF_PATH) in the Makefile to point at the directory where CEF keeps its include
+must set the value of CEF_PATH in the Makefile to point at the directory where CEF keeps its include
 files and have the following CEF libraries installed:
+
 libcef.so ; copied right into the DVPTZ build directory
-$(CEF_PATH)/build/libcef_dll_wrapper/libcef_dll_wrapper.a ; down under $(CEF_PATH) somewhere
+
+CEF_PATH/build/libcef_dll_wrapper/libcef_dll_wrapper.a ; down under CEF_PATH somewhere
 
 If you do not want to build in CEF support, edit or delete the following line in the Makefile:
 CEF := 1
@@ -145,7 +147,7 @@ $ make -f Makefile
 # Running
 In the simplest case, running DVPTZ is just a matter of invoking the executable, "dvptz". This will cause the program to
 invoke the "intro" executable by default, which will display status messages as the dvptz program starts. During this
-period, dvptz will scan your system ("/dev" directories) for cameras and microphones and various other audio sources. There
+period, dvptz will scan your system \("/dev" directories\) for cameras and microphones and various other audio sources. There
 are many startup flags and arguments allowing you to customize dvptz on startup as well as bypass the scan and specify
 exactly which audio and video sources you wish to have available during startup.
 
@@ -157,7 +159,7 @@ dvptz --source=/dev/video0
 dvptz --source=/dev/video0::V4L
 
 #### Specify a device and an alias
-dvptz --source=/dev/video0[alias=Sony]
+dvptz --source=/dev/video0\[alias=Sony\]
 
 ####  Specify a device and a backend with fourcc code (must be 4 characters long)
 dvptz --source=/dev/video0::V4L:MJPG
@@ -387,7 +389,7 @@ dvptz --select_camera=camera_name
 dvptz --select_audio=audio_device_name
 
 For example, when starting dvptz, I use the following options:
---animate_panels --no_scan --source=/dev/v4l/by-id/usb-054c_SRG-120DU_Series-video-index0[alias="Sony SRG-120DU"] --source=/dev/v4l/by-id/usb-AVer_Inc._CAM520_5308138900019-video-index0::V4L2:MJPG[alias="Aver 520"] "--source=ndi_p216://NDI_HX (BZBGEAR-NDI-787264200195)"[alias="BZBGear"] --no_frame_scaling --yolo_model=coco --streaming_only --width=1280 --height=720 --container=flv --detect --ptz=udp://192.168.0.100:52381[alias="Sony"][lock="Sony SRG-120DU"][bind="Sony SRG-120DU"] --ptz=/dev/ttyUSB0[alias="Aver"][lock="Aver 520"][bind="Aver 520"] --ptz=tcp://192.168.0.146:1259[alias="BZBGear"][lock="BZBGear"][bind="BZBGear"] --recording_follows_display --message_delay=250000
+--animate_panels --no_scan --source=/dev/v4l/by-id/usb-054c_SRG-120DU_Series-video-index0\[alias="Sony SRG-120DU"\] --source=/dev/v4l/by-id/usb-AVer_Inc._CAM520_5308138900019-video-index0::V4L2:MJPG\[alias="Aver 520"\] "--source=ndi_p216://NDI_HX \(BZBGEAR-NDI-787264200195\)"\[alias="BZBGear"\] --no_frame_scaling --yolo_model=coco --streaming_only --width=1280 --height=720 --container=flv --detect --ptz=udp://192.168.0.100:52381\[alias="Sony"\]\[lock="Sony SRG-120DU"\]\[bind="Sony SRG-120DU"\] --ptz=/dev/ttyUSB0\[alias="Aver"\]\[lock="Aver 520"\]\[bind="Aver 520"\] --ptz=tcp://192.168.0.146:1259\[alias="BZBGear"\]\[lock="BZBGear"\]\[bind="BZBGear"\] --recording_follows_display --message_delay=250000
 
 This allows me to open my Sony SRG-120DU as a USV/UVC device, my AVer CAM520 as another USB/UVC device, and my BZBGear camera as an NDI device. I am
 setting up YOLO object detection using coco. I set the resolution to 1280 and 720 with a default container of FLV. I also setup PTZ over UDP for the
@@ -398,7 +400,7 @@ Most, maybe all of these options can be set once within the program, as well as 
 # Some of the Features
 DVPTZ allows the user to save the state of the entire
 system as well as the state of any of the cameras or other sources. Within the program, or using the --source= flag, you can select between dozens
-of supported input sources. You can also set hundreds (thousands?) of combinations of containers, and audio and video codecs, for output files; the exact
+of supported input sources. You can also set hundreds \(thousands?\) of combinations of containers, and audio and video codecs, for output files; the exact
 number depending on how many you have licensed/installed on your system and made available to the ffmpeg library. Many container formats for images,
 audio, and video are also available as input sources.
 
